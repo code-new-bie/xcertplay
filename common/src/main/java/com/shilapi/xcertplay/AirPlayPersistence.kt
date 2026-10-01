@@ -46,6 +46,7 @@ object AirPlayPersistence {
     private const val KEY_MANUAL_HOTSPOT_CHANNEL = "manual_hotspot_channel"
     private const val KEY_MANUAL_HOTSPOT_SECURITY = "manual_hotspot_security"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
+    private const val KEY_MEDIA_METRICS_ENABLED = "media_metrics_enabled"
     private const val KEY_MORE_GESTURES_TO_SETTINGS = "more_gestures_to_settings"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
@@ -298,6 +299,16 @@ object AirPlayPersistence {
     fun saveDebugLogsEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_DEBUG_LOGS_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadMediaMetricsEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MEDIA_METRICS_ENABLED, false)
+
+    fun saveMediaMetricsEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_MEDIA_METRICS_ENABLED, enabled)
             .apply()
     }
 
