@@ -35,6 +35,7 @@ class AndroidMediaSink(
     private val videoHeight: Int = 720,
     private val preferSoftwareHevcDecoder: Boolean = false,
     private val advancedAudioChannelMapping: Boolean = false,
+    private val mainMediaAudioBufferDurationMs: Int = MainMediaAudioBuffer.DEFAULT_DURATION_MS,
     private val microphoneGainPercent: Int = MicrophoneGain.DEFAULT_PERCENT,
     mediaMetricsMonitor: MediaMetricsMonitor? = null,
     onScreenStreamActiveChanged: ((Int, Boolean) -> Unit)? = null,
@@ -147,7 +148,12 @@ class AndroidMediaSink(
         val existing = audioRenderers[type]
         if (existing?.format == format) return existing
         existing?.close()
-        return AudioRenderer(format, advancedAudioChannelMapping, mediaMetricsMonitor).also {
+        return AudioRenderer(
+            format,
+            advancedAudioChannelMapping,
+            mainMediaAudioBufferDurationMs,
+            mediaMetricsMonitor,
+        ).also {
             audioRenderers[type] = it
         }
     }
@@ -535,6 +541,7 @@ private fun MediaFormat.intOrNull(key: String): Int? =
 private class AudioRenderer(
     val format: AudioFormat,
     private val advancedAudioChannelMapping: Boolean,
+    private val mainMediaAudioBufferDurationMs: Int,
     mediaMetricsMonitor: MediaMetricsMonitor?,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
@@ -657,7 +664,20 @@ private class AudioRenderer(
             Log.e(TAG, "AudioTrack buffer size unavailable rate=${format.sampleRate} channels=${format.channels}")
             return
         }
-        val bufferBytes = maxOf(minBuffer * 4, MIN_TRACK_BUFFER_BYTES)
+        val configuredMainMediaBuffer = MainMediaAudioBuffer.isMainMedia(
+            audioType = format.audioType,
+            payloadType = format.payloadType,
+        )
+        val bufferBytes = if (configuredMainMediaBuffer) {
+            MainMediaAudioBuffer.bufferSizeBytes(
+                durationMs = mainMediaAudioBufferDurationMs,
+                sampleRate = format.sampleRate,
+                channelCount = trackChannelCount,
+                minBufferBytes = minBuffer,
+            )
+        } else {
+            maxOf(minBuffer * 4, MIN_TRACK_BUFFER_BYTES)
+        }
         startThresholdBytes = if (format.audioType == "telephony" || format.audioType == "speechrecognition") {
             maxOf(minBuffer, MIN_START_BUFFER_BYTES)
         } else {
@@ -681,7 +701,13 @@ private class AudioRenderer(
             TAG,
             "audio track prepared type=${format.payloadType} audioType=${format.audioType} " +
                 "codec=${format.codec} " +
-                "rate=${format.sampleRate} channels=${format.channels}",
+                "rate=${format.sampleRate} channels=${format.channels} " +
+                "bufferBytes=$bufferBytes" +
+                if (configuredMainMediaBuffer) {
+                    " configuredDurationMs=${MainMediaAudioBuffer.sanitizeDurationMs(mainMediaAudioBufferDurationMs)}"
+                } else {
+                    ""
+                },
         )
     }
 
