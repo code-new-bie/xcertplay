@@ -305,6 +305,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var advancedAudioChannelMapping = false
     @Volatile private var debugLogsEnabled = false
     private var mediaMetricsEnabled = false
+    private var audioPacketCaptureEnabled = false
     private var moreGesturesToSettings = false
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
@@ -488,6 +489,7 @@ class CarPlayHostActivity : ComponentActivity() {
         microphoneGainPercent = AirPlayPersistence.loadMicrophoneGainPercent(this)
         debugLogsEnabled = AirPlayPersistence.loadDebugLogsEnabled(this)
         mediaMetricsEnabled = AirPlayPersistence.loadMediaMetricsEnabled(this)
+        audioPacketCaptureEnabled = AirPlayPersistence.loadAudioPacketCaptureEnabled(this)
         moreGesturesToSettings = AirPlayPersistence.loadMoreGesturesToSettings(this)
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
         manufacturer = AirPlayPersistence.loadManufacturer(this)
@@ -1278,6 +1280,13 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(12) },
         )
         content.addView(
+            buildAudioPacketCaptureSection(),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(20) },
+        )
+        content.addView(
             buildDebugLogsSection(),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1456,6 +1465,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveOemLabel(this, oemLabel)
         AirPlayPersistence.saveDebugLogsEnabled(this, debugLogsEnabled)
         AirPlayPersistence.saveMediaMetricsEnabled(this, mediaMetricsEnabled)
+        AirPlayPersistence.saveAudioPacketCaptureEnabled(this, audioPacketCaptureEnabled)
         AirPlayPersistence.saveMoreGesturesToSettings(this, moreGesturesToSettings)
         AirPlayPersistence.saveRightHandDrive(this, rightHandDrive)
         AirPlayPersistence.saveHideTopBar(this, hideTopBar)
@@ -1950,6 +1960,19 @@ class CarPlayHostActivity : ComponentActivity() {
             mediaMetricsEnabled = checked
             appendLog("Media latency monitor ${if (checked) "enabled" else "disabled"}")
             updateMediaMetricsOverlay()
+        }
+
+    private fun buildAudioPacketCaptureSection(): View =
+        settingsSwitchRow(
+            label = "Audio diagnostic capture",
+            checked = audioPacketCaptureEnabled,
+            description = "Capture encrypted UDP and decrypted RTP audio packets for diagnostics",
+        ) { checked ->
+            audioPacketCaptureEnabled = checked
+            appendLog(
+                "Audio diagnostic capture ${if (checked) "enabled" else "disabled"}; " +
+                    "applies when settings close",
+            )
         }
 
     private fun buildMicrophoneGainSection(): View {
@@ -3461,7 +3484,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun audioCaptureDirectory(): File? {
-        if (!File(filesDir, AUDIO_CAPTURE_MARKER).isFile) return null
+        if (!audioPacketCaptureEnabled) return null
         return File(filesDir, AUDIO_CAPTURE_DIRECTORY)
     }
 
@@ -4018,7 +4041,6 @@ class CarPlayHostActivity : ComponentActivity() {
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
-        const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
         const val PROTOCOL_TRACE_PREFIX = "TRACE "
         const val THREE_FINGER_COUNT = 3
