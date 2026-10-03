@@ -38,7 +38,8 @@
     <string name="export_logs_done">Exported %1$d log files to %2$s</string>
     <string name="export_logs_failed">Could not export logs: %1$s</string>
     <string name="export_logs_note">Copies xcertplay.log and this app\'s system log to the Download/xcertplay folder, so they can be copied to a USB drive without ADB.</string>
-    <string name="save_reconnect">Save and reconnect</string>
+    <string name="save_reconnect">Save</string>
+    <string name="mic_test_while_connected">Disconnect CarPlay to test the microphone</string>
     <string name="exit_app">EXIT APPLICATION</string>
     <string name="discard_exit">Discard changes and exit settings</string>
 

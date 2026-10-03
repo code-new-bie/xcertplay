@@ -123,6 +123,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val safeAreaSize: DisplaySize?,
         val safeAreaRect: SafeAreaRect?,
         val customIconBytes: ByteArray?,
+        val handshake: List<Any?>,
     )
 
     private lateinit var airPlayIdentity: AirPlayIdentity
@@ -389,6 +390,10 @@ class CarPlayHostActivity : ComponentActivity() {
     private val activeScreenStreamTypes = mutableSetOf<Int>()
     private var handshakeResetInProgress = false
     private var startAfterHandshakeReset = false
+    /** The settings page is open over a running session that was not torn down. */
+    private var sessionKeptForSettings = false
+    private var displayChangedWhileSettingsOpen = false
+    private var connectionLostWhileSettingsOpen = false
     private var restartGeneration = 0
     private var reconnectScheduled = false
     private var sessionLog: SessionLogFile? = null
@@ -663,7 +668,10 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun updateBydCallUi() {
-        bydCallUiSuppressor.updateUsage(carPlayPageVisible, controller?.hasActiveAirPlaySession() == true)
+        bydCallUiSuppressor.updateUsage(
+            carPlayPageVisible && !menuOpen,
+            controller?.hasActiveAirPlaySession() == true,
+        )
     }
 
     override fun onResume() {
@@ -1690,6 +1698,32 @@ class CarPlayHostActivity : ComponentActivity() {
                 AirPlayPersistence.loadSafeAreaRect(this, it.width, it.height)
             },
             customIconBytes = customIconBytes,
+            handshake = handshakeSettings(),
+        )
+    }
+
+    /**
+     * Every setting the next connection reads when it starts. If any differs after the settings
+     * page closes, the session must be renegotiated; otherwise the running session is kept.
+     */
+    private fun handshakeSettings(): List<Any?> {
+        val size = currentActivitySize()
+        return listOf(
+            wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
+            localMfiCertificateUri, localMfiPrivateKeyUri,
+            wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
+            manualHotspotChannel, manualHotspotSecurity, wifiDirectChannel,
+            locationReportingEnabled, customVehicleName, manufacturer, model,
+            displayScaleTenths, fps, widthPhysicalMm, physicalSizeBasis, hevcEnabled, hevcSoftwareDecoderEnabled,
+            rightHandDrive, hideTopBar, hideBottomBar, safeAreaDrawOutside,
+            size?.let { AirPlayPersistence.loadSafeAreaRect(this, it.width, it.height) },
+            runCatching { AirPlayPersistence.loadCustomAirPlayIconFile(this)?.readBytes()?.contentHashCode() }
+                .getOrNull(),
+            audioPacketCaptureEnabled,
+            advancedAudioChannelMapping, muteLocalMediaPlayback, mediaAudioChannel, navigationAudioChannel,
+            mainMediaAudioBufferDurationMs, microphoneGainPercent,
+            BydVehicleSettings.speedEnabled(this), BydVehicleSettings.batteryEnabled(this),
+            BydVehicleSettings.dcChargingEnabled(this), BydVehicleSettings.capacityKwh(this),
         )
     }
 
@@ -2525,7 +2559,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun startMicrophoneGainTest() {
-        if (!menuOpen || handshakeResetInProgress || microphoneLevelMonitor != null) return
+        if (!menuOpen || handshakeResetInProgress || sessionKeptForSettings || microphoneLevelMonitor != null) return
         if (!microphoneAvailable) {
             microphoneGainTestAfterPermission = true
             microphoneLevelValueView?.text = getString(R.string.permission_required)
@@ -2551,7 +2585,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     if (microphoneLevelMonitor !== monitor) return@runOnUiThread
                     microphoneLevelMonitor = null
                     microphoneTestButton?.text = getString(R.string.audio_channel_test)
-                    microphoneTestButton?.isEnabled = menuOpen && !handshakeResetInProgress
+                    microphoneTestButton?.isEnabled = menuOpen && !handshakeResetInProgress && !sessionKeptForSettings
                     if (error != null) {
                         Log.e(TAG, "microphone gain test failed", error)
                         microphoneLevelBar?.progress = 0
@@ -3786,6 +3820,9 @@ class CarPlayHostActivity : ComponentActivity() {
                     appearanceSync.end(session)
                     if (controller?.hasActiveAirPlaySession() != true) appearanceSync.stop()
                     updateBydCallUi()
+                    if (menuOpen && sessionKeptForSettings && controllerGeneration == restartGeneration) {
+                        connectionLostWhileSettingsOpen = true
+                    }
                     if (menuOpen || controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
@@ -3798,6 +3835,9 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onTransportError(message: String) {
                 runOnUiThread {
+                    if (menuOpen && sessionKeptForSettings && controllerGeneration == restartGeneration) {
+                        connectionLostWhileSettingsOpen = true
+                    }
                     if (menuOpen || controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
@@ -3827,6 +3867,12 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun createStatusReporter(
         controllerGeneration: Int,
     ): (CarPlayStatus) -> Unit = { status ->
+        if (
+            menuOpen && sessionKeptForSettings && controllerGeneration == restartGeneration &&
+            status is CarPlayStatus.Failed
+        ) {
+            connectionLostWhileSettingsOpen = true
+        }
         if (!menuOpen && controllerGeneration == restartGeneration) {
             updateHotspotStatus(status)
             val description = status.describe()
@@ -4013,6 +4059,7 @@ class CarPlayHostActivity : ComponentActivity() {
             appendLog("Display detected: ${size.width}x${size.height}")
             maybeStartCarPlay()
         } else if (menuOpen || handshakeResetInProgress) {
+            if (sessionKeptForSettings) displayChangedWhileSettingsOpen = true
             appendLog(
                 "Display updated while handshake is reset: " +
                     "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
@@ -4153,6 +4200,39 @@ class CarPlayHostActivity : ComponentActivity() {
         stopMicrophoneGainTest()
         settingsBaseline = captureSettingsBaseline()
         menuOpen = true
+        sessionKeptForSettings = !handshakeResetInProgress && controller?.hasActiveAirPlaySession() == true
+        displayChangedWhileSettingsOpen = false
+        connectionLostWhileSettingsOpen = false
+        if (sessionKeptForSettings) {
+            // Release any held touch; the settings page now covers CarPlay.
+            controller?.sendTouch(emptyList())
+            updateBydCallUi()
+            updateHotspotStatusBlock()
+        } else {
+            resetHandshakeForSettings()
+        }
+        gestureOverlay?.visibility = View.GONE
+        settingsMenu?.visibility = View.VISIBLE
+        syncMainMediaAudioBufferControls()
+        syncMicrophoneGainControls()
+        microphoneTestButton?.isEnabled = false
+        if (sessionKeptForSettings) {
+            microphoneLevelValueView?.text = getString(R.string.mic_test_while_connected)
+        }
+        updateDebugOverlays()
+        clearScreenLogs()
+        appendLog(
+            if (sessionKeptForSettings) {
+                "Settings opened; CarPlay session kept"
+            } else {
+                "Settings opened; CarPlay handshake reset"
+            },
+        )
+        updateResolutionMenu()
+    }
+
+    /** Tears the session down so the next start renegotiates with the current settings. */
+    private fun resetHandshakeForSettings() {
         handshakeResetInProgress = true
         startAfterHandshakeReset = false
         hotspotStatus = HotspotStatus(state = if (wirelessEnabled) "stopped" else "off")
@@ -4168,15 +4248,6 @@ class CarPlayHostActivity : ComponentActivity() {
         sink = null
         activeScreenStreamTypes.clear()
         setConnectionStage(getString(R.string.stage_reconnect_settings))
-        gestureOverlay?.visibility = View.GONE
-        settingsMenu?.visibility = View.VISIBLE
-        syncMainMediaAudioBufferControls()
-        syncMicrophoneGainControls()
-        microphoneTestButton?.isEnabled = false
-        updateDebugOverlays()
-        clearScreenLogs()
-        appendLog("Settings opened; CarPlay handshake reset")
-        updateResolutionMenu()
         teardownExecutor.execute {
             try {
                 oldController?.close()
@@ -4205,15 +4276,49 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!menuOpen) return
         if (!validateMfiSettings()) return
         if (!validateManualHotspotSettings()) return
+        val baselineHandshake = settingsBaseline?.handshake
         persistMenuSettings()
         settingsBaseline = null
-        finishSettingsMenu("Settings saved")
+        closeSettings("Settings saved", baselineHandshake)
     }
 
     private fun cancelSettingsEdits() {
         if (!menuOpen) return
+        // Some settings (safe area, icon, BYD vehicle data) are stored while editing.
+        val baselineHandshake = settingsBaseline?.handshake
         restoreSettingsBaseline()
-        finishSettingsMenu("Settings changes discarded")
+        closeSettings("Settings changes discarded", baselineHandshake)
+    }
+
+    private fun closeSettings(prefix: String, baselineHandshake: List<Any?>?) {
+        if (sessionKeptForSettings) {
+            sessionKeptForSettings = false
+            val reconnectReason = when {
+                baselineHandshake == null || handshakeSettings() != baselineHandshake -> "connection settings changed"
+                displayChangedWhileSettingsOpen -> "display changed while settings were open"
+                connectionLostWhileSettingsOpen || controller?.hasActiveAirPlaySession() != true ->
+                    "connection lost while settings were open"
+                else -> null
+            }
+            if (reconnectReason == null) {
+                closeSettingsKeepingSession(prefix)
+                return
+            }
+            appendLog("$prefix; $reconnectReason")
+            resetHandshakeForSettings()
+        }
+        finishSettingsMenu(prefix)
+    }
+
+    private fun closeSettingsKeepingSession(prefix: String) {
+        stopMicrophoneGainTest()
+        menuOpen = false
+        settingsMenu?.visibility = View.GONE
+        gestureOverlay?.visibility = View.VISIBLE
+        updateDebugOverlays()
+        clearScreenLogs()
+        updateBydCallUi()
+        appendLog("$prefix; CarPlay session kept")
     }
 
     private fun finishSettingsMenu(prefix: String) {

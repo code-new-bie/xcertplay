@@ -38,7 +38,8 @@
     <string name="export_logs_done">已导出 %1$d 个日志文件到 %2$s</string>
     <string name="export_logs_failed">导出日志失败：%1$s</string>
     <string name="export_logs_note">将 xcertplay.log 和本应用的系统日志复制到“下载/xcertplay”文件夹，无需 ADB 即可拷到 U 盘。</string>
-    <string name="save_reconnect">保存并重新连接</string>
+    <string name="save_reconnect">保存</string>
+    <string name="mic_test_while_connected">CarPlay 连接中无法测试麦克风</string>
     <string name="exit_app">退出应用</string>
     <string name="discard_exit">放弃更改并退出设置</string>
 
