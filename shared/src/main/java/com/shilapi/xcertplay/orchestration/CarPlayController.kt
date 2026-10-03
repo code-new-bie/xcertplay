@@ -345,6 +345,25 @@ class CarPlayController(
         }
     }
 
+    /** Queues Siri's voice-button command for the active iPhone session. */
+    fun requestSiri(): Boolean {
+        if (closed) return false
+        val session = activeSession ?: return false
+        return try {
+            touchExecutor.execute {
+                if (closed || activeSession !== session) return@execute
+                try {
+                    session.invokeSiri()
+                } catch (error: Exception) {
+                    debugLog("Siri request failed: ${error.javaClass.simpleName}")
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun sendTouch(contacts: List<AirPlayContact>): Boolean {
         if (closed) return false
         val session = activeSession ?: return false

@@ -26,6 +26,7 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
@@ -63,6 +64,7 @@ import com.shilapi.xcertplay.airplay.AirPlaySafeArea
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.CarPlayMediaEngine
+import com.shilapi.xcertplay.airplay.CarPlayVoiceKey
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
@@ -623,6 +625,19 @@ class CarPlayHostActivity : ComponentActivity() {
         wirelessPermissionsReady = !wirelessEnabled || hasRequiredWirelessPermissions()
         maybeStartCarPlay()
         applyFullscreenMode()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val currentController = controller
+        if (!CarPlayVoiceKey.handles(event.keyCode) ||
+            currentController?.hasActiveAirPlaySession() != true) {
+            return super.dispatchKeyEvent(event)
+        }
+        if (CarPlayVoiceKey.invokesSiri(event)) {
+            val queued = currentController.requestSiri()
+            appendLog("Siri: long voice key ${event.keyCode} queued=$queued")
+        }
+        return true
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
