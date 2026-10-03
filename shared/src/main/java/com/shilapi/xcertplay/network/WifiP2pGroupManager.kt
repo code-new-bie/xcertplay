@@ -54,6 +54,8 @@ class WifiP2pGroupManager(
     context: Context,
     private val networkName: String,
     private val passphrase: String,
+    /** A [WifiChannelPreference] channel; 0 keeps the automatic 5 GHz band. */
+    private val preferredChannel: Int = WifiChannelPreference.AUTOMATIC,
 ) : WirelessHotspotManager {
     private val appContext = context.applicationContext
     private val p2pManager = appContext.getSystemService(WifiP2pManager::class.java)
@@ -102,18 +104,37 @@ class WifiP2pGroupManager(
                 callbackThread = thread
             }
 
-            val config = WifiP2pConfig.Builder()
-                .setNetworkName(credentials.ssid)
-                .setPassphrase(credentials.passphrase)
-                .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
-                .build()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                config.groupOwnerIntent = WifiP2pConfig.GROUP_OWNER_INTENT_MAX
-            }
+            val frequencies = WifiChannelPreference.creationFrequencies(preferredChannel)
+            for ((index, frequency) in frequencies.withIndex()) {
+                val config = WifiP2pConfig.Builder()
+                    .setNetworkName(credentials.ssid)
+                    .setPassphrase(credentials.passphrase)
+                    .apply {
+                        if (frequency != null) {
+                            setGroupOperatingFrequency(frequency)
+                        } else {
+                            setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                        }
+                    }
+                    .build()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    config.groupOwnerIntent = WifiP2pConfig.GROUP_OWNER_INTENT_MAX
+                }
 
-            ensureStartActive(attempt)
-            p2pManager.createGroup(p2pChannel, config, createActionListener(attempt))
-            awaitGroupCreated(attempt, deadlineNanos, timeoutMillis)
+                ensureStartActive(attempt)
+                Log.i(TAG, "Wi-Fi P2P create frequencyMHz=${frequency ?: "auto 5 GHz"}")
+                p2pManager.createGroup(p2pChannel, config, createActionListener(attempt))
+                try {
+                    awaitGroupCreated(attempt, deadlineNanos, timeoutMillis)
+                    break
+                } catch (rejected: P2pCreateRejected) {
+                    // Only an explicit rejection permits another request; a timeout may still
+                    // create a group, so it is never retried.
+                    if (index == frequencies.lastIndex) throw rejected
+                    Log.w(TAG, "Wi-Fi P2P channel $preferredChannel rejected; using automatic 5 GHz", rejected)
+                    synchronized(stateLock) { attempt.failure = null }
+                }
+            }
 
             val group = awaitUsableGroup(
                 attempt = attempt,
@@ -190,7 +211,7 @@ class WifiP2pGroupManager(
         override fun onFailure(reason: Int) {
             failAttempt(
                 attempt,
-                IOException("Wi-Fi P2P createGroup failed: ${failureReason(reason)}"),
+                P2pCreateRejected("Wi-Fi P2P createGroup failed: ${failureReason(reason)}"),
             )
         }
     }
@@ -490,6 +511,8 @@ class WifiP2pGroupManager(
     }
 
     private fun is5Ghz(frequencyMHz: Int): Boolean = frequencyMHz in 5150..5895
+
+    private class P2pCreateRejected(message: String) : IOException(message)
 
     private class StartAttempt {
         var channel: WifiP2pManager.Channel? = null

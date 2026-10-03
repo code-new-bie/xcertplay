@@ -1529,6 +1529,7 @@ class CarPlayController(
                         context = appContext,
                         networkName = credentials.ssid,
                         passphrase = credentials.passphrase,
+                        preferredChannel = config.wifiDirectChannel,
                     )
                 }
             WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> LocalOnlyHotspotManager(appContext)

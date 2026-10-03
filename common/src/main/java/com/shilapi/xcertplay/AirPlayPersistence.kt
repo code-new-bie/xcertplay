@@ -11,6 +11,7 @@ import com.shilapi.xcertplay.airplay.SafeAreaCodec
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.MicrophoneGain
+import com.shilapi.xcertplay.network.WifiChannelPreference
 import com.shilapi.xcertplay.orchestration.ManualHotspotBand
 import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.orchestration.MfiTarget
@@ -47,6 +48,7 @@ object AirPlayPersistence {
     private const val KEY_MANUAL_HOTSPOT_BAND = "manual_hotspot_band"
     private const val KEY_MANUAL_HOTSPOT_CHANNEL = "manual_hotspot_channel"
     private const val KEY_MANUAL_HOTSPOT_SECURITY = "manual_hotspot_security"
+    private const val KEY_WIFI_DIRECT_CHANNEL = "wifi_direct_channel"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
     private const val KEY_MEDIA_METRICS_ENABLED = "media_metrics_enabled"
     private const val KEY_AUDIO_PACKET_CAPTURE_ENABLED = "audio_packet_capture_enabled"
@@ -291,6 +293,17 @@ object AirPlayPersistence {
     fun saveManualHotspotChannel(context: Context, channel: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(KEY_MANUAL_HOTSPOT_CHANNEL, channel.coerceIn(0, 196))
+            .apply()
+    }
+
+    fun loadWifiDirectChannel(context: Context): Int = WifiChannelPreference.sanitize(
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_WIFI_DIRECT_CHANNEL, WifiChannelPreference.AUTOMATIC),
+    )
+
+    fun saveWifiDirectChannel(context: Context, channel: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_WIFI_DIRECT_CHANNEL, WifiChannelPreference.sanitize(channel))
             .apply()
     }
 

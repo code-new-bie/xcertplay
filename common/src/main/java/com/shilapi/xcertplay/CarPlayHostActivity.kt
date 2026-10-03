@@ -85,6 +85,7 @@ import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.orchestration.isManualHotspotChannelCompatible
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
+import com.shilapi.xcertplay.network.WifiChannelPreference
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
 import com.shilapi.xcertplay.transport.UsbDeviceId
 import java.io.File
@@ -147,6 +148,7 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotPassphrase = manualHotspotPassphrase,
         manualHotspotBand = manualHotspotBand,
         manualHotspotChannel = manualHotspotChannel,
+        wifiDirectChannel = wifiDirectChannel,
         manualHotspotSecurity = manualHotspotSecurity,
         locationReportingEnabled = locationReportingEnabled,
     )
@@ -344,6 +346,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotPassphrase = ""
     private var manualHotspotBand = ManualHotspotBand.AUTO
     private var manualHotspotChannel = 0
+    private var wifiDirectChannel = WifiChannelPreference.AUTOMATIC
     private var manualHotspotSecurity = ManualHotspotSecurity.OPEN
     private var awaitingVpnConsent = false
     private var awaitingWirelessPermissions = false
@@ -538,6 +541,7 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotPassphrase = AirPlayPersistence.loadManualHotspotPassphrase(this)
         manualHotspotBand = AirPlayPersistence.loadManualHotspotBand(this)
         manualHotspotChannel = AirPlayPersistence.loadManualHotspotChannel(this)
+        wifiDirectChannel = AirPlayPersistence.loadWifiDirectChannel(this)
         manualHotspotSecurity = AirPlayPersistence.loadManualHotspotSecurity(this)
         wirelessPermissionsReady = !wirelessEnabled || hasRequiredWirelessPermissions()
     }
@@ -1501,6 +1505,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveManualHotspotPassphrase(this, manualHotspotPassphrase)
         AirPlayPersistence.saveManualHotspotBand(this, manualHotspotBand)
         AirPlayPersistence.saveManualHotspotChannel(this, manualHotspotChannel)
+        AirPlayPersistence.saveWifiDirectChannel(this, wifiDirectChannel)
         AirPlayPersistence.saveManualHotspotSecurity(this, manualHotspotSecurity)
         AirPlayPersistence.saveLocationReportingEnabled(this, locationReportingEnabled)
         AirPlayPersistence.saveAutoStartOnBoot(this, autoStartOnBoot)
@@ -2816,6 +2821,28 @@ class CarPlayHostActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ),
         )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            section.addView(
+                settingsChoiceRow(
+                    "Wi-Fi P2P channel",
+                    WifiChannelPreference.channels.map { it to WifiChannelPreference.label(it) },
+                    wifiDirectChannel,
+                ) { wifiDirectChannel = it },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) },
+            )
+            section.addView(
+                menuText(
+                    "Requested for the next Wi-Fi P2P connection. Availability depends on the " +
+                        "radio and region; a rejected channel falls back to automatic 5 GHz.",
+                    14f,
+                    MENU_SECONDARY,
+                ),
+            )
+        }
 
         val manualFields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
