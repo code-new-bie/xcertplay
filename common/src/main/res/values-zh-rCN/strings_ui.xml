@@ -96,7 +96,7 @@
     <string name="choose_image">选择图片</string>
     <string name="default_icon">默认图标</string>
     <string name="icon_custom">自定义 1:1 图标</string>
-    <string name="icon_default">默认占位图标</string>
+    <string name="icon_default">默认图标（比亚迪标志）</string>
     <string name="driving_side">驾驶位</string>
     <string name="lhd">左舵</string>
     <string name="rhd">右舵</string>

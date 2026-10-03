@@ -96,7 +96,7 @@
     <string name="choose_image">Choose image</string>
     <string name="default_icon">Default icon</string>
     <string name="icon_custom">Custom 1:1 icon</string>
-    <string name="icon_default">Default placeholder icon</string>
+    <string name="icon_default">Default icon (BYD logo)</string>
     <string name="driving_side">Driving side</string>
     <string name="lhd">Left-hand drive</string>
     <string name="rhd">Right-hand drive</string>
