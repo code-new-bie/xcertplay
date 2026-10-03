@@ -40,6 +40,10 @@ class AndroidMediaSink(
     private val microphoneGainPercent: Int = MicrophoneGain.DEFAULT_PERCENT,
     mediaMetricsMonitor: MediaMetricsMonitor? = null,
     onScreenStreamActiveChanged: ((Int, Boolean) -> Unit)? = null,
+    /** Head-unit legacy stream numbers ([VehicleAudioChannel]); 0 keeps usage routing. */
+    private val mediaChannel: Int = VehicleAudioChannel.AUTOMATIC,
+    private val navigationChannel: Int = VehicleAudioChannel.AUTOMATIC,
+    private val muteLocalMediaPlayback: Boolean = false,
 ) : MediaSink {
     private val defaultSurface = surface
     @Volatile private var screenStreamActiveChanged = onScreenStreamActiveChanged
@@ -99,10 +103,15 @@ class AndroidMediaSink(
     }
 
     override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {
+        if (!shouldPlayLocally(format)) {
+            Log.i("xcertplay-usb", "local media playback muted type=${format.payloadType} audioType=${format.audioType}")
+            return
+        }
         audioRenderer(id, format).start()
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
+        if (!shouldPlayLocally(format)) return
         audioRenderer(id, format).submit(rtp, sample)
     }
 
@@ -144,6 +153,14 @@ class AndroidMediaSink(
             )
         }
 
+    private fun shouldPlayLocally(format: AudioFormat): Boolean = AudioChannelMapper.shouldPlayLocally(
+        format.audioType,
+        format.payloadType,
+        if (advancedAudioChannelMapping) AudioChannelMappingMode.AUTOMOTIVE_BUS
+        else AudioChannelMappingMode.MOBILE_COMPATIBLE,
+        muteLocalMediaPlayback,
+    )
+
     @Synchronized
     private fun audioRenderer(id: AudioStreamId, format: AudioFormat): AudioRenderer {
         val existing = audioRenderers[id]
@@ -154,6 +171,8 @@ class AndroidMediaSink(
             advancedAudioChannelMapping,
             mainMediaAudioBufferDurationMs,
             mediaMetricsMonitor,
+            mediaChannel,
+            navigationChannel,
         ).also {
             audioRenderers[id] = it
         }
@@ -544,6 +563,8 @@ private class AudioRenderer(
     private val advancedAudioChannelMapping: Boolean,
     private val mainMediaAudioBufferDurationMs: Int,
     mediaMetricsMonitor: MediaMetricsMonitor?,
+    private val mediaChannel: Int,
+    private val navigationChannel: Int,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -733,16 +754,21 @@ private class AudioRenderer(
         )
         val usage = usageFor(selection.channel)
         val contentType = contentTypeFor(selection.contentType)
-        return AudioAttributes.Builder()
+        val streamOverride = when (selection.channel) {
+            AudioChannel.MEDIA -> mediaChannel
+            AudioChannel.NAVIGATION -> navigationChannel
+            else -> VehicleAudioChannel.AUTOMATIC
+        }
+        return (VehicleAudioChannel.attributes(streamOverride) ?: AudioAttributes.Builder()
             .setUsage(usage)
             .setContentType(contentType)
-            .build()
+            .build())
             .also {
                 Log.i(
                     TAG,
                     "audio route type=${format.payloadType} audioType=${format.audioType} " +
                         "mode=$mode channel=${selection.channel} " +
-                        "usage=$usage contentType=$contentType",
+                        "usage=$usage contentType=$contentType streamOverride=$streamOverride",
                 )
             }
     }

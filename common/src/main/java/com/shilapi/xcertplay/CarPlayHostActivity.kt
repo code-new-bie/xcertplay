@@ -71,6 +71,7 @@ import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
+import com.shilapi.xcertplay.media.VehicleAudioChannel
 import com.shilapi.xcertplay.media.MediaMetricsMonitor
 import com.shilapi.xcertplay.media.MicrophoneGain
 import com.shilapi.xcertplay.media.MicrophoneLevelMonitor
@@ -310,6 +311,12 @@ class CarPlayHostActivity : ComponentActivity() {
     private var hevcSoftwareDecoderEnabled = false
     private var advancedAudioChannelMappingSupported = false
     private var advancedAudioChannelMapping = false
+    private var muteLocalMediaPlayback = false
+    private var mediaAudioChannel = VehicleAudioChannel.AUTOMATIC
+    private var navigationAudioChannel = VehicleAudioChannel.AUTOMATIC
+    private val channelPreview = AudioChannelPreview { channel ->
+        Toast.makeText(this, "Cannot preview audio channel $channel on this head unit", Toast.LENGTH_SHORT).show()
+    }
     private var mainMediaAudioBufferDurationMs = MainMediaAudioBuffer.DEFAULT_DURATION_MS
     @Volatile private var debugLogsEnabled = false
     private var mediaMetricsEnabled = false
@@ -505,6 +512,9 @@ class CarPlayHostActivity : ComponentActivity() {
         advancedAudioChannelMapping =
             advancedAudioChannelMappingSupported &&
                 AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
+        muteLocalMediaPlayback = AirPlayPersistence.loadMuteLocalMediaPlayback(this)
+        mediaAudioChannel = AirPlayPersistence.loadMediaAudioChannel(this)
+        navigationAudioChannel = AirPlayPersistence.loadNavigationAudioChannel(this)
         mainMediaAudioBufferDurationMs =
             AirPlayPersistence.loadMainMediaAudioBufferDurationMs(this)
         microphoneGainPercent = AirPlayPersistence.loadMicrophoneGainPercent(this)
@@ -651,6 +661,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onStop() {
         stopMicrophoneGainTest()
+        channelPreview.stop()
         // The controller, USB/iAP2 link, and VPN attachment intentionally outlive the UI.
         super.onStop()
     }
@@ -668,6 +679,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        channelPreview.close()
         appearanceMonitor?.stop()
         appearanceSync.stop()
         stopMicrophoneGainTest()
@@ -999,6 +1011,50 @@ class CarPlayHostActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(20) },
+        )
+        content.addView(
+            settingsSwitchRow(
+                label = "Mute local media playback",
+                checked = muteLocalMediaPlayback,
+                description = "Keep CarPlay navigation, calls and Siri audible; select Bluetooth " +
+                    "music output on the iPhone separately",
+            ) { checked ->
+                muteLocalMediaPlayback = checked
+                appendLog("Local media playback ${if (checked) "muted" else "enabled"}; applies when settings close")
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(20) },
+        )
+        content.addView(
+            menuText(
+                "Mutes music in xcertplay only; navigation prompts, calls and Siri still play.",
+                14f,
+                MENU_SECONDARY,
+            ),
+        )
+        content.addView(
+            buildVehicleAudioChannelRow("Media audio channel", navigation = false),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(20) },
+        )
+        content.addView(
+            buildVehicleAudioChannelRow("Navigation audio channel", navigation = true),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) },
+        )
+        content.addView(
+            menuText(
+                "0 = automatic routing. 1-${VehicleAudioChannel.MAX} = a head-unit audio channel number; " +
+                    "Test plays a short tone through it. Applies when settings close.",
+                14f,
+                MENU_SECONDARY,
+            ),
         )
         if (advancedAudioChannelMappingSupported) {
             content.addView(
@@ -1510,6 +1566,9 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveLocationReportingEnabled(this, locationReportingEnabled)
         AirPlayPersistence.saveAutoStartOnBoot(this, autoStartOnBoot)
         AirPlayPersistence.saveAdvancedAudioChannelMapping(this, advancedAudioChannelMapping)
+        AirPlayPersistence.saveMuteLocalMediaPlayback(this, muteLocalMediaPlayback)
+        AirPlayPersistence.saveMediaAudioChannel(this, mediaAudioChannel)
+        AirPlayPersistence.saveNavigationAudioChannel(this, navigationAudioChannel)
         AirPlayPersistence.saveMainMediaAudioBufferDurationMs(
             this,
             mainMediaAudioBufferDurationMs,
@@ -2042,6 +2101,43 @@ class CarPlayHostActivity : ComponentActivity() {
                     "applies when settings close",
             )
         }
+
+    private fun buildVehicleAudioChannelRow(label: String, navigation: Boolean): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val current = if (navigation) navigationAudioChannel else mediaAudioChannel
+        row.addView(
+            settingsInputRow(label, current.toString(), numeric = true) { value ->
+                val channel = VehicleAudioChannel.sanitize(value.trim().toIntOrNull() ?: 0)
+                if (navigation) navigationAudioChannel = channel else mediaAudioChannel = channel
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        row.addView(
+            Button(this).apply {
+                text = "Test"
+                isAllCaps = false
+                textSize = 16f
+                setTextColor(MENU_BUTTON_TEXT)
+                backgroundTintList = ColorStateList.valueOf(MENU_ACCENT)
+                minWidth = dp(78)
+                contentDescription = "Test $label"
+                setOnClickListener {
+                    channelPreview.play(
+                        if (navigation) navigationAudioChannel else mediaAudioChannel,
+                        navigation,
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(12) },
+        )
+        return row
+    }
 
     private fun buildMicrophoneGainSection(): View {
         val section = LinearLayout(this).apply {
@@ -3398,6 +3494,9 @@ class CarPlayHostActivity : ComponentActivity() {
         onScreenStreamActiveChanged = { type, active ->
             onScreenStreamStateChanged(controllerGeneration, type, active)
         },
+        mediaChannel = mediaAudioChannel,
+        navigationChannel = navigationAudioChannel,
+        muteLocalMediaPlayback = muteLocalMediaPlayback,
     )
 
     private fun createMediaEngine(sink: AndroidMediaSink): CarPlayMediaEngine =

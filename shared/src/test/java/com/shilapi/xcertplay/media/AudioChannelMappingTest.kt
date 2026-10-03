@@ -1,9 +1,35 @@
 package com.shilapi.xcertplay.media
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioChannelMappingTest {
+    @Test
+    fun mutingLocalMediaKeepsGuidanceCallsAndSiri() {
+        val automotive = AudioChannelMappingMode.AUTOMOTIVE_BUS
+        val mobile = AudioChannelMappingMode.MOBILE_COMPATIBLE
+        assertFalse(AudioChannelMapper.shouldPlayLocally("media", 100, automotive, true))
+        assertFalse(AudioChannelMapper.shouldPlayLocally("media", 100, mobile, true))
+        assertFalse(AudioChannelMapper.shouldPlayLocally("compatibility", 100, automotive, true))
+        for (audioType in listOf("alert", "telephony", "speechRecognition")) {
+            assertTrue(AudioChannelMapper.shouldPlayLocally(audioType, 100, automotive, true))
+            assertTrue(AudioChannelMapper.shouldPlayLocally(audioType, 100, mobile, true))
+        }
+        // Mobile mode keeps xcertplay's guidance routing for default/compatibility streams.
+        assertTrue(AudioChannelMapper.shouldPlayLocally("default", 100, mobile, true))
+        assertTrue(AudioChannelMapper.shouldPlayLocally("compatibility", 100, mobile, true))
+        assertTrue(AudioChannelMapper.shouldPlayLocally("media", 100, automotive, false))
+    }
+
+    @Test
+    fun vehicleAudioChannelIsLimitedToHeadUnitRange() {
+        assertEquals(0, VehicleAudioChannel.sanitize(-3))
+        assertEquals(7, VehicleAudioChannel.sanitize(7))
+        assertEquals(VehicleAudioChannel.MAX, VehicleAudioChannel.sanitize(99))
+    }
+
     @Test
     fun mobileCompatibleMappingMatchesTheOriginalRouting() {
         assertMapped(

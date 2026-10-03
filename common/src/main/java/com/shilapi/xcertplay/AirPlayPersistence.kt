@@ -11,6 +11,7 @@ import com.shilapi.xcertplay.airplay.SafeAreaCodec
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.MicrophoneGain
+import com.shilapi.xcertplay.media.VehicleAudioChannel
 import com.shilapi.xcertplay.network.WifiChannelPreference
 import com.shilapi.xcertplay.orchestration.ManualHotspotBand
 import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
@@ -39,6 +40,9 @@ object AirPlayPersistence {
     private const val KEY_HEVC_ENABLED = "hevc_enabled"
     private const val KEY_HEVC_SOFTWARE_DECODER = "hevc_software_decoder"
     private const val KEY_ADVANCED_AUDIO_CHANNEL_MAPPING = "advanced_audio_channel_mapping"
+    private const val KEY_MUTE_LOCAL_MEDIA_PLAYBACK = "mute_local_media_playback"
+    private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
+    private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_MAIN_MEDIA_AUDIO_BUFFER_DURATION_MS = "main_media_audio_buffer_duration_ms"
     private const val KEY_MICROPHONE_GAIN_PERCENT = "microphone_gain_percent"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
@@ -120,6 +124,40 @@ object AirPlayPersistence {
     fun saveAdvancedAudioChannelMapping(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_ADVANCED_AUDIO_CHANNEL_MAPPING, enabled)
+            .apply()
+    }
+
+    fun loadMuteLocalMediaPlayback(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MUTE_LOCAL_MEDIA_PLAYBACK, false)
+
+    fun saveMuteLocalMediaPlayback(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_MUTE_LOCAL_MEDIA_PLAYBACK, enabled)
+            .apply()
+    }
+
+    /** 0 keeps usage routing; otherwise a head-unit legacy stream number. */
+    fun loadMediaAudioChannel(context: Context): Int = VehicleAudioChannel.sanitize(
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_MEDIA_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
+    )
+
+    fun saveMediaAudioChannel(context: Context, channel: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_MEDIA_AUDIO_CHANNEL, VehicleAudioChannel.sanitize(channel))
+            .apply()
+    }
+
+    /** 0 keeps usage routing; otherwise a head-unit legacy stream number. */
+    fun loadNavigationAudioChannel(context: Context): Int = VehicleAudioChannel.sanitize(
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_NAVIGATION_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
+    )
+
+    fun saveNavigationAudioChannel(context: Context, channel: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NAVIGATION_AUDIO_CHANNEL, VehicleAudioChannel.sanitize(channel))
             .apply()
     }
 

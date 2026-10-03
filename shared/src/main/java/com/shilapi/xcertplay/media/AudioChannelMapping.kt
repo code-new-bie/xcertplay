@@ -31,6 +31,14 @@ internal data class AudioChannelSelection(
 internal object AudioChannelMapper {
     const val STREAM_TYPE_MAIN_HIGH_AUDIO = 102
 
+    /** With local media muted, only the media channel is dropped; guidance, calls and Siri play. */
+    fun shouldPlayLocally(
+        audioType: String,
+        payloadType: Int,
+        mode: AudioChannelMappingMode,
+        muteMedia: Boolean,
+    ): Boolean = !muteMedia || map(audioType, payloadType, mode).channel != AudioChannel.MEDIA
+
     fun map(
         audioType: String,
         payloadType: Int,
