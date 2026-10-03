@@ -99,7 +99,6 @@ import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.orchestration.isManualHotspotChannelCompatible
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
-import com.shilapi.xcertplay.network.WifiChannelPreference
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
 import com.shilapi.xcertplay.transport.UsbDeviceId
 import java.io.File
@@ -170,7 +169,6 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotPassphrase = manualHotspotPassphrase,
         manualHotspotBand = manualHotspotBand,
         manualHotspotChannel = manualHotspotChannel,
-        wifiDirectChannel = wifiDirectChannel,
         manualHotspotSecurity = manualHotspotSecurity,
         locationReportingEnabled = locationReportingEnabled,
     )
@@ -376,7 +374,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotPassphrase = ""
     private var manualHotspotBand = ManualHotspotBand.AUTO
     private var manualHotspotChannel = 0
-    private var wifiDirectChannel = WifiChannelPreference.AUTOMATIC
     private var manualHotspotSecurity = ManualHotspotSecurity.OPEN
     private var awaitingVpnConsent = false
     private var awaitingWirelessPermissions = false
@@ -583,7 +580,6 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotPassphrase = AirPlayPersistence.loadManualHotspotPassphrase(this)
         manualHotspotBand = AirPlayPersistence.loadManualHotspotBand(this)
         manualHotspotChannel = AirPlayPersistence.loadManualHotspotChannel(this)
-        wifiDirectChannel = AirPlayPersistence.loadWifiDirectChannel(this)
         manualHotspotSecurity = AirPlayPersistence.loadManualHotspotSecurity(this)
         wirelessPermissionsReady = !wirelessEnabled || hasRequiredWirelessPermissions()
     }
@@ -1651,7 +1647,6 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveManualHotspotPassphrase(this, manualHotspotPassphrase)
         AirPlayPersistence.saveManualHotspotBand(this, manualHotspotBand)
         AirPlayPersistence.saveManualHotspotChannel(this, manualHotspotChannel)
-        AirPlayPersistence.saveWifiDirectChannel(this, wifiDirectChannel)
         AirPlayPersistence.saveManualHotspotSecurity(this, manualHotspotSecurity)
         AirPlayPersistence.saveLocationReportingEnabled(this, locationReportingEnabled)
         AirPlayPersistence.saveAutoStartOnBoot(this, autoStartOnBoot)
@@ -1712,7 +1707,7 @@ class CarPlayHostActivity : ComponentActivity() {
             wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
             localMfiCertificateUri, localMfiPrivateKeyUri,
             wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
-            manualHotspotChannel, manualHotspotSecurity, wifiDirectChannel,
+            manualHotspotChannel, manualHotspotSecurity,
             locationReportingEnabled, customVehicleName, manufacturer, model,
             displayScaleTenths, fps, widthPhysicalMm, physicalSizeBasis, hevcEnabled, hevcSoftwareDecoderEnabled,
             rightHandDrive, hideTopBar, hideBottomBar, safeAreaDrawOutside,
@@ -3161,23 +3156,6 @@ class CarPlayHostActivity : ComponentActivity() {
             ),
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            section.addView(
-                settingsChoiceRow(
-                    getString(R.string.wifi_p2p_channel_label),
-                    WifiChannelPreference.channels.map { it to wifiChannelLabel(it) },
-                    wifiDirectChannel,
-                ) { wifiDirectChannel = it },
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(10) },
-            )
-            section.addView(
-                menuText(getString(R.string.wifi_p2p_channel_note), 14f, MENU_SECONDARY),
-            )
-        }
-
         val manualFields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -3606,14 +3584,6 @@ class CarPlayHostActivity : ComponentActivity() {
             oemLabel = vehicleName(),
             icons = listOf(loadAirPlayIcon()),
         )
-    }
-
-    /** A channel's operating frequency does not tell us the negotiated channel width. */
-    private fun wifiChannelLabel(channel: Int): String {
-        val frequency = WifiChannelPreference.frequency(channel)
-            ?: return getString(R.string.wifi_p2p_channel_automatic)
-        val band = if (frequency < 5000) "2.4 GHz" else "5 GHz"
-        return getString(R.string.wifi_p2p_channel_option, band, channel, frequency)
     }
 
     /** Shown as the iPhone's car name and on the CarPlay return-to-car icon. */

@@ -3,12 +3,6 @@
     <!-- Identity -->
     <string name="vehicle_name_label">Vehicle name</string>
 
-    <!-- Wi-Fi P2P channel -->
-    <string name="wifi_p2p_channel_label">Wi-Fi P2P channel</string>
-    <string name="wifi_p2p_channel_automatic">Automatic (5 GHz)</string>
-    <string name="wifi_p2p_channel_option">%1$s · Channel %2$d · %3$d MHz</string>
-    <string name="wifi_p2p_channel_note">Requested for the next Wi-Fi P2P connection. Availability depends on the radio and region; a rejected channel falls back to automatic 5 GHz.</string>
-
     <!-- Audio -->
     <string name="mute_local_media_label">Mute local media playback</string>
     <string name="mute_local_media_desc">Keep CarPlay navigation, calls and Siri audible; select Bluetooth music output on the iPhone separately</string>

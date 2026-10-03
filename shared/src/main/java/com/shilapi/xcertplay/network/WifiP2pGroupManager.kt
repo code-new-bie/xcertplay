@@ -1,6 +1,8 @@
 package com.shilapi.xcertplay.network
 
 import android.content.Context
+import android.net.wifi.SupplicantState
+import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
@@ -54,8 +56,7 @@ class WifiP2pGroupManager(
     context: Context,
     private val networkName: String,
     private val passphrase: String,
-    /** A [WifiChannelPreference] channel; 0 keeps the automatic 5 GHz band. */
-    private val preferredChannel: Int = WifiChannelPreference.AUTOMATIC,
+    private val diagnostic: (String) -> Unit = {},
 ) : WirelessHotspotManager {
     private val appContext = context.applicationContext
     private val p2pManager = appContext.getSystemService(WifiP2pManager::class.java)
@@ -104,76 +105,56 @@ class WifiP2pGroupManager(
                 callbackThread = thread
             }
 
-            val frequencies = WifiChannelPreference.creationFrequencies(preferredChannel)
-            var frequencyIndex = 0
-            var busyRetries = 0
-            while (true) {
-                val frequency = frequencies[frequencyIndex]
-                val config = WifiP2pConfig.Builder()
-                    .setNetworkName(credentials.ssid)
-                    .setPassphrase(credentials.passphrase)
-                    .apply {
-                        if (frequency != null) {
-                            setGroupOperatingFrequency(frequency)
-                        } else {
-                            setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
-                        }
-                    }
-                    .build()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    config.groupOwnerIntent = WifiP2pConfig.GROUP_OWNER_INTENT_MAX
-                }
-
-                ensureStartActive(attempt)
-                Log.i(TAG, "Wi-Fi P2P create frequencyMHz=${frequency ?: "auto 5 GHz"}")
-                p2pManager.createGroup(p2pChannel, config, createActionListener(attempt))
+            val stationFrequency = stationFrequencyMHz()
+            val plan = P2pFrequencyPlan.candidates(stationFrequency)
+            report(
+                "Wi-Fi P2P station=${stationFrequency?.let { "${it}MHz" } ?: "not connected"} " +
+                    "plan=${plan.joinToString { it?.let { mhz -> "${mhz}MHz" } ?: "5GHz-band" }}" +
+                    (P2pFrequencyPlan.sharedRadioNote(stationFrequency)?.let { "; $it" } ?: ""),
+            )
+            var group: WirelessHotspotInfo? = null
+            for ((index, frequency) in plan.withIndex()) {
+                val last = index == plan.lastIndex
                 try {
-                    awaitGroupCreated(attempt, deadlineNanos, timeoutMillis)
-                    break
+                    createGroup(attempt, p2pChannel, credentials, frequency, deadlineNanos, timeoutMillis)
                 } catch (rejected: P2pCreateRejected) {
                     // Only an explicit rejection permits another request; a timeout may still
                     // create a group, so it is never retried.
-                    when (
-                        P2pCreateRetry.next(rejected.reason, busyRetries, frequencyIndex < frequencies.lastIndex)
-                    ) {
-                        P2pCreateRetry.Next.RETRY_SAME -> {
-                            // The radio is still releasing a previous hotspot or group.
-                            busyRetries++
-                            val delayMillis = P2pCreateRetry.busyDelayMillis(busyRetries)
-                            Log.w(TAG, "Wi-Fi P2P busy; retry $busyRetries in ${delayMillis}ms")
-                            synchronized(stateLock) {
-                                attempt.failure = null
-                                // wait(0) would block forever, so an exhausted deadline fails instead.
-                                val waitNanos = minOf(delayMillis * NANOS_PER_MILLISECOND, remainingNanos(deadlineNanos))
-                                if (waitNanos <= 0) throw rejected
-                                waitNanos(waitNanos)
-                                ensureStartActiveLocked(attempt)
-                            }
-                        }
-                        P2pCreateRetry.Next.NEXT_FREQUENCY -> {
-                            Log.w(TAG, "Wi-Fi P2P channel $preferredChannel rejected; using automatic 5 GHz", rejected)
-                            synchronized(stateLock) { attempt.failure = null }
-                            frequencyIndex++
-                            busyRetries = 0
-                        }
-                        P2pCreateRetry.Next.FAIL -> throw rejected
+                    if (last) throw rejected
+                    report("Wi-Fi P2P ${describe(frequency)} rejected (${rejected.message}); trying the next 5 GHz option")
+                    continue
+                }
+                try {
+                    group = awaitUsableGroup(
+                        attempt = attempt,
+                        channel = p2pChannel,
+                        credentials = credentials,
+                        deadlineNanos = deadlineNanos,
+                        timeoutMillis = timeoutMillis,
+                    )
+                    break
+                } catch (wrongBand: P2pWrongBand) {
+                    // Some drivers ignore the band request; keep CarPlay on 5 GHz regardless.
+                    report("Wi-Fi P2P ${describe(frequency)} formed at ${wrongBand.frequencyMHz}MHz; removing it")
+                    removeGroupBlocking(p2pChannel)
+                    synchronized(stateLock) {
+                        attempt.createSucceeded = false
+                        created = false
+                    }
+                    if (last) {
+                        throw IOException("Wi-Fi P2P could not form a 5 GHz group; try LocalOnlyHotspot", wrongBand)
                     }
                 }
             }
-
-            val group = awaitUsableGroup(
-                attempt = attempt,
-                channel = p2pChannel,
-                credentials = credentials,
-                deadlineNanos = deadlineNanos,
-                timeoutMillis = timeoutMillis,
-            )
+            val usableGroup = checkNotNull(group)
+            report("Wi-Fi P2P group ${usableGroup.frequencyMHz}MHz channel=${usableGroup.channel}" +
+                if (usableGroup.frequencyMHz == stationFrequency) " (shares the station channel)" else "")
             synchronized(stateLock) {
                 ensureStartActiveLocked(attempt)
                 created = true
                 startAttempt = null
             }
-            return group
+            return usableGroup
         } catch (failure: Exception) {
             cleanupFailedStart(attempt)
             throw failure
@@ -317,11 +298,7 @@ class WifiP2pGroupManager(
                     "frequencyMHz=$frequencyMHz"
                 continue
             }
-            if (!is5Ghz(frequencyMHz)) {
-                throw IOException(
-                    "Wi-Fi P2P created the group at ${frequencyMHz}MHz instead of 5 GHz",
-                )
-            }
+            if (!is5Ghz(frequencyMHz)) throw P2pWrongBand(frequencyMHz)
 
             val hostAddress = interfaceAddress(interfaceName)
                 ?: requestConnectionAddress(
@@ -475,6 +452,75 @@ class WifiP2pGroupManager(
         failedThread?.quitSafely()
     }
 
+    /** One createGroup request for [frequency] (null = the framework's own 5 GHz choice), retried while busy. */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun createGroup(
+        attempt: StartAttempt,
+        p2pChannel: WifiP2pManager.Channel,
+        credentials: WifiP2pCredentials,
+        frequency: Int?,
+        deadlineNanos: Long,
+        timeoutMillis: Long,
+    ) {
+        var busyRetries = 0
+        while (true) {
+            val config = WifiP2pConfig.Builder()
+                .setNetworkName(credentials.ssid)
+                .setPassphrase(credentials.passphrase)
+                .apply {
+                    if (frequency != null) {
+                        setGroupOperatingFrequency(frequency)
+                    } else {
+                        setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                    }
+                }
+                .build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                config.groupOwnerIntent = WifiP2pConfig.GROUP_OWNER_INTENT_MAX
+            }
+
+            ensureStartActive(attempt)
+            Log.i(TAG, "Wi-Fi P2P create ${describe(frequency)}")
+            p2pManager.createGroup(p2pChannel, config, createActionListener(attempt))
+            try {
+                awaitGroupCreated(attempt, deadlineNanos, timeoutMillis)
+                return
+            } catch (rejected: P2pCreateRejected) {
+                synchronized(stateLock) { attempt.failure = null }
+                if (P2pCreateRetry.next(rejected.reason, busyRetries, hasNextFrequency = false) !=
+                    P2pCreateRetry.Next.RETRY_SAME
+                ) {
+                    throw rejected
+                }
+                // The radio is still releasing a previous hotspot or group.
+                busyRetries++
+                val delayMillis = P2pCreateRetry.busyDelayMillis(busyRetries)
+                report("Wi-Fi P2P busy; retry $busyRetries in ${delayMillis}ms")
+                synchronized(stateLock) {
+                    // wait(0) would block forever, so an exhausted deadline fails instead.
+                    val waitNanos = minOf(delayMillis * NANOS_PER_MILLISECOND, remainingNanos(deadlineNanos))
+                    if (waitNanos <= 0) throw rejected
+                    waitNanos(waitNanos)
+                    ensureStartActiveLocked(attempt)
+                }
+            }
+        }
+    }
+
+    /** The frequency of the head unit's own Wi-Fi connection, or null when it is not connected. */
+    @Suppress("DEPRECATION") // connectionInfo is the only station query available before API 31.
+    private fun stationFrequencyMHz(): Int? = runCatching {
+        val info = appContext.getSystemService(WifiManager::class.java)?.connectionInfo
+        info?.takeIf { it.supplicantState == SupplicantState.COMPLETED && it.frequency > 0 }?.frequency
+    }.getOrNull()
+
+    private fun describe(frequency: Int?): String = frequency?.let { "${it}MHz" } ?: "5 GHz band"
+
+    private fun report(message: String) {
+        Log.i(TAG, message)
+        runCatching { diagnostic(message) }
+    }
+
     private fun removeGroupBlocking(channel: WifiP2pManager.Channel) {
         removeGroup(channel, waitForCallback = true)
     }
@@ -539,6 +585,9 @@ class WifiP2pGroupManager(
 
     private class P2pCreateRejected(val reason: Int, message: String) : IOException(message)
 
+    private class P2pWrongBand(val frequencyMHz: Int) :
+        IOException("Wi-Fi P2P created the group at ${frequencyMHz}MHz instead of 5 GHz")
+
     private class StartAttempt {
         var channel: WifiP2pManager.Channel? = null
         var thread: HandlerThread? = null
@@ -575,4 +624,29 @@ internal object P2pCreateRetry {
 
     /** 0.5 s, 1 s, 1.5 s: enough for a hotspot that was just stopped to release the radio. */
     fun busyDelayMillis(retry: Int): Long = BUSY_RETRY_STEP_MILLIS * retry
+}
+
+/**
+ * Where to form the CarPlay Wi-Fi P2P group. It always stays on 5 GHz. When the head unit's own
+ * Wi-Fi is connected on a 5 GHz channel a group owner may use, the group shares that channel so the
+ * radio does not alternate between two channels, which shows up as periodic audio stalls.
+ */
+internal object P2pFrequencyPlan {
+    /** Non-DFS 5 GHz channels 36-48 and 149-165, where a group owner may operate. */
+    val GROUP_OWNER_5GHZ = listOf(5180, 5200, 5220, 5240, 5745, 5765, 5785, 5805, 5825)
+    private val FALLBACKS = listOf(5745, 5180)
+
+    /** Candidates in order; null asks the framework for any 5 GHz channel. */
+    fun candidates(stationFrequencyMHz: Int?): List<Int?> = buildList {
+        if (stationFrequencyMHz in GROUP_OWNER_5GHZ) add(stationFrequencyMHz)
+        add(null)
+        FALLBACKS.filterNot { it == stationFrequencyMHz }.forEach(::add)
+    }
+
+    /** Why the group cannot share the station channel, or null when it can or no station is connected. */
+    fun sharedRadioNote(stationFrequencyMHz: Int?): String? = when {
+        stationFrequencyMHz == null || stationFrequencyMHz in GROUP_OWNER_5GHZ -> null
+        stationFrequencyMHz < 5000 -> "station is on 2.4 GHz; the radio will alternate channels"
+        else -> "station channel cannot host a group owner (DFS); the radio will alternate channels"
+    }
 }

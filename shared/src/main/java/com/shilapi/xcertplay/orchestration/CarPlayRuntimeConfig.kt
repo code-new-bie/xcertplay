@@ -62,7 +62,6 @@ class CarPlayRuntimeConfig(
     val manualHotspotPassphrase: String? = null,
     val manualHotspotBand: ManualHotspotBand = ManualHotspotBand.AUTO,
     val manualHotspotChannel: Int = 0,
-    val wifiDirectChannel: Int = 0,
     val manualHotspotSecurity: ManualHotspotSecurity = ManualHotspotSecurity.WPA2,
     val locationReportingEnabled: Boolean = false,
 ) {

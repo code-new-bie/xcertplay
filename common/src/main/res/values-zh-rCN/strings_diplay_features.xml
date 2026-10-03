@@ -3,12 +3,6 @@
     <!-- 身份 -->
     <string name="vehicle_name_label">车辆名称</string>
 
-    <!-- Wi-Fi P2P 信道 -->
-    <string name="wifi_p2p_channel_label">Wi-Fi P2P 信道</string>
-    <string name="wifi_p2p_channel_automatic">自动（5 GHz）</string>
-    <string name="wifi_p2p_channel_option">%1$s · 信道 %2$d · %3$d MHz</string>
-    <string name="wifi_p2p_channel_note">用于下一次 Wi-Fi P2P 连接。能否使用取决于无线芯片和地区；所选信道被拒绝时自动回退为 5 GHz 自动选择。</string>
-
     <!-- 音频 -->
     <string name="mute_local_media_label">静音本机媒体播放</string>
     <string name="mute_local_media_desc">保留 CarPlay 导航、通话和 Siri 的声音；音乐请在 iPhone 上单独选择蓝牙输出</string>
