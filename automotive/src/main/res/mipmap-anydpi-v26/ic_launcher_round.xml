@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BYD build: overrides the shared launcher icon without changing upstream's files. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_carplay_background" />
+    <foreground android:drawable="@drawable/ic_launcher_carplay_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_carplay_foreground" />
+</adaptive-icon>

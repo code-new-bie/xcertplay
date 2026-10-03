@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A gauge arc around a play symbol: driving plus media. Kept inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M34.91,73.09 A27,27 0 1,1 73.09,73.09"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M48,43 L65,54 L48,65 Z"
+        android:fillColor="#FFFFFFFF"
+        android:strokeWidth="4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineJoin="round" />
+</vector>

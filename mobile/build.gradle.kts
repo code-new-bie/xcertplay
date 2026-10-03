@@ -11,6 +11,9 @@ android {
 
     defaultConfig {
         applicationId = "com.shilapi.xcertplay"
+        // BYD build: installs beside upstream xcertplay and is told apart in logs.
+        applicationIdSuffix = ".byd"
+        versionNameSuffix = "-byd.1"
         minSdk = 28
         targetSdk = 37
         versionCode = 1303
