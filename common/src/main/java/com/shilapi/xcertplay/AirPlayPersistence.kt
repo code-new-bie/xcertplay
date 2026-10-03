@@ -53,7 +53,7 @@ object AirPlayPersistence {
     private const val KEY_MORE_GESTURES_TO_SETTINGS = "more_gestures_to_settings"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
-    private const val KEY_OEM_LABEL = "oem_label"
+    private const val KEY_VEHICLE_NAME = "vehicle_name"
     private const val KEY_FPS = "display_fps"
     private const val KEY_WIDTH_PHYSICAL_MM = "display_width_physical_mm"
     private const val KEY_PHYSICAL_SIZE_BASIS = "display_physical_size_basis"
@@ -76,7 +76,6 @@ object AirPlayPersistence {
 
     const val DEFAULT_MANUFACTURER = "xcertplay"
     const val DEFAULT_MODEL = "xcertplay"
-    const val DEFAULT_OEM_LABEL = ""
     const val DEFAULT_MFI_I2C_PATH = "/dev/i2c-1"
 
     fun loadDisplayScaleTenths(context: Context): Int {
@@ -396,15 +395,17 @@ object AirPlayPersistence {
             .apply()
     }
 
-    fun loadOemLabel(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_OEM_LABEL, DEFAULT_OEM_LABEL)
-            .orEmpty()
+    /** The user's own vehicle name, or empty when the name follows the head unit's Bluetooth name. */
+    fun loadCustomVehicleName(context: Context): String =
+        VehicleName.sanitize(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VEHICLE_NAME, null),
+        ).orEmpty()
 
-    fun saveOemLabel(context: Context, oemLabel: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_OEM_LABEL, oemLabel)
-            .apply()
+    fun saveCustomVehicleName(context: Context, name: String) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        val sanitized = VehicleName.sanitize(name)
+        if (sanitized == null) editor.remove(KEY_VEHICLE_NAME) else editor.putString(KEY_VEHICLE_NAME, sanitized)
+        editor.apply()
     }
 
     fun loadFps(context: Context): Int = AirPlayDisplaySettings.sanitizeFps(

@@ -130,7 +130,7 @@ class CarPlayHostActivity : ComponentActivity() {
         localMfiCertificateUri = localMfiCertificateUri.takeIf { it.isNotEmpty() },
         localMfiPrivateKeyUri = localMfiPrivateKeyUri.takeIf { it.isNotEmpty() },
         identification = Iap2IdentificationConfig(
-            name = "xcertplay",
+            name = vehicleName(),
             modelIdentifier = normalizedModel(),
             manufacturer = normalizedManufacturer(),
             serialNumber = "xcertplay",
@@ -314,7 +314,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
     private var model = AirPlayPersistence.DEFAULT_MODEL
-    private var oemLabel = AirPlayPersistence.DEFAULT_OEM_LABEL
+    private var customVehicleName = ""
     private var fps = AirPlayDisplaySettings.DEFAULT_FPS
     private var widthPhysicalMm = AirPlayDisplaySettings.DEFAULT_WIDTH_PHYSICAL_MM
     private var physicalSizeBasis = AirPlayDisplaySettings.DEFAULT_PHYSICAL_SIZE_BASIS
@@ -500,7 +500,7 @@ class CarPlayHostActivity : ComponentActivity() {
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
         manufacturer = AirPlayPersistence.loadManufacturer(this)
         model = AirPlayPersistence.loadModel(this)
-        oemLabel = AirPlayPersistence.loadOemLabel(this)
+        customVehicleName = AirPlayPersistence.loadCustomVehicleName(this)
         fps = AirPlayPersistence.loadFps(this)
         widthPhysicalMm = AirPlayPersistence.loadWidthPhysicalMm(this)
         physicalSizeBasis = AirPlayPersistence.loadPhysicalSizeBasis(this)
@@ -1494,7 +1494,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveHevcSoftwareDecoderEnabled(this, hevcSoftwareDecoderEnabled)
         AirPlayPersistence.saveManufacturer(this, manufacturer)
         AirPlayPersistence.saveModel(this, model)
-        AirPlayPersistence.saveOemLabel(this, oemLabel)
+        AirPlayPersistence.saveCustomVehicleName(this, customVehicleName)
         AirPlayPersistence.saveDebugLogsEnabled(this, debugLogsEnabled)
         AirPlayPersistence.saveMediaMetricsEnabled(this, mediaMetricsEnabled)
         AirPlayPersistence.saveAudioPacketCaptureEnabled(this, audioPacketCaptureEnabled)
@@ -1869,8 +1869,14 @@ class CarPlayHostActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
         }
         section.addView(
-            settingsInputRow("Manufacturer", manufacturer) { value ->
-                manufacturer = value
+            settingsInputRow(
+                "Vehicle name",
+                customVehicleName,
+                onInputCreated = { input ->
+                    input.hint = VehicleName.bluetoothName(this) ?: VehicleName.DEFAULT
+                },
+            ) { value ->
+                customVehicleName = value
                 updateResolutionMenu()
             },
             LinearLayout.LayoutParams(
@@ -1879,8 +1885,8 @@ class CarPlayHostActivity : ComponentActivity() {
             ),
         )
         section.addView(
-            settingsInputRow("Model", model) { value ->
-                model = value
+            settingsInputRow("Manufacturer", manufacturer) { value ->
+                manufacturer = value
                 updateResolutionMenu()
             },
             LinearLayout.LayoutParams(
@@ -1889,8 +1895,8 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(10) },
         )
         section.addView(
-            settingsInputRow("OEM label", oemLabel) { value ->
-                oemLabel = value
+            settingsInputRow("Model", model) { value ->
+                model = value
                 updateResolutionMenu()
             },
             LinearLayout.LayoutParams(
@@ -3102,7 +3108,7 @@ class CarPlayHostActivity : ComponentActivity() {
             append(resolution).append('\n')
             append("Identity: ").append(normalizedManufacturer()).append(" / ")
                 .append(normalizedModel()).append('\n')
-            append("OEM label: ").append(oemLabel.ifBlank { "(empty)" }).append('\n')
+            append("Vehicle name: ").append(vehicleName()).append('\n')
             append("Frame rate: ").append(fps).append(" fps\n")
             append("Detected maximum: ")
                 .append(maximumDetectedWidthPixels).append(" x ")
@@ -3160,7 +3166,7 @@ class CarPlayHostActivity : ComponentActivity() {
             safeAreaDrawOutside = safeAreaDrawOutside,
         )
         return AirPlayConfig(
-            deviceName = "xcertplay",
+            deviceName = vehicleName(),
             deviceId = "02:00:00:00:00:02",
             btMac = "02:00:00:00:00:01",
             sourceVersion = "950.7.1",
@@ -3170,10 +3176,14 @@ class CarPlayHostActivity : ComponentActivity() {
             microphone = microphoneAvailable,
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
-            oemLabel = oemLabel,
+            oemLabel = vehicleName(),
             icons = listOf(loadAirPlayIcon()),
         )
     }
+
+    /** Shown as the iPhone's car name and on the CarPlay return-to-car icon. */
+    private fun vehicleName(): String =
+        VehicleName.resolve(customVehicleName, VehicleName.bluetoothName(this))
 
     private fun loadAirPlayIcon(): AirPlayIcon {
         val customBytes = try {
