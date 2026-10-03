@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 设置页 -->
+    <string name="open_settings">打开设置</string>
+    <string name="settings_title">CarPlay 设置</string>
+    <string name="cat_connection">连接</string>
+    <string name="cat_location">位置</string>
+    <string name="cat_startup">启动</string>
+    <string name="cat_audio">音频</string>
+    <string name="cat_identity">身份与外观</string>
+    <string name="cat_display">显示与视频</string>
+    <string name="cat_window">窗口</string>
+    <string name="cat_diagnostics">诊断</string>
+    <string name="cat_android9">Android 9 兼容性</string>
+    <string name="android9_note">以下设置在 Android 9（API 28）上不可用，已隐藏：\n• Wi-Fi P2P（5 GHz）— 改用 LocalOnlyHotspot。\n• HEVC 软件解码器 — 改用硬件解码。</string>
+    <string name="wireless_carplay">无线 CarPlay</string>
+    <string name="wireless_carplay_desc">无线 CarPlay 传输</string>
+    <string name="hotspot_status">热点状态</string>
+    <string name="auto_start_label">开机自动启动</string>
+    <string name="auto_start_desc">设备开机后自动启动 CarPlay</string>
+    <string name="main_media_buffer">主媒体音频缓冲</string>
+    <string name="advanced_mapping_label">高级音频通道映射</string>
+    <string name="advanced_mapping_desc">按 CarPlay 音频类型路由 AAOS 音频总线</string>
+    <string name="resolution">分辨率</string>
+    <string name="frame_rate">帧率</string>
+    <string name="physical_basis">物理尺寸基准</string>
+    <string name="basis_width">按最大宽度</string>
+    <string name="basis_height">按最大高度</string>
+    <string name="physical_length">物理长度</string>
+    <string name="hevc_desc">HEVC H.265 视频传输</string>
+    <string name="hevc_sw">HEVC 软件解码器</string>
+    <string name="hevc_sw_desc">使用软件 HEVC 解码器</string>
+    <string name="more_gestures_label">更多打开设置页的手势</string>
+    <string name="more_gestures_desc">启用单指沿屏幕左侧边缘下滑打开设置</string>
+    <string name="open_bt_settings">打开系统蓝牙设置</string>
+    <string name="save_reconnect">保存并重新连接</string>
+    <string name="exit_app">退出应用</string>
+    <string name="discard_exit">放弃更改并退出设置</string>
+
+    <!-- MFi -->
+    <string name="mfi_target">MFi 证书与签名来源</string>
+    <string name="mfi_remote">远程</string>
+    <string name="mfi_local">本地文件</string>
+    <string name="i2c_device">I2C 设备</string>
+    <string name="i2c_hint">Linux 设备路径，例如 /dev/i2c-1。</string>
+    <string name="server_address">服务器地址</string>
+    <string name="token_optional">令牌（可选）</string>
+    <string name="remote_note">地址必须以 http:// 或 https:// 开头。令牌可选，会作为 Authorization Bearer 令牌发送。</string>
+    <string name="cert_p7b">证书（.p7b）</string>
+    <string name="key_pk8">私钥（.pk8）</string>
+    <string name="local_files_note">请选择 DER 格式的 PKCS#7 证书，以及与之匹配的未加密 DER PKCS#8 私钥。MFi 重连时会重新读取文件。</string>
+    <string name="choose">选择</string>
+    <string name="choose_desc">选择%1$s</string>
+    <string name="doc_certificate">证书</string>
+    <string name="doc_private_key">私钥</string>
+    <string name="not_selected">未选择</string>
+    <string name="selection_unavailable">所选文件不可用</string>
+    <string name="selected_document">已选文件</string>
+    <string name="keep_access_failed">无法保留对所选%1$s的访问权限</string>
+    <string name="vpn_denied">VPN 授权被拒绝</string>
+
+    <!-- 身份、位置、诊断 -->
+    <string name="manufacturer">制造商</string>
+    <string name="model">型号</string>
+    <string name="report_location">向 iPhone 上报位置</string>
+    <string name="report_location_desc">向 iPhone 上报 Android 位置</string>
+    <string name="report_location_note">iPhone 请求时，将 Android 的精确位置作为 CarPlay GPS 数据发送。</string>
+    <string name="debug_logs">调试日志</string>
+    <string name="debug_logs_desc">在屏幕上显示调试日志</string>
+    <string name="latency_monitor">媒体延迟监视器</string>
+    <string name="latency_monitor_desc">实时显示视频延迟、帧率和音频延迟</string>
+    <string name="audio_capture">音频诊断抓包</string>
+    <string name="audio_capture_desc">抓取加密的 UDP 和解密后的 RTP 音频包，用于诊断</string>
+
+    <!-- 麦克风 -->
+    <string name="mic_gain_title">麦克风增益（0.8x–2.0x）</string>
+    <string name="mic_gain">麦克风增益</string>
+    <string name="mic_test_desc">测试麦克风音量</string>
+    <string name="peak_level">峰值电平</string>
+    <string name="mic_peak_desc">麦克风峰值电平</string>
+    <string name="permission_required">需要权限</string>
+    <string name="test_failed">测试失败</string>
+    <string name="stop">停止</string>
+    <string name="listening">正在监听…</string>
+    <string name="bt_settings_unavailable">系统蓝牙设置不可用</string>
+    <string name="bt_settings_failed">无法打开系统蓝牙设置</string>
+
+    <!-- 图标、驾驶位、窗口 -->
+    <string name="airplay_icon">AirPlay 图标</string>
+    <string name="choose_image">选择图片</string>
+    <string name="default_icon">默认图标</string>
+    <string name="icon_custom">自定义 1:1 图标</string>
+    <string name="icon_default">默认占位图标</string>
+    <string name="driving_side">驾驶位</string>
+    <string name="lhd">左舵</string>
+    <string name="rhd">右舵</string>
+    <string name="fullscreen">全屏</string>
+    <string name="hide_top">隐藏顶部栏</string>
+    <string name="hide_top_desc">隐藏状态栏</string>
+    <string name="hide_bottom">隐藏底部栏</string>
+    <string name="hide_bottom_desc">隐藏导航栏</string>
+    <string name="safe_area">安全区域</string>
+    <string name="set">设置</string>
+    <string name="reset">重置</string>
+    <string name="draw_outside">在安全区域外绘制</string>
+    <string name="draw_outside_desc">允许 CarPlay 界面显示在安全区域之外</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+
+    <!-- Wi-Fi 会话 -->
+    <string name="wifi_session">Wi-Fi 会话</string>
+    <string name="manual_hotspot">手动热点</string>
+    <string name="hotspot_ssid">热点 SSID</string>
+    <string name="band">频段</string>
+    <string name="auto">自动</string>
+    <string name="channel_auto">信道（0 = 自动）</string>
+    <string name="hotspot_password">热点密码</string>
+    <string name="security">安全类型</string>
+    <string name="security_open">开放（无密码）</string>
+    <string name="wpa3_transition">WPA3 过渡模式</string>
+    <string name="hotspot_off">无线热点：已关闭</string>
+    <string name="hotspot_line">无线热点：%1$s</string>
+    <string name="hotspot_backend">后端</string>
+    <string name="channel">信道</string>
+    <string name="hotspot_state_off">已关闭</string>
+    <string name="hotspot_state_stopped">已停止</string>
+    <string name="hotspot_state_starting">正在启动</string>
+    <string name="hotspot_state_ready">就绪</string>
+    <string name="hotspot_state_running">运行中</string>
+    <string name="hotspot_state_active">已激活</string>
+    <string name="hotspot_state_error">错误</string>
+
+    <!-- 校验 -->
+    <string name="err_i2c_required">必须填写 I2C 设备路径</string>
+    <string name="err_remote_required">必须填写远程服务器地址</string>
+    <string name="err_remote_scheme">远程服务器地址必须以 http:// 或 https:// 开头</string>
+    <string name="err_select_cert">请选择本地证书</string>
+    <string name="err_select_key">请选择本地私钥</string>
+    <string name="err_nul">%1$s 包含 U+0000 字符</string>
+    <string name="field_i2c_path">I2C 设备路径</string>
+    <string name="field_remote_server">远程服务器地址</string>
+    <string name="field_remote_token">远程令牌</string>
+    <string name="field_local_cert_uri">本地证书 URI</string>
+    <string name="field_local_key_uri">本地私钥 URI</string>
+    <string name="err_ssid_required">必须填写热点 SSID</string>
+    <string name="err_ssid_length">热点 SSID 不能超过 32 个 UTF-8 字节</string>
+    <string name="err_channel_range">信道必须为 0 或 1-196</string>
+    <string name="err_channel_band">该信道不适用于所选频段</string>
+    <string name="err_open_password">安全类型为开放时，密码必须留空</string>
+    <string name="err_wpa_length">WPA2/WPA3 密码必须为 8-63 个字符</string>
+
+    <!-- 设置预览 -->
+    <string name="preview_handshake_waiting">握手分辨率：等待获取显示尺寸</string>
+    <string name="preview_handshake">握手分辨率：%1$d x %2$d -> %3$d x %4$d</string>
+    <string name="preview_hevc">HEVC（H.265，%1$s）</string>
+    <string name="preview_software">软件解码</string>
+    <string name="preview_hardware">硬件解码</string>
+    <string name="preview_top_hidden">顶部隐藏</string>
+    <string name="preview_top_shown">顶部显示</string>
+    <string name="preview_bottom_hidden">底部隐藏</string>
+    <string name="preview_bottom_shown">底部显示</string>
+    <string name="preview_identity">身份：%1$s / %2$s</string>
+    <string name="preview_vehicle_name">车辆名称：%1$s</string>
+    <string name="preview_frame_rate">帧率：%1$d fps</string>
+    <string name="preview_detected_max">检测到的最大尺寸：%1$d x %2$d px</string>
+    <string name="preview_physical_reference">物理尺寸参考：%1$s = %2$d mm</string>
+    <string name="preview_widest_width">最大宽度</string>
+    <string name="preview_longest_height">最大高度</string>
+    <string name="preview_physical_size">CarPlay 物理尺寸：%1$s x %2$s mm</string>
+    <string name="preview_driving_side">驾驶位：%1$s</string>
+    <string name="preview_right">右舵</string>
+    <string name="preview_left">左舵</string>
+    <string name="preview_fullscreen">全屏：%1$s</string>
+    <string name="preview_video_transport">视频传输：%1$s</string>
+    <string name="preview_location">位置上报：%1$s</string>
+    <string name="preview_enabled">已开启</string>
+    <string name="preview_disabled">已关闭</string>
+    <string name="preview_audio_mapping">音频通道映射：%1$s</string>
+    <string name="preview_aaos_buses">AAOS 总线</string>
+    <string name="preview_mobile_compatible">手机兼容</string>
+    <string name="safe_area_waiting">安全区域：等待获取窗口尺寸</string>
+    <string name="safe_area_full">安全区域：全屏 %1$d x %2$d</string>
+    <string name="safe_area_custom">安全区域：%1$d x %2$d，位于 (%3$d, %4$d)，窗口 %5$d x %6$d</string>
+
+    <!-- 连接阶段 -->
+    <string name="stage_preparing">正在准备 CarPlay</string>
+    <string name="stage_session_ended">CarPlay 会话已结束，正在重新连接</string>
+    <string name="stage_transport_error">传输错误，正在重新连接</string>
+    <string name="stage_service_running">CarPlay 服务已在运行</string>
+    <string name="stage_session_running">CarPlay 会话已在运行</string>
+    <string name="stage_display_changed">显示尺寸变化 %1$dx%2$d -> %3$dx%4$d</string>
+    <string name="stage_reconnecting_after">正在重新连接（%1$s）</string>
+    <string name="stage_reconnect_settings">设置已更改，正在重新连接</string>
+    <string name="stage_preparing_mfi">正在准备 MFi 认证</string>
+    <string name="stage_waiting_mfi">正在等待 MFi 协处理器</string>
+    <string name="stage_mfi_permission">正在请求 MFi USB 权限</string>
+    <string name="stage_mfi_ready">MFi 认证已就绪</string>
+    <string name="stage_starting_hotspot">正在启动无线热点</string>
+    <string name="stage_hotspot_ready">热点已就绪：%1$s，%2$s，%3$s，信道 %4$s</string>
+    <string name="stage_waiting_paired">正在等待已配对的 iPhone</string>
+    <string name="stage_connecting_bt">正在连接蓝牙</string>
+    <string name="stage_wireless_running">无线 CarPlay 控制通道运行中</string>
+    <string name="stage_wireless_active">无线 CarPlay 已激活</string>
+    <string name="stage_discovering_iphone">正在查找 iPhone</string>
+    <string name="stage_waiting_iphone">正在等待 iPhone 通过 USB 连接</string>
+    <string name="stage_iphone_permission">正在请求 iPhone USB 权限</string>
+    <string name="stage_reenumeration">正在等待 iPhone 重新枚举</string>
+    <string name="stage_selecting_config">正在选择 CarPlay 配置</string>
+    <string name="stage_opening_paths">正在打开 USB 数据通道</string>
+    <string name="stage_pairing">正在与 iPhone 配对</string>
+    <string name="stage_connecting_control">正在连接 iAP2 控制通道</string>
+    <string name="stage_starting_airplay">正在启动 AirPlay 服务</string>
+    <string name="stage_attaching_network">正在接入 NCM/AirPlay 网络</string>
+    <string name="stage_control_running">CarPlay 控制通道运行中</string>
+    <string name="stage_control_ended">CarPlay 控制窗口已结束</string>
+    <string name="stage_failed">失败：%1$s</string>
+
+    <!-- 图片裁剪 -->
+    <string name="crop_loading">正在加载图片</string>
+    <string name="crop_save">保存 1:1</string>
+    <string name="crop_decode_failed">无法解码图片</string>
+    <string name="crop_hint">拖动以移动，双指缩放</string>
+    <string name="crop_not_ready">图片尚未就绪</string>
+    <string name="crop_encode_failed">无法编码图片</string>
+    <string name="crop_save_failed">无法保存图片</string>
+</resources>

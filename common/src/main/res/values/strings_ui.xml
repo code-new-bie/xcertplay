@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings page -->
+    <string name="open_settings">Open settings</string>
+    <string name="settings_title">CarPlay settings</string>
+    <string name="cat_connection">Connection</string>
+    <string name="cat_location">Location</string>
+    <string name="cat_startup">Startup</string>
+    <string name="cat_audio">Audio</string>
+    <string name="cat_identity">Identity &amp; appearance</string>
+    <string name="cat_display">Display &amp; video</string>
+    <string name="cat_window">Window</string>
+    <string name="cat_diagnostics">Diagnostics</string>
+    <string name="cat_android9">Android 9 compatibility</string>
+    <string name="android9_note">The following settings are unavailable and hidden on Android 9 (API 28):\n• Wi-Fi P2P (5 GHz) — LocalOnlyHotspot is used instead.\n• HEVC software decoder — hardware decoding is used instead.</string>
+    <string name="wireless_carplay">Wireless CarPlay</string>
+    <string name="wireless_carplay_desc">Wireless CarPlay transport</string>
+    <string name="hotspot_status">Hotspot status</string>
+    <string name="auto_start_label">Auto-start on boot</string>
+    <string name="auto_start_desc">Start CarPlay automatically after device boot</string>
+    <string name="main_media_buffer">Main media audio buffer</string>
+    <string name="advanced_mapping_label">Advanced audio channel mapping</string>
+    <string name="advanced_mapping_desc">Route AAOS audio buses by CarPlay audio type</string>
+    <string name="resolution">Resolution</string>
+    <string name="frame_rate">Frame rate</string>
+    <string name="physical_basis">Physical size basis</string>
+    <string name="basis_width">Widest width</string>
+    <string name="basis_height">Longest height</string>
+    <string name="physical_length">Physical length</string>
+    <string name="hevc_desc">HEVC H.265 video transport</string>
+    <string name="hevc_sw">HEVC software decoder</string>
+    <string name="hevc_sw_desc">Use software HEVC decoder</string>
+    <string name="more_gestures_label">More gestures to Settings page</string>
+    <string name="more_gestures_desc">Enable a one-finger swipe down along the left edge to open settings</string>
+    <string name="open_bt_settings">Open system Bluetooth settings</string>
+    <string name="save_reconnect">Save and reconnect</string>
+    <string name="exit_app">EXIT APPLICATION</string>
+    <string name="discard_exit">Discard changes and exit settings</string>
+
+    <!-- MFi -->
+    <string name="mfi_target">MFI certificate &amp; signing target</string>
+    <string name="mfi_remote">Remote</string>
+    <string name="mfi_local">Local files</string>
+    <string name="i2c_device">I2C device</string>
+    <string name="i2c_hint">Linux device path, for example /dev/i2c-1.</string>
+    <string name="server_address">Server address</string>
+    <string name="token_optional">Token (optional)</string>
+    <string name="remote_note">Address must start with http:// or https://. Token is optional and sent as an Authorization bearer token.</string>
+    <string name="cert_p7b">Certificate (.p7b)</string>
+    <string name="key_pk8">Private key (.pk8)</string>
+    <string name="local_files_note">Select a DER PKCS#7 certificate and its matching unencrypted DER PKCS#8 private key. Documents are reloaded when MFI reconnects.</string>
+    <string name="choose">Choose</string>
+    <string name="choose_desc">Choose %1$s</string>
+    <string name="doc_certificate">certificate</string>
+    <string name="doc_private_key">private key</string>
+    <string name="not_selected">Not selected</string>
+    <string name="selection_unavailable">Selection unavailable</string>
+    <string name="selected_document">Selected document</string>
+    <string name="keep_access_failed">Could not keep access to the selected %1$s</string>
+    <string name="vpn_denied">VPN consent was denied</string>
+
+    <!-- Identity, location, diagnostics -->
+    <string name="manufacturer">Manufacturer</string>
+    <string name="model">Model</string>
+    <string name="report_location">Report location to iPhone</string>
+    <string name="report_location_desc">Report Android location to the iPhone</string>
+    <string name="report_location_note">Sends precise Android location as CarPlay GPS data when the iPhone requests it.</string>
+    <string name="debug_logs">Debug logs</string>
+    <string name="debug_logs_desc">Show on-screen debug logs</string>
+    <string name="latency_monitor">Media latency monitor</string>
+    <string name="latency_monitor_desc">Show live video latency, frame rate, and audio latency</string>
+    <string name="audio_capture">Audio diagnostic capture</string>
+    <string name="audio_capture_desc">Capture encrypted UDP and decrypted RTP audio packets for diagnostics</string>
+
+    <!-- Microphone -->
+    <string name="mic_gain_title">Microphone gain (0.8x–2.0x)</string>
+    <string name="mic_gain">Microphone gain</string>
+    <string name="mic_test_desc">Test microphone level</string>
+    <string name="peak_level">Peak level</string>
+    <string name="mic_peak_desc">Microphone peak level</string>
+    <string name="permission_required">Permission required</string>
+    <string name="test_failed">Test failed</string>
+    <string name="stop">Stop</string>
+    <string name="listening">Listening…</string>
+    <string name="bt_settings_unavailable">System Bluetooth settings are unavailable</string>
+    <string name="bt_settings_failed">Cannot open system Bluetooth settings</string>
+
+    <!-- Icon, driving side, window -->
+    <string name="airplay_icon">AirPlay icon</string>
+    <string name="choose_image">Choose image</string>
+    <string name="default_icon">Default icon</string>
+    <string name="icon_custom">Custom 1:1 icon</string>
+    <string name="icon_default">Default placeholder icon</string>
+    <string name="driving_side">Driving side</string>
+    <string name="lhd">Left-hand drive</string>
+    <string name="rhd">Right-hand drive</string>
+    <string name="fullscreen">Fullscreen</string>
+    <string name="hide_top">Hide top bar</string>
+    <string name="hide_top_desc">Hide the status bar</string>
+    <string name="hide_bottom">Hide bottom bar</string>
+    <string name="hide_bottom_desc">Hide the navigation bar</string>
+    <string name="safe_area">Safe area</string>
+    <string name="set">Set</string>
+    <string name="reset">Reset</string>
+    <string name="draw_outside">Draw outside safe area</string>
+    <string name="draw_outside_desc">Allow CarPlay UI outside the safe area</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+
+    <!-- Wi-Fi session -->
+    <string name="wifi_session">Wi-Fi session</string>
+    <string name="manual_hotspot">Manual hotspot</string>
+    <string name="hotspot_ssid">Hotspot SSID</string>
+    <string name="band">Band</string>
+    <string name="auto">Auto</string>
+    <string name="channel_auto">Channel (0 = auto)</string>
+    <string name="hotspot_password">Hotspot password</string>
+    <string name="security">Security</string>
+    <string name="security_open">Open</string>
+    <string name="wpa3_transition">WPA3 transition</string>
+    <string name="hotspot_off">Wireless hotspot: off</string>
+    <string name="hotspot_line">Wireless hotspot: %1$s</string>
+    <string name="hotspot_backend">Backend</string>
+    <string name="channel">Channel</string>
+    <string name="hotspot_state_off">off</string>
+    <string name="hotspot_state_stopped">stopped</string>
+    <string name="hotspot_state_starting">Starting</string>
+    <string name="hotspot_state_ready">Ready</string>
+    <string name="hotspot_state_running">Running</string>
+    <string name="hotspot_state_active">Active</string>
+    <string name="hotspot_state_error">Error</string>
+
+    <!-- Validation -->
+    <string name="err_i2c_required">I2C device path is required</string>
+    <string name="err_remote_required">Remote server address is required</string>
+    <string name="err_remote_scheme">Remote server address must start with http:// or https://</string>
+    <string name="err_select_cert">Select a local certificate</string>
+    <string name="err_select_key">Select a local private key</string>
+    <string name="err_nul">%1$s contains U+0000</string>
+    <string name="field_i2c_path">I2C device path</string>
+    <string name="field_remote_server">Remote server address</string>
+    <string name="field_remote_token">Remote token</string>
+    <string name="field_local_cert_uri">Local certificate URI</string>
+    <string name="field_local_key_uri">Local private key URI</string>
+    <string name="err_ssid_required">Hotspot SSID is required</string>
+    <string name="err_ssid_length">Hotspot SSID must be at most 32 UTF-8 bytes</string>
+    <string name="err_channel_range">Channel must be 0 or 1-196</string>
+    <string name="err_channel_band">Channel is not valid for the selected band</string>
+    <string name="err_open_password">Password must be empty when security is Open</string>
+    <string name="err_wpa_length">WPA2/WPA3 password must be 8-63 characters</string>
+
+    <!-- Settings preview -->
+    <string name="preview_handshake_waiting">Handshake resolution: waiting for display</string>
+    <string name="preview_handshake">Handshake resolution: %1$d x %2$d -> %3$d x %4$d</string>
+    <string name="preview_hevc">HEVC (H.265, %1$s)</string>
+    <string name="preview_software">software</string>
+    <string name="preview_hardware">hardware</string>
+    <string name="preview_top_hidden">top hidden</string>
+    <string name="preview_top_shown">top shown</string>
+    <string name="preview_bottom_hidden">bottom hidden</string>
+    <string name="preview_bottom_shown">bottom shown</string>
+    <string name="preview_identity">Identity: %1$s / %2$s</string>
+    <string name="preview_vehicle_name">Vehicle name: %1$s</string>
+    <string name="preview_frame_rate">Frame rate: %1$d fps</string>
+    <string name="preview_detected_max">Detected maximum: %1$d x %2$d px</string>
+    <string name="preview_physical_reference">Physical reference: %1$s = %2$d mm</string>
+    <string name="preview_widest_width">widest width</string>
+    <string name="preview_longest_height">longest height</string>
+    <string name="preview_physical_size">CarPlay physical size: %1$s x %2$s mm</string>
+    <string name="preview_driving_side">Driving side: %1$s</string>
+    <string name="preview_right">right</string>
+    <string name="preview_left">left</string>
+    <string name="preview_fullscreen">Fullscreen: %1$s</string>
+    <string name="preview_video_transport">Video transport: %1$s</string>
+    <string name="preview_location">Location reporting: %1$s</string>
+    <string name="preview_enabled">enabled</string>
+    <string name="preview_disabled">disabled</string>
+    <string name="preview_audio_mapping">Audio channel mapping: %1$s</string>
+    <string name="preview_aaos_buses">AAOS buses</string>
+    <string name="preview_mobile_compatible">Mobile compatible</string>
+    <string name="safe_area_waiting">Safe area: waiting for activity size</string>
+    <string name="safe_area_full">Safe area: full screen at %1$d x %2$d</string>
+    <string name="safe_area_custom">Safe area: %1$d x %2$d at (%3$d, %4$d) in %5$d x %6$d</string>
+
+    <!-- Connection stages -->
+    <string name="stage_preparing">Preparing CarPlay</string>
+    <string name="stage_session_ended">CarPlay session ended; reconnecting</string>
+    <string name="stage_transport_error">Transport error; reconnecting</string>
+    <string name="stage_service_running">CarPlay service already running</string>
+    <string name="stage_session_running">CarPlay session already running</string>
+    <string name="stage_display_changed">Display changed %1$dx%2$d -> %3$dx%4$d</string>
+    <string name="stage_reconnecting_after">Reconnecting after %1$s</string>
+    <string name="stage_reconnect_settings">Reconnecting after settings</string>
+    <string name="stage_preparing_mfi">Preparing MFi authentication</string>
+    <string name="stage_waiting_mfi">Waiting for MFi coprocessor</string>
+    <string name="stage_mfi_permission">Requesting MFi USB permission</string>
+    <string name="stage_mfi_ready">MFi authentication ready</string>
+    <string name="stage_starting_hotspot">Starting wireless hotspot</string>
+    <string name="stage_hotspot_ready">Hotspot ready: %1$s, %2$s, %3$s, channel %4$s</string>
+    <string name="stage_waiting_paired">Waiting for paired iPhone</string>
+    <string name="stage_connecting_bt">Connecting Bluetooth</string>
+    <string name="stage_wireless_running">Wireless CarPlay control running</string>
+    <string name="stage_wireless_active">Wireless CarPlay active</string>
+    <string name="stage_discovering_iphone">Discovering iPhone</string>
+    <string name="stage_waiting_iphone">Waiting for iPhone over USB</string>
+    <string name="stage_iphone_permission">Requesting iPhone USB permission</string>
+    <string name="stage_reenumeration">Waiting for iPhone re-enumeration</string>
+    <string name="stage_selecting_config">Selecting CarPlay configuration</string>
+    <string name="stage_opening_paths">Opening USB data paths</string>
+    <string name="stage_pairing">Pairing with iPhone</string>
+    <string name="stage_connecting_control">Connecting iAP2 control</string>
+    <string name="stage_starting_airplay">Starting AirPlay service</string>
+    <string name="stage_attaching_network">Attaching NCM/AirPlay network</string>
+    <string name="stage_control_running">CarPlay control running</string>
+    <string name="stage_control_ended">CarPlay control window ended</string>
+    <string name="stage_failed">Failed: %1$s</string>
+
+    <!-- Image crop -->
+    <string name="crop_loading">Loading image</string>
+    <string name="crop_save">Save 1:1</string>
+    <string name="crop_decode_failed">Could not decode image</string>
+    <string name="crop_hint">Drag to move, pinch to zoom</string>
+    <string name="crop_not_ready">Image is not ready</string>
+    <string name="crop_encode_failed">Could not encode image</string>
+    <string name="crop_save_failed">Could not save image</string>
+</resources>
