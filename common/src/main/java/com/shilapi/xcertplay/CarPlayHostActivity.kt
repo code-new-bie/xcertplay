@@ -70,6 +70,9 @@ import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
+import com.shilapi.xcertplay.hud.BydCallUiSettings
+import com.shilapi.xcertplay.hud.BydCallUiSuppressor
+import com.shilapi.xcertplay.hud.BydSettingsAvailability
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
 import com.shilapi.xcertplay.media.CarPlayVideoLayout
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
@@ -382,6 +385,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var edgeSettingsGestureEligible = false
     private val shuttingDown = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var carPlayPageVisible = false
+    private val bydCallUiSuppressor by lazy { BydCallUiSuppressor(applicationContext) }
     private val appearanceSync = CarPlayAppearanceSync(mainHandler, ::syncAirPlayDarkMode)
     private val teardownExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val airPlayCommandExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -635,6 +640,16 @@ class CarPlayHostActivity : ComponentActivity() {
         )
     }
 
+    override fun onStart() {
+        super.onStart()
+        carPlayPageVisible = true
+        updateBydCallUi()
+    }
+
+    private fun updateBydCallUi() {
+        bydCallUiSuppressor.updateUsage(carPlayPageVisible, controller?.hasActiveAirPlaySession() == true)
+    }
+
     override fun onResume() {
         super.onResume()
         appearanceMonitor?.updateUiMode(applicationContext.resources.configuration.uiMode)
@@ -666,6 +681,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        carPlayPageVisible = false
+        updateBydCallUi()
         stopMicrophoneGainTest()
         channelPreview.stop()
         // The controller, USB/iAP2 link, and VPN attachment intentionally outlive the UI.
@@ -685,6 +702,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        bydCallUiSuppressor.close()
         channelPreview.close()
         appearanceMonitor?.stop()
         appearanceSync.stop()
@@ -1080,6 +1098,36 @@ class CarPlayHostActivity : ComponentActivity() {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ).apply { topMargin = dp(20) },
+            )
+        }
+
+        if (BydSettingsAvailability.available(this)) {
+            content.addView(
+                settingsCategoryHeader("BYD"),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(36) },
+            )
+            content.addView(
+                settingsSwitchRow(
+                    label = "Hide stock call popups (experimental)",
+                    checked = BydCallUiSettings.enabled(this),
+                    description = "Dismiss the BYD call popup while connected CarPlay is on screen",
+                ) { checked -> BydCallUiSettings.setEnabled(this, checked) },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(12) },
+            )
+            content.addView(
+                menuText(
+                    "While connected CarPlay is on screen, use the stock HiCar interface to dismiss " +
+                        "call popups. No ADB required. A popup may briefly appear before closing. " +
+                        "Turn off to restore the stock call interface.",
+                    14f,
+                    MENU_SECONDARY,
+                ),
             )
         }
 
@@ -3541,6 +3589,7 @@ class CarPlayHostActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     appearanceSync.start(session)
+                    updateBydCallUi()
                     if (menuOpen) return@runOnUiThread
                     appendLog("AirPlay session active")
                 }
@@ -3550,6 +3599,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 runOnUiThread {
                     appearanceSync.end(session)
                     if (controller?.hasActiveAirPlaySession() != true) appearanceSync.stop()
+                    updateBydCallUi()
                     if (menuOpen || controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
@@ -3609,6 +3659,7 @@ class CarPlayHostActivity : ComponentActivity() {
             return false
         }
         controller = snapshot.controller
+        updateBydCallUi()
         sink = snapshot.sink
         snapshot.sink.setMediaMetricsMonitor(mediaMetricsMonitor)
         if (snapshot.width > 0 && snapshot.height > 0) {
@@ -3888,6 +3939,7 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayBackgroundSession.clear(oldController)
         sessionDisplay = null
         controller = null
+        updateBydCallUi()
         sink = null
         teardownExecutor.execute {
             oldController?.close()
@@ -3915,6 +3967,7 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayBackgroundSession.clear(oldController)
         sessionDisplay = null
         controller = null
+        updateBydCallUi()
         sink = null
         activeScreenStreamTypes.clear()
         setConnectionStage("Reconnecting after settings")
@@ -4006,6 +4059,7 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayBackgroundSession.clear(oldController)
         sessionDisplay = null
         controller = null
+        updateBydCallUi()
         sink = null
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
         teardownExecutor.execute {

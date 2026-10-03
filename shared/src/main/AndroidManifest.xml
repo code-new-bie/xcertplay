@@ -29,6 +29,11 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
 
+    <queries>
+        <!-- Identifies BYD head units for the optional stock call popup setting. -->
+        <package android:name="com.byd.bydlogtool" />
+    </queries>
+
     <application android:usesCleartextTraffic="true">
         <!-- Minimum Car API level -->
         <meta-data
