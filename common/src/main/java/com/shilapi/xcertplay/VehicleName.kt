@@ -10,14 +10,25 @@ import android.provider.Settings
  * the driver already sees in the iPhone's Bluetooth list.
  */
 internal object VehicleName {
-    const val DEFAULT = "xcertplay"
+    /**
+     * Used when the Bluetooth name is unreadable, e.g. before Bluetooth permission is granted. The
+     * iPhone keeps the name it first sees, so this must read well as a car name.
+     */
+    const val DEFAULT = "${AirPlayPersistence.DEFAULT_MANUFACTURER} ${AirPlayPersistence.DEFAULT_MODEL}"
     const val MAX_LENGTH = 64
+
+    enum class Source(val label: String) { CUSTOM("custom"), BLUETOOTH("Bluetooth"), FALLBACK("fallback") }
 
     fun sanitize(value: String?): String? =
         value?.filterNot(Char::isISOControl)?.trim()?.take(MAX_LENGTH)?.trim()?.takeIf { it.isNotEmpty() }
 
     fun resolve(customName: String?, bluetoothName: String?): String =
-        sanitize(customName) ?: sanitize(bluetoothName) ?: DEFAULT
+        resolveWithSource(customName, bluetoothName).first
+
+    fun resolveWithSource(customName: String?, bluetoothName: String?): Pair<String, Source> =
+        sanitize(customName)?.let { it to Source.CUSTOM }
+            ?: sanitize(bluetoothName)?.let { it to Source.BLUETOOTH }
+            ?: (DEFAULT to Source.FALLBACK)
 
     fun bluetoothName(context: Context): String? {
         val adapter = runCatching {

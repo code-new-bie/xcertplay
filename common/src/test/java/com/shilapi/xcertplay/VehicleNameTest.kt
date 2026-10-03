@@ -17,6 +17,14 @@ class VehicleNameTest {
     }
 
     @Test
+    fun fallbackReadsAsTheCarAndEachNameReportsItsSource() {
+        assertEquals("BYD Song PLUS", VehicleName.DEFAULT)
+        assertEquals("My Song" to VehicleName.Source.CUSTOM, VehicleName.resolveWithSource("My Song", "BYD Auto"))
+        assertEquals("BYD Auto" to VehicleName.Source.BLUETOOTH, VehicleName.resolveWithSource(null, "BYD Auto"))
+        assertEquals(VehicleName.DEFAULT to VehicleName.Source.FALLBACK, VehicleName.resolveWithSource(null, null))
+    }
+
+    @Test
     fun missingNamesFallBackToDefault() {
         assertEquals(VehicleName.DEFAULT, VehicleName.resolve(null, null))
         assertEquals(VehicleName.DEFAULT, VehicleName.resolve("", "\u0000 "))

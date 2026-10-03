@@ -129,7 +129,13 @@ class CarPlayHostActivity : ComponentActivity() {
     private lateinit var airPlayIdentity: AirPlayIdentity
 
     // CH341 USB\VID_1A86&PID_5512&REV_0304 is the deployment-supplied bridge identity.
-    private fun createRuntimeConfig(): CarPlayRuntimeConfig = CarPlayRuntimeConfig(
+    private fun createRuntimeConfig(): CarPlayRuntimeConfig {
+        val (name, source) = VehicleName.resolveWithSource(customVehicleName, VehicleName.bluetoothName(this))
+        appendLog("Vehicle name \"$name\" (from ${source.label})")
+        return buildRuntimeConfig()
+    }
+
+    private fun buildRuntimeConfig(): CarPlayRuntimeConfig = CarPlayRuntimeConfig(
         mfiTarget = mfiTarget,
         ch341Devices = if (mfiTarget == MfiTarget.USB_CH341) {
             listOf(UsbDeviceId(0x1a86, 0x5512))
