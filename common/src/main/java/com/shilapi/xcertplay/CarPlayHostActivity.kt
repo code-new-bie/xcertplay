@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -70,7 +71,14 @@ import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
+import com.shilapi.xcertplay.adb.LocalAdb
+import com.shilapi.xcertplay.hud.BydBatteryProvider
 import com.shilapi.xcertplay.hud.BydCallUiSettings
+import com.shilapi.xcertplay.hud.BydVehicleAccess
+import com.shilapi.xcertplay.hud.BydVehicleSettings
+import com.shilapi.xcertplay.hud.BydWheelSpeedSource
+import com.shilapi.xcertplay.transport.EvChargingConnectors
+import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
 import com.shilapi.xcertplay.hud.BydCallUiSuppressor
 import com.shilapi.xcertplay.hud.BydSettingsAvailability
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
@@ -147,6 +155,13 @@ class CarPlayHostActivity : ComponentActivity() {
             hardwareVersion = "1.0",
             carPlayUsbInterfaceNumber = 3,
             locationInformationEnabled = locationReportingEnabled,
+            vehicleSpeedEnabled = locationReportingEnabled && BydVehicleSettings.speedEnabled(this),
+            vehicleStatusEnabled = BydVehicleSettings.batteryEnabled(this),
+            chargingConnectors = if (BydVehicleSettings.dcChargingEnabled(this)) {
+                EvChargingConnectors.GB_T
+            } else {
+                EvChargingConnectors.GB_T_AC_ONLY
+            },
         ),
         transport = if (wirelessEnabled) CarPlayTransport.WIRELESS else CarPlayTransport.WIRED,
         wirelessHotspotMode = wirelessHotspotMode,
@@ -1128,6 +1143,13 @@ class CarPlayHostActivity : ComponentActivity() {
                     14f,
                     MENU_SECONDARY,
                 ),
+            )
+            content.addView(
+                buildBydVehicleDataSection(),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(20) },
             )
         }
 
@@ -2176,6 +2198,121 @@ class CarPlayHostActivity : ComponentActivity() {
                     "applies when settings close",
             )
         }
+
+    private fun buildBydVehicleDataSection(): View {
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        fun addSwitch(label: String, checked: Boolean, note: String, onChanged: (Boolean) -> Unit) {
+            section.addView(
+                settingsSwitchRow(label = label, checked = checked, description = note, onChanged = onChanged),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) },
+            )
+            section.addView(menuText(note, 14f, MENU_SECONDARY))
+        }
+        section.addView(menuText("Vehicle data (DiLink 4)", 20f, MENU_SECONDARY))
+        addSwitch(
+            "Vehicle speed and gear for tunnel navigation",
+            BydVehicleSettings.speedEnabled(this),
+            "Read-only BYD vehicle data when the iPhone requests it. Requires authorized network " +
+                "ADB and Location reporting.",
+        ) { BydVehicleSettings.setSpeedEnabled(this, it) }
+        addSwitch(
+            "Electric battery and range for Apple Maps (experimental)",
+            BydVehicleSettings.batteryEnabled(this),
+            "Report battery and electric range. For DM-i, fuel range is excluded. Requires " +
+                "authorized network ADB; iPhone support determines availability.",
+        ) { BydVehicleSettings.setBatteryEnabled(this, it) }
+        addSwitch(
+            "Vehicle supports GB/T DC charging",
+            BydVehicleSettings.dcChargingEnabled(this),
+            "Enable only if your variant supports DC charging; otherwise only the AC inlet is reported.",
+        ) { BydVehicleSettings.setDcChargingEnabled(this, it) }
+        val capacity = BydVehicleSettings.capacityKwh(this)
+        section.addView(
+            settingsInputRow(
+                "Battery capacity (kWh, 0 = automatic)",
+                if (capacity == 0.0) "0" else String.format(Locale.US, "%.2f", capacity),
+            ) { value ->
+                val number = value.trim().toDoubleOrNull()
+                if (number != null && number.isFinite() && number in 0.0..200.0) {
+                    BydVehicleSettings.setCapacityKwh(this, number)
+                }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) },
+        )
+        section.addView(
+            menuText(
+                "Use your variant's capacity if automatic detection cannot read the remaining energy " +
+                    "(0-200 kWh).",
+                14f,
+                MENU_SECONDARY,
+            ),
+        )
+        val checkButton = Button(this).apply {
+            text = "Check and authorize ADB"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(MENU_BUTTON_TEXT)
+            backgroundTintList = ColorStateList.valueOf(MENU_ACCENT)
+        }
+        checkButton.setOnClickListener {
+            checkButton.isEnabled = false
+            checkButton.text = "Checking ADB…"
+            kotlin.concurrent.thread(name = "xcertplay-byd-check", isDaemon = true) {
+                val result = runCatching { BydVehicleAccess.check(applicationContext) }
+                runOnUiThread {
+                    checkButton.isEnabled = true
+                    checkButton.text = "Check and authorize ADB"
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val message = result.fold({ checked ->
+                        when (checked.access) {
+                            LocalAdb.Access.READY -> {
+                                fun state(available: Boolean) =
+                                    if (available) "available" else "no valid reading (check vehicle power and battery capacity)"
+                                "ADB authorized.\nVehicle speed / gear: ${state(checked.speedAvailable)}\n" +
+                                    "Battery / electric range: ${state(checked.batteryAvailable)}" +
+                                    if (checked.details.isBlank()) "" else "\n\n${checked.details}"
+                            }
+                            LocalAdb.Access.NOT_APPROVED ->
+                                "Approve xcertplay in the head unit's debugging authorization dialog, then check again."
+                            LocalAdb.Access.UNREACHABLE ->
+                                "Cannot reach 127.0.0.1:5555. Enable network ADB on the head unit; a USB ADB " +
+                                    "connection alone does not enable this port."
+                            LocalAdb.Access.UNSUPPORTED ->
+                                "This debugging service requires a protocol xcertplay does not support. " +
+                                    "Use the Android 10 network ADB service."
+                        }
+                    }, { "ADB check failed: ${it.javaClass.simpleName}" })
+                    AlertDialog.Builder(this).setTitle("Check and authorize ADB").setMessage(message)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
+        section.addView(
+            checkButton,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) },
+        )
+        section.addView(
+            menuText(
+                "The check may show a debugging authorization dialog. Background sampling never asks " +
+                    "for approval; unavailable vehicle data is skipped while CarPlay continues. " +
+                    "Applies on the next CarPlay connection.",
+                14f,
+                MENU_SECONDARY,
+            ),
+        )
+        return section
+    }
 
     private fun buildVehicleAudioChannelRow(label: String, navigation: Boolean): View {
         val row = LinearLayout(this).apply {
@@ -3703,10 +3840,20 @@ class CarPlayHostActivity : ComponentActivity() {
         val airPlayConfig = createAirPlayConfig(size)
         val locationProvider: Iap2LocationProvider? =
             if (config.locationReportingEnabled) {
-                AndroidCarPlayLocationProvider(this)
+                val position = AndroidCarPlayLocationProvider(this)
+                if (config.identification.vehicleSpeedEnabled) {
+                    VehicleSpeedLocationProvider(position, BydWheelSpeedSource(this, ::appendLog))
+                } else {
+                    position
+                }
             } else {
                 null
             }
+        val vehicleStatusProvider = if (config.identification.vehicleStatusEnabled) {
+            BydBatteryProvider(this, ::appendLog)
+        } else {
+            null
+        }
         appendLog(
             "Starting CarPlay controller at ${size.width}x${size.height} -> " +
                 "${airPlayConfig.main.widthPixels}x${airPlayConfig.main.heightPixels} " +
@@ -3754,6 +3901,7 @@ class CarPlayHostActivity : ComponentActivity() {
             savePairRecord = { record -> AirPlayPersistence.saveLockdownRecord(this, record) },
             clearPairRecord = { AirPlayPersistence.clearLockdownRecord(this) },
             locationProvider = locationProvider,
+            vehicleStatusProvider = vehicleStatusProvider,
         )
         controller = next
         // Without the setting every size change renegotiates, exactly as before.
