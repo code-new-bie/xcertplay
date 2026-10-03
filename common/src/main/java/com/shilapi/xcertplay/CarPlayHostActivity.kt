@@ -9,6 +9,7 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -70,6 +71,7 @@ import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
+import com.shilapi.xcertplay.media.CarPlayVideoLayout
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.VehicleAudioChannel
 import com.shilapi.xcertplay.media.MediaMetricsMonitor
@@ -322,6 +324,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var mediaMetricsEnabled = false
     private var audioPacketCaptureEnabled = false
     private var moreGesturesToSettings = false
+    private var keepSessionOnWindowShrink = false
+    private var sessionDisplay: CarPlaySessionDisplay? = null
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
     private var model = AirPlayPersistence.DEFAULT_MODEL
@@ -432,6 +436,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
 
         override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
+            updateVideoLayout(width, height)
             scheduleDisplaySize(width, height)
         }
 
@@ -522,6 +527,7 @@ class CarPlayHostActivity : ComponentActivity() {
         mediaMetricsEnabled = AirPlayPersistence.loadMediaMetricsEnabled(this)
         audioPacketCaptureEnabled = AirPlayPersistence.loadAudioPacketCaptureEnabled(this)
         moreGesturesToSettings = AirPlayPersistence.loadMoreGesturesToSettings(this)
+        keepSessionOnWindowShrink = AirPlayPersistence.loadKeepSessionOnWindowShrink(this)
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
         manufacturer = AirPlayPersistence.loadManufacturer(this)
         model = AirPlayPersistence.loadModel(this)
@@ -1376,6 +1382,26 @@ class CarPlayHostActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(12) },
         )
+        content.addView(
+            settingsSwitchRow(
+                label = "Keep session on window shrink",
+                checked = keepSessionOnWindowShrink,
+                description = "Keep CarPlay connected when a reverse or 360 camera window shrinks it",
+            ) { checked -> keepSessionOnWindowShrink = checked },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+        content.addView(
+            menuText(
+                "When the window shrinks inside its original size (for example a reverse or 360 " +
+                    "camera view), scale the existing CarPlay picture instead of reconnecting at " +
+                    "the new size. Rotation and bar changes still reconnect.",
+                14f,
+                MENU_SECONDARY,
+            ),
+        )
 
         content.addView(
             settingsCategoryHeader("Diagnostics"),
@@ -1587,6 +1613,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveMediaMetricsEnabled(this, mediaMetricsEnabled)
         AirPlayPersistence.saveAudioPacketCaptureEnabled(this, audioPacketCaptureEnabled)
         AirPlayPersistence.saveMoreGesturesToSettings(this, moreGesturesToSettings)
+        AirPlayPersistence.saveKeepSessionOnWindowShrink(this, keepSessionOnWindowShrink)
         AirPlayPersistence.saveRightHandDrive(this, rightHandDrive)
         AirPlayPersistence.saveHideTopBar(this, hideTopBar)
         AirPlayPersistence.saveHideBottomBar(this, hideBottomBar)
@@ -3587,6 +3614,8 @@ class CarPlayHostActivity : ComponentActivity() {
         if (snapshot.width > 0 && snapshot.height > 0) {
             activeDisplaySize = DisplaySize(snapshot.width, snapshot.height)
         }
+        sessionDisplay = snapshot.display
+        videoView?.let { updateVideoLayout(it.width, it.height) }
         val generation = restartGeneration
         snapshot.controller.attachUi(
             createSessionListener(generation),
@@ -3676,7 +3705,18 @@ class CarPlayHostActivity : ComponentActivity() {
             locationProvider = locationProvider,
         )
         controller = next
-        CarPlayBackgroundSession.store(next, renderer, size.width, size.height)
+        // Without the setting every size change renegotiates, exactly as before.
+        sessionDisplay = CarPlaySessionDisplay(
+            airPlayConfig.main.widthPixels,
+            airPlayConfig.main.heightPixels,
+            displayRotation(),
+            hideTopBar,
+            hideBottomBar,
+            size.width,
+            size.height,
+        ).takeIf { keepSessionOnWindowShrink }
+        videoView?.let { updateVideoLayout(it.width, it.height) }
+        CarPlayBackgroundSession.store(next, renderer, size.width, size.height, sessionDisplay)
         next.start()
     }
 
@@ -3706,15 +3746,18 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun scheduleDisplaySize(width: Int, height: Int) {
         if (width <= 0 || height <= 0 || shuttingDown.get()) return
         val size = DisplaySize(width, height)
-        if (size == activeDisplaySize || size == pendingDisplaySize) return
+        if (size == pendingDisplaySize) return
+        if (size == activeDisplaySize && !displayLayoutChanged()) return
         pendingDisplaySize = size
         mainHandler.removeCallbacks(applyDisplaySize)
         mainHandler.postDelayed(applyDisplaySize, DISPLAY_CHANGE_DEBOUNCE_MILLIS)
     }
 
     private fun applyDisplaySize(size: DisplaySize) {
-        if (shuttingDown.get() || size == activeDisplaySize) return
+        val layoutChanged = displayLayoutChanged()
+        if (shuttingDown.get() || (size == activeDisplaySize && !layoutChanged)) return
         val previous = activeDisplaySize
+        val display = sessionDisplay
         activeDisplaySize = size
         recordDetectedMaximum(size)
         updateResolutionMenu()
@@ -3726,11 +3769,52 @@ class CarPlayHostActivity : ComponentActivity() {
                 "Display updated while handshake is reset: " +
                     "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
             )
+        } else if (
+            !layoutChanged &&
+            display?.canKeepSession(size.width, size.height, displayRotation(), hideTopBar, hideBottomBar) == true
+        ) {
+            // Keep camera shrink/restore cycles within the original window connected. If the
+            // session started in a camera window, growth beyond it needs a full-size canvas.
+            appendLog(
+                "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}; " +
+                    "keeping CarPlay session canvas=${display.width}x${display.height}",
+            )
+            videoView?.let { updateVideoLayout(it.width, it.height) }
         } else {
             restartCarPlay(
                 "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}",
             )
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotation(): Int = videoView?.display?.rotation ?: windowManager.defaultDisplay.rotation
+
+    /** Only a kept session tracks layout; without it every size change already renegotiates. */
+    private fun displayLayoutChanged(): Boolean {
+        val display = sessionDisplay ?: return false
+        // A narrow window can become taller than it is wide without the screen rotating.
+        return display.rotation != displayRotation() ||
+            display.hideTopBar != hideTopBar || display.hideBottomBar != hideBottomBar
+    }
+
+    /** The part of the view that shows the negotiated canvas; the whole view unless a session was kept. */
+    private fun contentRect(viewWidth: Int, viewHeight: Int): CarPlayVideoLayout {
+        val display = sessionDisplay
+        if (display == null || (viewWidth == display.windowWidth && viewHeight == display.windowHeight)) {
+            return CarPlayVideoLayout(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        }
+        return CarPlayVideoLayout.fit(display.width, display.height, viewWidth, viewHeight)
+    }
+
+    private fun updateVideoLayout(viewWidth: Int, viewHeight: Int) {
+        val view = videoView ?: return
+        if (viewWidth <= 0 || viewHeight <= 0) return
+        val content = contentRect(viewWidth, viewHeight)
+        view.setTransform(Matrix().apply {
+            setScale(content.width / viewWidth, content.height / viewHeight)
+            postTranslate(content.left, content.top)
+        })
     }
 
     private fun recordDetectedMaximum(size: DisplaySize) {
@@ -3802,6 +3886,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
+        sessionDisplay = null
         controller = null
         sink = null
         teardownExecutor.execute {
@@ -3828,6 +3913,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
+        sessionDisplay = null
         controller = null
         sink = null
         activeScreenStreamTypes.clear()
@@ -3918,6 +4004,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
+        sessionDisplay = null
         controller = null
         sink = null
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
@@ -4019,7 +4106,7 @@ class CarPlayHostActivity : ComponentActivity() {
             return true
         }
 
-        val contacts = CarPlayTouchMapper.contacts(event, view.width, view.height)
+        val contacts = CarPlayTouchMapper.contacts(event, contentRect(view.width, view.height))
         val queued = controller?.sendTouch(contacts) ?: false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,
@@ -4297,26 +4384,35 @@ private object CarPlayBackgroundSession {
         val sink: AndroidMediaSink,
         val width: Int,
         val height: Int,
+        val display: CarPlaySessionDisplay?,
     )
 
     private var controller: CarPlayController? = null
     private var sink: AndroidMediaSink? = null
     private var width = 0
     private var height = 0
+    private var display: CarPlaySessionDisplay? = null
 
     @Synchronized
     fun snapshot(): Snapshot? {
         val currentController = controller ?: return null
         val currentSink = sink ?: return null
-        return Snapshot(currentController, currentSink, width, height)
+        return Snapshot(currentController, currentSink, width, height, display)
     }
 
     @Synchronized
-    fun store(controller: CarPlayController, sink: AndroidMediaSink, width: Int, height: Int) {
+    fun store(
+        controller: CarPlayController,
+        sink: AndroidMediaSink,
+        width: Int,
+        height: Int,
+        display: CarPlaySessionDisplay?,
+    ) {
         this.controller = controller
         this.sink = sink
         this.width = width
         this.height = height
+        this.display = display
     }
 
     @Synchronized
@@ -4326,5 +4422,28 @@ private object CarPlayBackgroundSession {
         sink = null
         width = 0
         height = 0
+        display = null
     }
+}
+
+/** The canvas negotiated at session start and the window it was negotiated for. */
+internal data class CarPlaySessionDisplay(
+    val width: Int,
+    val height: Int,
+    val rotation: Int,
+    val hideTopBar: Boolean,
+    val hideBottomBar: Boolean,
+    // Compare unscaled startup window dimensions, not the scaled video canvas.
+    val windowWidth: Int,
+    val windowHeight: Int,
+) {
+    fun canKeepSession(
+        newWidth: Int,
+        newHeight: Int,
+        newRotation: Int,
+        newHideTopBar: Boolean,
+        newHideBottomBar: Boolean,
+    ): Boolean =
+        newWidth > 0 && newHeight > 0 && newWidth <= windowWidth && newHeight <= windowHeight &&
+            newRotation == rotation && newHideTopBar == hideTopBar && newHideBottomBar == hideBottomBar
 }
