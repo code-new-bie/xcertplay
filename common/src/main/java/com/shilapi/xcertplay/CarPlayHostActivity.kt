@@ -351,7 +351,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var menuOpen = false
     private var latestStage = "Preparing CarPlay"
     private var darkMode = false
-    private var activeAirPlaySession: AirPlaySession? = null
+    private var appearanceMonitor: CarPlayAppearanceMonitor? = null
     private val activeScreenStreamTypes = mutableSetOf<Int>()
     private var handshakeResetInProgress = false
     private var startAfterHandshakeReset = false
@@ -366,6 +366,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var edgeSettingsGestureEligible = false
     private val shuttingDown = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val appearanceSync = CarPlayAppearanceSync(mainHandler, ::syncAirPlayDarkMode)
     private val teardownExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val airPlayCommandExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val logLines = ScreenLogBuffer(MAX_SCREEN_LOG_LINES)
@@ -441,7 +442,16 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initializeSessionLog()
-        darkMode = isDarkMode(resources.configuration.uiMode)
+        darkMode = isDarkMode(applicationContext.resources.configuration.uiMode)
+        appearanceMonitor = CarPlayAppearanceMonitor(
+            this, mainHandler, applicationContext.resources.configuration.uiMode, diagnostic = ::appendLog,
+        ) { night ->
+            if (night != darkMode) {
+                darkMode = night
+                appendLog("CarPlay appearance changed to ${if (night) "dark" else "light"}")
+                syncAirPlayDarkMode()
+            }
+        }.also { it.start() }
         advancedAudioChannelMappingSupported =
             resources.getBoolean(R.bool.config_advanced_audio_channel_mapping)
         airPlayIdentity = AirPlayPersistence.loadIdentity(this)
@@ -605,6 +615,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        appearanceMonitor?.updateUiMode(applicationContext.resources.configuration.uiMode)
         locationPermissionAvailable = hasFineLocationPermission()
         if (locationReportingEnabled && !locationPermissionAvailable && !menuOpen) {
             requestLocationPermission()
@@ -627,11 +638,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val nextDarkMode = isDarkMode(newConfig.uiMode)
-        if (nextDarkMode != darkMode) {
-            darkMode = nextDarkMode
-            syncAirPlayDarkMode()
-        }
+        appearanceMonitor?.updateUiMode(newConfig.uiMode)
         applyFullscreenMode()
         stageStatusView?.maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
         scrollLogsToBottom()
@@ -642,6 +649,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        appearanceMonitor?.stop()
+        appearanceSync.stop()
         stopMicrophoneGainTest()
         mainHandler.removeCallbacks(applyDisplaySize)
         mainHandler.removeCallbacks(expireOldLogLines)
@@ -3363,8 +3372,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     if (controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
-                    activeAirPlaySession = session
-                    syncAirPlayDarkMode()
+                    appearanceSync.start(session)
                     if (menuOpen) return@runOnUiThread
                     appendLog("AirPlay session active")
                 }
@@ -3372,7 +3380,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onSessionEnded(session: AirPlaySession) {
                 runOnUiThread {
-                    if (activeAirPlaySession === session) activeAirPlaySession = null
+                    appearanceSync.end(session)
+                    if (controller?.hasActiveAirPlaySession() != true) appearanceSync.stop()
                     if (menuOpen || controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
@@ -3442,6 +3451,7 @@ class CarPlayHostActivity : ComponentActivity() {
             createSessionListener(generation),
             createStatusReporter(generation),
         )
+        if (snapshot.controller.hasActiveAirPlaySession()) appearanceSync.start(snapshot.controller)
         snapshot.sink.setScreenStreamActiveChangedListener { type, active ->
             onScreenStreamStateChanged(restartGeneration, type, active)
         }
@@ -3530,11 +3540,13 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun syncAirPlayDarkMode() {
-        val session = activeAirPlaySession ?: return
+        if (shuttingDown.get()) return
+        val target = controller ?: return
         val night = darkMode
         airPlayCommandExecutor.execute {
+            if (target.isClosed()) return@execute
             try {
-                val sent = session.setNightMode(night)
+                val sent = target.setNightMode(night)
                 Log.i(
                     TAG,
                     "AirPlay dark mode=${if (night) "dark" else "light"} eventChannelReady=$sent",
@@ -3645,6 +3657,7 @@ class CarPlayHostActivity : ComponentActivity() {
         setConnectionStage(reason)
         Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
         val generation = ++restartGeneration
+        appearanceSync.stop()
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
@@ -3759,6 +3772,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!shuttingDown.compareAndSet(false, true)) return
         stopMicrophoneGainTest()
         restartGeneration += 1
+        appearanceSync.stop()
         mainHandler.removeCallbacks(applyDisplaySize)
         val oldController = controller
         val oldSink = sink

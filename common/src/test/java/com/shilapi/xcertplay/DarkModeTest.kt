@@ -16,4 +16,23 @@ class DarkModeTest {
         assertFalse(isDarkMode(Configuration.UI_MODE_NIGHT_NO))
         assertFalse(isDarkMode(Configuration.UI_MODE_NIGHT_UNDEFINED))
     }
+
+    @Test
+    fun fixedVehicleModeOverridesAndroidAndDayNightSignal() {
+        assertFalse(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_YES, "1", "0"))
+        assertTrue(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_NO, "2", "1"))
+    }
+
+    @Test
+    fun automaticVehicleModeFollowsActualDayNightSignal() {
+        assertTrue(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_NO, "0", "0"))
+        assertFalse(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_YES, "0", "1"))
+    }
+
+    @Test
+    fun missingVehicleStateFallsBackToAndroid() {
+        assertTrue(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_YES, null, "1"))
+        assertFalse(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_NO, "0", null))
+        assertTrue(resolveCarPlayDarkMode(Configuration.UI_MODE_NIGHT_YES, "unexpected", "1"))
+    }
 }

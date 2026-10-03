@@ -302,6 +302,14 @@ class CarPlayController(
 
     fun isClosed(): Boolean = closed
 
+    fun hasActiveAirPlaySession(): Boolean = !closed && activeSession != null
+
+    /** Sends through the current session, including one adopted from the background service. */
+    fun setNightMode(night: Boolean): Boolean {
+        if (closed) return false
+        return activeSession?.setNightMode(night) ?: false
+    }
+
     fun hasActiveAirPlayAttachment(): Boolean = synchronized(lifecycleLock) {
         !closed && vpnService?.isAttached() == true
     }
