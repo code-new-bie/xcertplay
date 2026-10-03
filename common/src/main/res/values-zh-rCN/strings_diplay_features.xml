@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 身份 -->
+    <string name="vehicle_name_label">车辆名称</string>
+
+    <!-- Wi-Fi P2P 信道 -->
+    <string name="wifi_p2p_channel_label">Wi-Fi P2P 信道</string>
+    <string name="wifi_p2p_channel_automatic">自动（5 GHz）</string>
+    <string name="wifi_p2p_channel_option">%1$s · 信道 %2$d · %3$d MHz</string>
+    <string name="wifi_p2p_channel_note">用于下一次 Wi-Fi P2P 连接。能否使用取决于无线芯片和地区；所选信道被拒绝时自动回退为 5 GHz 自动选择。</string>
+
+    <!-- 音频 -->
+    <string name="mute_local_media_label">静音本机媒体播放</string>
+    <string name="mute_local_media_desc">保留 CarPlay 导航、通话和 Siri 的声音；音乐请在 iPhone 上单独选择蓝牙输出</string>
+    <string name="mute_local_media_note">只静音 xcertplay 中的音乐；导航提示、通话和 Siri 仍会播放。</string>
+    <string name="media_audio_channel_label">媒体音频通道</string>
+    <string name="navigation_audio_channel_label">导航音频通道</string>
+    <string name="audio_channel_test">测试</string>
+    <string name="audio_channel_test_desc">测试%1$s</string>
+    <string name="audio_channel_note">0 = 自动路由。1-%1$d = 车机音频通道号；“测试”会通过该通道播放一段短提示音。关闭设置后生效。</string>
+    <string name="audio_channel_preview_failed">无法在此车机上试听音频通道 %1$d</string>
+
+    <!-- 窗口 -->
+    <string name="keep_session_label">窗口缩小时保持会话</string>
+    <string name="keep_session_desc">倒车或 360 影像窗口缩小画面时保持 CarPlay 连接</string>
+    <string name="keep_session_note">窗口在原始尺寸范围内缩小时（例如倒车或 360 影像），缩放现有的 CarPlay 画面，而不是按新尺寸重新连接。屏幕旋转或状态栏变化仍会重新连接。</string>
+
+    <!-- 比亚迪 -->
+    <string name="byd_settings_header">比亚迪</string>
+    <string name="byd_hide_call_label">隐藏原车来电弹窗（实验性）</string>
+    <string name="byd_hide_call_desc">CarPlay 已连接并显示在屏幕上时，关闭比亚迪原车来电弹窗</string>
+    <string name="byd_hide_call_note">CarPlay 已连接并显示在屏幕上时，借助原车 HiCar 接口关闭来电弹窗。无需 ADB。弹窗可能会短暂出现后再关闭。关闭此选项即可恢复原车来电界面。</string>
+    <string name="byd_vehicle_data_title">车辆数据（DiLink 4）</string>
+    <string name="byd_vehicle_speed_label">隧道导航使用车速和挡位</string>
+    <string name="byd_vehicle_speed_note">iPhone 请求时读取比亚迪车辆数据（只读）。需要已授权的网络 ADB，并开启位置上报。</string>
+    <string name="byd_vehicle_battery_label">为 Apple 地图提供电量和纯电续航（实验性）</string>
+    <string name="byd_vehicle_battery_note">上报电池电量和纯电续航。DM-i 车型不包含燃油续航。需要已授权的网络 ADB；是否生效取决于 iPhone 的支持情况。</string>
+    <string name="byd_vehicle_dc_label">车辆支持国标直流快充</string>
+    <string name="byd_vehicle_dc_note">仅在你的车型支持直流快充时开启；否则只上报交流充电口。</string>
+    <string name="byd_vehicle_capacity_label">动力电池容量（kWh，0 = 自动）</string>
+    <string name="byd_vehicle_capacity_note">如果自动检测读不到剩余电量，请填写你车型的电池容量（0-200 kWh）。</string>
+    <string name="byd_adb_check">检查并授权 ADB</string>
+    <string name="byd_adb_checking">正在检查 ADB…</string>
+    <string name="byd_adb_ready">ADB 已授权。\n车速/挡位：%1$s\n电量/纯电续航：%2$s</string>
+    <string name="byd_adb_data_available">可用</string>
+    <string name="byd_adb_data_unavailable">没有有效读数（请检查车辆电源和电池容量设置）</string>
+    <string name="byd_adb_not_approved">请在车机的调试授权对话框中允许 xcertplay，然后重新检查。</string>
+    <string name="byd_adb_unreachable">无法连接 127.0.0.1:5555。请在车机上开启网络 ADB；仅有 USB ADB 连接不会开放该端口。</string>
+    <string name="byd_adb_unsupported">该调试服务需要 xcertplay 不支持的协议。请使用 Android 10 的网络 ADB 服务。</string>
+    <string name="byd_adb_failed">ADB 检查失败：%1$s</string>
+    <string name="byd_adb_note">检查时可能会弹出调试授权对话框。后台读取不会请求授权；车辆数据不可用时会跳过，不影响 CarPlay。下一次 CarPlay 连接时生效。</string>
+</resources>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Identity -->
+    <string name="vehicle_name_label">Vehicle name</string>
+
+    <!-- Wi-Fi P2P channel -->
+    <string name="wifi_p2p_channel_label">Wi-Fi P2P channel</string>
+    <string name="wifi_p2p_channel_automatic">Automatic (5 GHz)</string>
+    <string name="wifi_p2p_channel_option">%1$s · Channel %2$d · %3$d MHz</string>
+    <string name="wifi_p2p_channel_note">Requested for the next Wi-Fi P2P connection. Availability depends on the radio and region; a rejected channel falls back to automatic 5 GHz.</string>
+
+    <!-- Audio -->
+    <string name="mute_local_media_label">Mute local media playback</string>
+    <string name="mute_local_media_desc">Keep CarPlay navigation, calls and Siri audible; select Bluetooth music output on the iPhone separately</string>
+    <string name="mute_local_media_note">Mutes music in xcertplay only; navigation prompts, calls and Siri still play.</string>
+    <string name="media_audio_channel_label">Media audio channel</string>
+    <string name="navigation_audio_channel_label">Navigation audio channel</string>
+    <string name="audio_channel_test">Test</string>
+    <string name="audio_channel_test_desc">Test %1$s</string>
+    <string name="audio_channel_note">0 = automatic routing. 1-%1$d = a head-unit audio channel number; Test plays a short tone through it. Applies when settings close.</string>
+    <string name="audio_channel_preview_failed">Cannot preview audio channel %1$d on this head unit</string>
+
+    <!-- Window -->
+    <string name="keep_session_label">Keep session on window shrink</string>
+    <string name="keep_session_desc">Keep CarPlay connected when a reverse or 360 camera window shrinks it</string>
+    <string name="keep_session_note">When the window shrinks inside its original size (for example a reverse or 360 camera view), scale the existing CarPlay picture instead of reconnecting at the new size. Rotation and bar changes still reconnect.</string>
+
+    <!-- BYD -->
+    <string name="byd_settings_header">BYD</string>
+    <string name="byd_hide_call_label">Hide stock call popups (experimental)</string>
+    <string name="byd_hide_call_desc">Dismiss the BYD call popup while connected CarPlay is on screen</string>
+    <string name="byd_hide_call_note">While connected CarPlay is on screen, use the stock HiCar interface to dismiss call popups. No ADB required. A popup may briefly appear before closing. Turn off to restore the stock call interface.</string>
+    <string name="byd_vehicle_data_title">Vehicle data (DiLink 4)</string>
+    <string name="byd_vehicle_speed_label">Vehicle speed and gear for tunnel navigation</string>
+    <string name="byd_vehicle_speed_note">Read-only BYD vehicle data when the iPhone requests it. Requires authorized network ADB and Location reporting.</string>
+    <string name="byd_vehicle_battery_label">Electric battery and range for Apple Maps (experimental)</string>
+    <string name="byd_vehicle_battery_note">Report battery and electric range. For DM-i, fuel range is excluded. Requires authorized network ADB; iPhone support determines availability.</string>
+    <string name="byd_vehicle_dc_label">Vehicle supports GB/T DC charging</string>
+    <string name="byd_vehicle_dc_note">Enable only if your variant supports DC charging; otherwise only the AC inlet is reported.</string>
+    <string name="byd_vehicle_capacity_label">Battery capacity (kWh, 0 = automatic)</string>
+    <string name="byd_vehicle_capacity_note">Use your variant\'s capacity if automatic detection cannot read the remaining energy (0-200 kWh).</string>
+    <string name="byd_adb_check">Check and authorize ADB</string>
+    <string name="byd_adb_checking">Checking ADB…</string>
+    <string name="byd_adb_ready">ADB authorized.\nVehicle speed / gear: %1$s\nBattery / electric range: %2$s</string>
+    <string name="byd_adb_data_available">available</string>
+    <string name="byd_adb_data_unavailable">no valid reading (check vehicle power and battery capacity)</string>
+    <string name="byd_adb_not_approved">Approve xcertplay in the head unit\'s debugging authorization dialog, then check again.</string>
+    <string name="byd_adb_unreachable">Cannot reach 127.0.0.1:5555. Enable network ADB on the head unit; a USB ADB connection alone does not enable this port.</string>
+    <string name="byd_adb_unsupported">This debugging service requires a protocol xcertplay does not support. Use the Android 10 network ADB service.</string>
+    <string name="byd_adb_failed">ADB check failed: %1$s</string>
+    <string name="byd_adb_note">The check may show a debugging authorization dialog. Background sampling never asks for approval; unavailable vehicle data is skipped while CarPlay continues. Applies on the next CarPlay connection.</string>
+</resources>

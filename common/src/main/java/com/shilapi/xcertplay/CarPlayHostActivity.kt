@@ -335,7 +335,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var mediaAudioChannel = VehicleAudioChannel.AUTOMATIC
     private var navigationAudioChannel = VehicleAudioChannel.AUTOMATIC
     private val channelPreview = AudioChannelPreview { channel ->
-        Toast.makeText(this, "Cannot preview audio channel $channel on this head unit", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.audio_channel_preview_failed, channel), Toast.LENGTH_SHORT).show()
     }
     private var mainMediaAudioBufferDurationMs = MainMediaAudioBuffer.DEFAULT_DURATION_MS
     @Volatile private var debugLogsEnabled = false
@@ -1053,10 +1053,9 @@ class CarPlayHostActivity : ComponentActivity() {
         )
         content.addView(
             settingsSwitchRow(
-                label = "Mute local media playback",
+                label = getString(R.string.mute_local_media_label),
                 checked = muteLocalMediaPlayback,
-                description = "Keep CarPlay navigation, calls and Siri audible; select Bluetooth " +
-                    "music output on the iPhone separately",
+                description = getString(R.string.mute_local_media_desc),
             ) { checked ->
                 muteLocalMediaPlayback = checked
                 appendLog("Local media playback ${if (checked) "muted" else "enabled"}; applies when settings close")
@@ -1067,33 +1066,24 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(20) },
         )
         content.addView(
-            menuText(
-                "Mutes music in xcertplay only; navigation prompts, calls and Siri still play.",
-                14f,
-                MENU_SECONDARY,
-            ),
+            menuText(getString(R.string.mute_local_media_note), 14f, MENU_SECONDARY),
         )
         content.addView(
-            buildVehicleAudioChannelRow("Media audio channel", navigation = false),
+            buildVehicleAudioChannelRow(getString(R.string.media_audio_channel_label), navigation = false),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(20) },
         )
         content.addView(
-            buildVehicleAudioChannelRow("Navigation audio channel", navigation = true),
+            buildVehicleAudioChannelRow(getString(R.string.navigation_audio_channel_label), navigation = true),
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(10) },
         )
         content.addView(
-            menuText(
-                "0 = automatic routing. 1-${VehicleAudioChannel.MAX} = a head-unit audio channel number; " +
-                    "Test plays a short tone through it. Applies when settings close.",
-                14f,
-                MENU_SECONDARY,
-            ),
+            menuText(getString(R.string.audio_channel_note, VehicleAudioChannel.MAX), 14f, MENU_SECONDARY),
         )
         if (advancedAudioChannelMappingSupported) {
             content.addView(
@@ -1118,7 +1108,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
         if (BydSettingsAvailability.available(this)) {
             content.addView(
-                settingsCategoryHeader("BYD"),
+                settingsCategoryHeader(getString(R.string.byd_settings_header)),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1126,9 +1116,9 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             content.addView(
                 settingsSwitchRow(
-                    label = "Hide stock call popups (experimental)",
+                    label = getString(R.string.byd_hide_call_label),
                     checked = BydCallUiSettings.enabled(this),
-                    description = "Dismiss the BYD call popup while connected CarPlay is on screen",
+                    description = getString(R.string.byd_hide_call_desc),
                 ) { checked -> BydCallUiSettings.setEnabled(this, checked) },
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1136,13 +1126,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 ).apply { topMargin = dp(12) },
             )
             content.addView(
-                menuText(
-                    "While connected CarPlay is on screen, use the stock HiCar interface to dismiss " +
-                        "call popups. No ADB required. A popup may briefly appear before closing. " +
-                        "Turn off to restore the stock call interface.",
-                    14f,
-                    MENU_SECONDARY,
-                ),
+                menuText(getString(R.string.byd_hide_call_note), 14f, MENU_SECONDARY),
             )
             content.addView(
                 buildBydVehicleDataSection(),
@@ -1454,9 +1438,9 @@ class CarPlayHostActivity : ComponentActivity() {
         )
         content.addView(
             settingsSwitchRow(
-                label = "Keep session on window shrink",
+                label = getString(R.string.keep_session_label),
                 checked = keepSessionOnWindowShrink,
-                description = "Keep CarPlay connected when a reverse or 360 camera window shrinks it",
+                description = getString(R.string.keep_session_desc),
             ) { checked -> keepSessionOnWindowShrink = checked },
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1464,13 +1448,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(12) },
         )
         content.addView(
-            menuText(
-                "When the window shrinks inside its original size (for example a reverse or 360 " +
-                    "camera view), scale the existing CarPlay picture instead of reconnecting at " +
-                    "the new size. Rotation and bar changes still reconnect.",
-                14f,
-                MENU_SECONDARY,
-            ),
+            menuText(getString(R.string.keep_session_note), 14f, MENU_SECONDARY),
         )
 
         content.addView(
@@ -2055,7 +2033,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         section.addView(
             settingsInputRow(
-                "Vehicle name",
+                getString(R.string.vehicle_name_label),
                 customVehicleName,
                 onInputCreated = { input ->
                     input.hint = VehicleName.bluetoothName(this) ?: VehicleName.DEFAULT
@@ -2213,28 +2191,26 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             section.addView(menuText(note, 14f, MENU_SECONDARY))
         }
-        section.addView(menuText("Vehicle data (DiLink 4)", 20f, MENU_SECONDARY))
+        section.addView(menuText(getString(R.string.byd_vehicle_data_title), 20f, MENU_SECONDARY))
         addSwitch(
-            "Vehicle speed and gear for tunnel navigation",
+            getString(R.string.byd_vehicle_speed_label),
             BydVehicleSettings.speedEnabled(this),
-            "Read-only BYD vehicle data when the iPhone requests it. Requires authorized network " +
-                "ADB and Location reporting.",
+            getString(R.string.byd_vehicle_speed_note),
         ) { BydVehicleSettings.setSpeedEnabled(this, it) }
         addSwitch(
-            "Electric battery and range for Apple Maps (experimental)",
+            getString(R.string.byd_vehicle_battery_label),
             BydVehicleSettings.batteryEnabled(this),
-            "Report battery and electric range. For DM-i, fuel range is excluded. Requires " +
-                "authorized network ADB; iPhone support determines availability.",
+            getString(R.string.byd_vehicle_battery_note),
         ) { BydVehicleSettings.setBatteryEnabled(this, it) }
         addSwitch(
-            "Vehicle supports GB/T DC charging",
+            getString(R.string.byd_vehicle_dc_label),
             BydVehicleSettings.dcChargingEnabled(this),
-            "Enable only if your variant supports DC charging; otherwise only the AC inlet is reported.",
+            getString(R.string.byd_vehicle_dc_note),
         ) { BydVehicleSettings.setDcChargingEnabled(this, it) }
         val capacity = BydVehicleSettings.capacityKwh(this)
         section.addView(
             settingsInputRow(
-                "Battery capacity (kWh, 0 = automatic)",
+                getString(R.string.byd_vehicle_capacity_label),
                 if (capacity == 0.0) "0" else String.format(Locale.US, "%.2f", capacity),
             ) { value ->
                 val number = value.trim().toDoubleOrNull()
@@ -2248,15 +2224,10 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(10) },
         )
         section.addView(
-            menuText(
-                "Use your variant's capacity if automatic detection cannot read the remaining energy " +
-                    "(0-200 kWh).",
-                14f,
-                MENU_SECONDARY,
-            ),
+            menuText(getString(R.string.byd_vehicle_capacity_note), 14f, MENU_SECONDARY),
         )
         val checkButton = Button(this).apply {
-            text = "Check and authorize ADB"
+            text = getString(R.string.byd_adb_check)
             isAllCaps = false
             textSize = 16f
             setTextColor(MENU_BUTTON_TEXT)
@@ -2264,33 +2235,31 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         checkButton.setOnClickListener {
             checkButton.isEnabled = false
-            checkButton.text = "Checking ADB…"
+            checkButton.text = getString(R.string.byd_adb_checking)
             kotlin.concurrent.thread(name = "xcertplay-byd-check", isDaemon = true) {
                 val result = runCatching { BydVehicleAccess.check(applicationContext) }
                 runOnUiThread {
                     checkButton.isEnabled = true
-                    checkButton.text = "Check and authorize ADB"
+                    checkButton.text = getString(R.string.byd_adb_check)
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     val message = result.fold({ checked ->
                         when (checked.access) {
                             LocalAdb.Access.READY -> {
-                                fun state(available: Boolean) =
-                                    if (available) "available" else "no valid reading (check vehicle power and battery capacity)"
-                                "ADB authorized.\nVehicle speed / gear: ${state(checked.speedAvailable)}\n" +
-                                    "Battery / electric range: ${state(checked.batteryAvailable)}" +
-                                    if (checked.details.isBlank()) "" else "\n\n${checked.details}"
+                                fun state(available: Boolean) = getString(
+                                    if (available) R.string.byd_adb_data_available else R.string.byd_adb_data_unavailable,
+                                )
+                                getString(
+                                    R.string.byd_adb_ready,
+                                    state(checked.speedAvailable),
+                                    state(checked.batteryAvailable),
+                                ) + if (checked.details.isBlank()) "" else "\n\n${checked.details}"
                             }
-                            LocalAdb.Access.NOT_APPROVED ->
-                                "Approve xcertplay in the head unit's debugging authorization dialog, then check again."
-                            LocalAdb.Access.UNREACHABLE ->
-                                "Cannot reach 127.0.0.1:5555. Enable network ADB on the head unit; a USB ADB " +
-                                    "connection alone does not enable this port."
-                            LocalAdb.Access.UNSUPPORTED ->
-                                "This debugging service requires a protocol xcertplay does not support. " +
-                                    "Use the Android 10 network ADB service."
+                            LocalAdb.Access.NOT_APPROVED -> getString(R.string.byd_adb_not_approved)
+                            LocalAdb.Access.UNREACHABLE -> getString(R.string.byd_adb_unreachable)
+                            LocalAdb.Access.UNSUPPORTED -> getString(R.string.byd_adb_unsupported)
                         }
-                    }, { "ADB check failed: ${it.javaClass.simpleName}" })
-                    AlertDialog.Builder(this).setTitle("Check and authorize ADB").setMessage(message)
+                    }, { getString(R.string.byd_adb_failed, it.javaClass.simpleName) })
+                    AlertDialog.Builder(this).setTitle(R.string.byd_adb_check).setMessage(message)
                         .setPositiveButton(android.R.string.ok, null).show()
                 }
             }
@@ -2303,13 +2272,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(10) },
         )
         section.addView(
-            menuText(
-                "The check may show a debugging authorization dialog. Background sampling never asks " +
-                    "for approval; unavailable vehicle data is skipped while CarPlay continues. " +
-                    "Applies on the next CarPlay connection.",
-                14f,
-                MENU_SECONDARY,
-            ),
+            menuText(getString(R.string.byd_adb_note), 14f, MENU_SECONDARY),
         )
         return section
     }
@@ -2329,13 +2292,13 @@ class CarPlayHostActivity : ComponentActivity() {
         )
         row.addView(
             Button(this).apply {
-                text = "Test"
+                text = getString(R.string.audio_channel_test)
                 isAllCaps = false
                 textSize = 16f
                 setTextColor(MENU_BUTTON_TEXT)
                 backgroundTintList = ColorStateList.valueOf(MENU_ACCENT)
                 minWidth = dp(78)
-                contentDescription = "Test $label"
+                contentDescription = getString(R.string.audio_channel_test_desc, label)
                 setOnClickListener {
                     channelPreview.play(
                         if (navigation) navigationAudioChannel else mediaAudioChannel,
@@ -3133,8 +3096,8 @@ class CarPlayHostActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             section.addView(
                 settingsChoiceRow(
-                    "Wi-Fi P2P channel",
-                    WifiChannelPreference.channels.map { it to WifiChannelPreference.label(it) },
+                    getString(R.string.wifi_p2p_channel_label),
+                    WifiChannelPreference.channels.map { it to wifiChannelLabel(it) },
                     wifiDirectChannel,
                 ) { wifiDirectChannel = it },
                 LinearLayout.LayoutParams(
@@ -3143,12 +3106,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 ).apply { topMargin = dp(10) },
             )
             section.addView(
-                menuText(
-                    "Requested for the next Wi-Fi P2P connection. Availability depends on the " +
-                        "radio and region; a rejected channel falls back to automatic 5 GHz.",
-                    14f,
-                    MENU_SECONDARY,
-                ),
+                menuText(getString(R.string.wifi_p2p_channel_note), 14f, MENU_SECONDARY),
             )
         }
 
@@ -3538,6 +3496,14 @@ class CarPlayHostActivity : ComponentActivity() {
             oemLabel = vehicleName(),
             icons = listOf(loadAirPlayIcon()),
         )
+    }
+
+    /** A channel's operating frequency does not tell us the negotiated channel width. */
+    private fun wifiChannelLabel(channel: Int): String {
+        val frequency = WifiChannelPreference.frequency(channel)
+            ?: return getString(R.string.wifi_p2p_channel_automatic)
+        val band = if (frequency < 5000) "2.4 GHz" else "5 GHz"
+        return getString(R.string.wifi_p2p_channel_option, band, channel, frequency)
     }
 
     /** Shown as the iPhone's car name and on the CarPlay return-to-car icon. */

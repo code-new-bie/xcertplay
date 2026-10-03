@@ -25,10 +25,4 @@ class WifiChannelPreferenceTest {
         assertEquals(listOf<Int?>(null), WifiChannelPreference.creationFrequencies(0))
         assertEquals(listOf<Int?>(null), WifiChannelPreference.creationFrequencies(35))
     }
-
-    @Test fun labelsShowBandChannelAndFrequency() {
-        assertEquals("5 GHz · Channel 149 · 5745 MHz", WifiChannelPreference.label(149))
-        assertEquals("2.4 GHz · Channel 6 · 2437 MHz", WifiChannelPreference.label(6))
-        assertEquals("Automatic (5 GHz)", WifiChannelPreference.label(0))
-    }
 }
