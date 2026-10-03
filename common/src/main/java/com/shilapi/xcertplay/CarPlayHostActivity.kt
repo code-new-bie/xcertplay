@@ -522,9 +522,13 @@ class CarPlayHostActivity : ComponentActivity() {
                     if (menuOpen) {
                         if (safeAreaEditorActive) closeSafeAreaEditor() else cancelSettingsEdits()
                     } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                        isEnabled = true
+                        // Keep this screen and its CarPlay video alive; reopening the app returns to it.
+                        appendLog("Back pressed; opening the head-unit home screen")
+                        try {
+                            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
+                        } catch (_: ActivityNotFoundException) {
+                            moveTaskToBack(true)
+                        }
                     }
                 }
             },

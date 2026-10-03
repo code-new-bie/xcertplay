@@ -53,6 +53,7 @@ class AndroidMediaSink(
     private val microphoneUplinks = ConcurrentHashMap<AudioStreamId, MicrophoneUplink>()
     private val videoRecoveryHandlers = ConcurrentHashMap<Int, () -> Boolean>()
     private val pendingVideoCodec = ConcurrentHashMap<Int, VideoCodec>()
+    private val activeScreenTypes = mutableSetOf<Int>()
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
 
     fun setSurface(type: Int, surface: Surface) {
@@ -64,8 +65,16 @@ class AndroidMediaSink(
         if (surfaces.remove(type, surface)) videoDecoders[type]?.setSurface(null)
     }
 
+    /**
+     * A host that adopts a running session attaches after its screen streams started, so the
+     * streams already active are replayed to the new listener.
+     */
     fun setScreenStreamActiveChangedListener(listener: ((Int, Boolean) -> Unit)?) {
-        screenStreamActiveChanged = listener
+        val active = synchronized(activeScreenTypes) {
+            screenStreamActiveChanged = listener
+            activeScreenTypes.toList()
+        }
+        if (listener != null) active.forEach { listener(it, true) }
     }
 
     fun setMediaMetricsMonitor(monitor: MediaMetricsMonitor?) {
@@ -94,6 +103,9 @@ class AndroidMediaSink(
     }
 
     override fun onScreenStreamActive(type: Int, active: Boolean) {
+        synchronized(activeScreenTypes) {
+            if (active) activeScreenTypes.add(type) else activeScreenTypes.remove(type)
+        }
         if (!active) {
             videoDecoders.remove(type)?.close()
             pendingVideoCodec.remove(type)
