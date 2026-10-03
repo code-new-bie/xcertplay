@@ -1216,6 +1216,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 topMarginDp = 12,
             )
             addSetting(page, buildBydVehicleDataSection())
+            buildHeadUnitBluetoothSection(page)
         }
         addButton(
             page,
@@ -1225,12 +1226,11 @@ class CarPlayHostActivity : ComponentActivity() {
             },
             getString(R.string.hint_bt_settings),
         )
-        buildHeadUnitBluetoothSection(page)
     }
 
-    /** Reads the head unit's real Bluetooth address through ADB so the iPhone receives it. */
+    /** BYD group: reads the head unit's real Bluetooth address through ADB so the iPhone receives it. */
     private fun buildHeadUnitBluetoothSection(page: LinearLayout) {
-        addGroupHeader(page, getString(R.string.head_unit_bt_header))
+        addSetting(page, menuText(getString(R.string.head_unit_bt_header), 18f, Color.WHITE))
         val status = menuText("", 16f, Color.WHITE)
         fun refreshStatus() {
             val ids = AccessoryIds.of(this, airPlayIdentity)
