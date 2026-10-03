@@ -32,6 +32,8 @@
     <queries>
         <!-- Identifies BYD head units for the optional stock call popup setting. -->
         <package android:name="com.byd.bydlogtool" />
+        <!-- BYD's own Bluetooth settings page, opened from the settings page. -->
+        <package android:name="com.byd.btsetting" />
     </queries>
 
     <application android:usesCleartextTraffic="true">

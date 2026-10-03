@@ -3,6 +3,7 @@ package com.shilapi.xcertplay
 import android.Manifest
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -2611,8 +2612,13 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun openSystemBluetoothSettings() {
+        // BYD's Bluetooth page declares BLUETOOTH_SETTINGS without CATEGORY_DEFAULT, so the
+        // implicit intent finds nothing there; address its activity directly when it exists.
+        val byd = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).setComponent(BYD_BLUETOOTH_SETTINGS)
+        val intent = if (byd.resolveActivity(packageManager) != null) byd else Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+        appendLog("Opening Bluetooth settings: ${intent.component?.flattenToShortString() ?: "Android standard page"}")
         try {
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            startActivity(intent)
         } catch (error: ActivityNotFoundException) {
             appendLog("System Bluetooth settings are unavailable: ${error.message}")
             Toast.makeText(this, getString(R.string.bt_settings_unavailable), Toast.LENGTH_LONG).show()
@@ -4668,6 +4674,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "xcertplay-usb"
+        /** BYD DiLink's own Bluetooth settings page (com.byd.btsetting in the head-unit firmware). */
+        val BYD_BLUETOOTH_SETTINGS = ComponentName("com.byd.btsetting", "com.byd.btsetting.BluetoothManagerDialog")
         const val SCREEN_TYPE_MAIN = 110
         const val SCREEN_TYPE_ALT = 111
         const val LOG_RETENTION_MILLIS = 5 * 60_000L
