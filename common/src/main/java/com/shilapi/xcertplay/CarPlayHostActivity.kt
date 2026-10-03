@@ -134,7 +134,8 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog("Vehicle name \"$name\" (from ${source.label})")
         val accessoryIds = AccessoryIds.of(this, airPlayIdentity)
         appendLog(
-            "Accessory deviceID=${accessoryIds.deviceId} bluetoothID=${accessoryIds.bluetoothId} " +
+            "Accessory deviceID=${accessoryIds.deviceId} " +
+                "bluetoothID=${accessoryIds.bluetoothId} (${accessoryIds.bluetoothSource.label}) " +
                 "serial=${AccessorySerial.of(this)}",
         )
         return buildRuntimeConfig()
@@ -1223,6 +1224,67 @@ class CarPlayHostActivity : ComponentActivity() {
                 setOnClickListener { openSystemBluetoothSettings() }
             },
             getString(R.string.hint_bt_settings),
+        )
+        buildHeadUnitBluetoothSection(page)
+    }
+
+    /** Reads the head unit's real Bluetooth address through ADB so the iPhone receives it. */
+    private fun buildHeadUnitBluetoothSection(page: LinearLayout) {
+        addGroupHeader(page, getString(R.string.head_unit_bt_header))
+        val status = menuText("", 16f, Color.WHITE)
+        fun refreshStatus() {
+            val ids = AccessoryIds.of(this, airPlayIdentity)
+            status.text = when (ids.bluetoothSource) {
+                AccessoryIds.BluetoothSource.SAVED -> getString(R.string.head_unit_bt_saved, ids.bluetoothId)
+                AccessoryIds.BluetoothSource.SYSTEM -> getString(R.string.head_unit_bt_system, ids.bluetoothId)
+                AccessoryIds.BluetoothSource.DEVICE_ID -> getString(R.string.head_unit_bt_generated, ids.bluetoothId)
+            }
+        }
+        refreshStatus()
+        addSetting(page, status, topMarginDp = 8)
+        val readButton = Button(this).apply { text = getString(R.string.head_unit_bt_read) }
+        readButton.setOnClickListener {
+            readButton.isEnabled = false
+            readButton.text = getString(R.string.head_unit_bt_reading)
+            kotlin.concurrent.thread(name = "xcertplay-bt-address", isDaemon = true) {
+                val result = runCatching { AccessoryIds.readThroughAdb(applicationContext) }
+                runOnUiThread {
+                    readButton.isEnabled = true
+                    readButton.text = getString(R.string.head_unit_bt_read)
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val message = result.fold({ (access, address) ->
+                        when (access) {
+                            LocalAdb.Access.READY -> if (address != null) {
+                                AirPlayPersistence.saveHeadUnitBluetoothAddress(this, address)
+                                appendLog("Head-unit Bluetooth address read through ADB: $address")
+                                getString(R.string.head_unit_bt_read_ok, address)
+                            } else {
+                                appendLog("Head-unit Bluetooth address: ADB returned no valid address")
+                                getString(R.string.head_unit_bt_read_empty)
+                            }
+                            LocalAdb.Access.NOT_APPROVED -> getString(R.string.byd_adb_not_approved)
+                            LocalAdb.Access.UNREACHABLE -> getString(R.string.byd_adb_unreachable)
+                            LocalAdb.Access.UNSUPPORTED -> getString(R.string.byd_adb_unsupported)
+                        }
+                    }, { getString(R.string.byd_adb_failed, it.javaClass.simpleName) })
+                    refreshStatus()
+                    AlertDialog.Builder(this).setTitle(R.string.head_unit_bt_header).setMessage(message)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
+        addButton(page, readButton, null)
+        addButton(
+            page,
+            Button(this).apply {
+                text = getString(R.string.head_unit_bt_clear)
+                setOnClickListener {
+                    AirPlayPersistence.saveHeadUnitBluetoothAddress(this@CarPlayHostActivity, null)
+                    appendLog("Head-unit Bluetooth address cleared")
+                    refreshStatus()
+                }
+            },
+            getString(R.string.head_unit_bt_note),
         )
     }
 

@@ -43,4 +43,14 @@
     <string name="byd_adb_unsupported">该调试服务需要 xcertplay 不支持的协议。请使用 Android 10 的网络 ADB 服务。</string>
     <string name="byd_adb_failed">ADB 检查失败：%1$s</string>
     <string name="byd_adb_note">检查时可能会弹出调试授权对话框。后台读取不会请求授权；车辆数据不可用时会跳过，不影响 CarPlay。下一次 CarPlay 连接时生效。</string>
+    <string name="head_unit_bt_header">车机蓝牙地址</string>
+    <string name="head_unit_bt_saved">发给 iPhone：%1$s（真实地址，通过 ADB 读取）</string>
+    <string name="head_unit_bt_system">发给 iPhone：%1$s（真实地址）</string>
+    <string name="head_unit_bt_generated">发给 iPhone：%1$s（生成值，尚未读取真实地址）</string>
+    <string name="head_unit_bt_read">通过 ADB 读取真实地址</string>
+    <string name="head_unit_bt_reading">正在读取…</string>
+    <string name="head_unit_bt_clear">清除</string>
+    <string name="head_unit_bt_read_ok">已读取并保存 %1$s，下次连接生效。</string>
+    <string name="head_unit_bt_read_empty">ADB 已连接，但车机没有返回有效的蓝牙地址。请打开蓝牙后重试。</string>
+    <string name="head_unit_bt_note">iPhone 通过这个地址识别车辆。下次连接生效；更换后建议在 iPhone 上忘记此车辆并重新配对。</string>
 </resources>

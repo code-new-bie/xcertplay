@@ -43,4 +43,14 @@
     <string name="byd_adb_unsupported">This debugging service requires a protocol xcertplay does not support. Use the Android 10 network ADB service.</string>
     <string name="byd_adb_failed">ADB check failed: %1$s</string>
     <string name="byd_adb_note">The check may show a debugging authorization dialog. Background sampling never asks for approval; unavailable vehicle data is skipped while CarPlay continues. Applies on the next CarPlay connection.</string>
+    <string name="head_unit_bt_header">Head-unit Bluetooth address</string>
+    <string name="head_unit_bt_saved">Sent to the iPhone: %1$s (real address, read through ADB)</string>
+    <string name="head_unit_bt_system">Sent to the iPhone: %1$s (real address)</string>
+    <string name="head_unit_bt_generated">Sent to the iPhone: %1$s (generated; the real address has not been read)</string>
+    <string name="head_unit_bt_read">Read real address through ADB</string>
+    <string name="head_unit_bt_reading">Reading…</string>
+    <string name="head_unit_bt_clear">Clear</string>
+    <string name="head_unit_bt_read_ok">Read and saved %1$s. It is used from the next connection.</string>
+    <string name="head_unit_bt_read_empty">ADB is connected, but the head unit returned no valid Bluetooth address. Turn Bluetooth on and try again.</string>
+    <string name="head_unit_bt_note">The iPhone uses this address to recognise the car. Takes effect on the next connection; after changing it, forget this car on the iPhone and pair again.</string>
 </resources>

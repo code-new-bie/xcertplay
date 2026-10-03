@@ -25,4 +25,27 @@ class AccessoryIdsTest {
         )
         assertNull(AccessoryIds.realBluetoothAddress(listOf("02:00:00:00:00:00", "00:00:00:00:00:00", "bad", null)))
     }
+
+    @Test
+    fun aSavedAddressWinsThenTheSystemThenTheDeviceId() {
+        val device = "9E:00:00:00:00:01"
+        assertEquals(
+            AccessoryIds(device, "11:22:33:44:55:66", AccessoryIds.BluetoothSource.SAVED),
+            AccessoryIds.resolve(device, "11:22:33:44:55:66", listOf("AA:BB:CC:DD:EE:FF")),
+        )
+        assertEquals(
+            AccessoryIds(device, "AA:BB:CC:DD:EE:FF", AccessoryIds.BluetoothSource.SYSTEM),
+            AccessoryIds.resolve(device, "02:00:00:00:00:00", listOf(null, "aa:bb:cc:dd:ee:ff")),
+        )
+        assertEquals(
+            AccessoryIds(device, device, AccessoryIds.BluetoothSource.DEVICE_ID),
+            AccessoryIds.resolve(device, null, listOf("02:00:00:00:00:00")),
+        )
+    }
+
+    @Test
+    fun adbOutputIsParsedLineByLine() {
+        assertEquals("AA:BB:CC:DD:EE:FF", AccessoryIds.realBluetoothAddress("aa:bb:cc:dd:ee:ff\r\n".lines()))
+        assertNull(AccessoryIds.realBluetoothAddress("null\n".lines()))
+    }
 }

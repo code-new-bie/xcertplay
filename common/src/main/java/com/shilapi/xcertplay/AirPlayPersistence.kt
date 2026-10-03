@@ -59,6 +59,7 @@ object AirPlayPersistence {
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
     private const val KEY_VEHICLE_NAME = "vehicle_name"
+    private const val KEY_HEAD_UNIT_BLUETOOTH_ADDRESS = "head_unit_bluetooth_address"
     private const val KEY_FPS = "display_fps"
     private const val KEY_WIDTH_PHYSICAL_MM = "display_width_physical_mm"
     private const val KEY_PHYSICAL_SIZE_BASIS = "display_physical_size_basis"
@@ -450,6 +451,19 @@ object AirPlayPersistence {
         VehicleName.sanitize(
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VEHICLE_NAME, null),
         ).orEmpty()
+
+    /** The head unit's real Bluetooth address read through ADB, or null. */
+    fun loadHeadUnitBluetoothAddress(context: Context): String? = AccessoryIds.realBluetoothAddress(
+        listOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS, null)),
+    )
+
+    /** Saves a real address, or clears it for null and placeholder addresses. */
+    fun saveHeadUnitBluetoothAddress(context: Context, address: String?) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        val real = AccessoryIds.realBluetoothAddress(listOf(address))
+        if (real == null) editor.remove(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS) else editor.putString(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS, real)
+        editor.apply()
+    }
 
     fun saveCustomVehicleName(context: Context, name: String) {
         val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
