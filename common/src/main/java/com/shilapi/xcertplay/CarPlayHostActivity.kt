@@ -127,12 +127,12 @@ class CarPlayHostActivity : ComponentActivity() {
     )
 
     private lateinit var airPlayIdentity: AirPlayIdentity
-    private val accessoryIds by lazy { AccessoryIds.of(this) }
 
     // CH341 USB\VID_1A86&PID_5512&REV_0304 is the deployment-supplied bridge identity.
     private fun createRuntimeConfig(): CarPlayRuntimeConfig {
         val (name, source) = VehicleName.resolveWithSource(customVehicleName, VehicleName.bluetoothName(this))
         appendLog("Vehicle name \"$name\" (from ${source.label})")
+        val accessoryIds = AccessoryIds.of(this, airPlayIdentity)
         appendLog(
             "Accessory deviceID=${accessoryIds.deviceId} bluetoothID=${accessoryIds.bluetoothId} " +
                 "serial=${AccessorySerial.of(this)}",
@@ -3436,6 +3436,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ),
             safeAreaDrawOutside = safeAreaDrawOutside,
         )
+        val accessoryIds = AccessoryIds.of(this, airPlayIdentity)
         return AirPlayConfig(
             deviceName = vehicleName(),
             deviceId = accessoryIds.deviceId,
