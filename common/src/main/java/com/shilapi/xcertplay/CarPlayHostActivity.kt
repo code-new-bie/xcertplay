@@ -1481,6 +1481,16 @@ class CarPlayHostActivity : ComponentActivity() {
             ).apply { topMargin = dp(20) },
         )
         content.addView(
+            buildExportLogsButton(),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(16) },
+        )
+        content.addView(
+            menuText(getString(R.string.export_logs_note), 14f, MENU_SECONDARY),
+        )
+        content.addView(
             Button(this).apply {
                 text = getString(R.string.open_bt_settings)
                 isAllCaps = false
@@ -2172,6 +2182,34 @@ class CarPlayHostActivity : ComponentActivity() {
                     "applies when settings close",
             )
         }
+
+    private fun buildExportLogsButton(): View = Button(this).apply {
+        text = getString(R.string.export_logs)
+        isAllCaps = false
+        textSize = 17f
+        setTextColor(MENU_BUTTON_TEXT)
+        backgroundTintList = ColorStateList.valueOf(MENU_ACCENT)
+        minHeight = dp(52)
+        setOnClickListener { button ->
+            button.isEnabled = false
+            text = getString(R.string.export_logs_running)
+            val logFile = sessionLog?.file
+            kotlin.concurrent.thread(name = "xcertplay-log-export", isDaemon = true) {
+                val result = runCatching { LogExporter.export(applicationContext, logFile) }
+                result.exceptionOrNull()?.let { Log.w(TAG, "log export failed", it) }
+                runOnUiThread {
+                    button.isEnabled = true
+                    text = getString(R.string.export_logs)
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val message = result.fold(
+                        { getString(R.string.export_logs_done, it.fileCount, it.location) },
+                        { getString(R.string.export_logs_failed, it.message ?: it.javaClass.simpleName) },
+                    )
+                    Toast.makeText(this@CarPlayHostActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     private fun buildBydVehicleDataSection(): View {
         val section = LinearLayout(this).apply {

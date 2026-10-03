@@ -33,6 +33,11 @@
     <string name="more_gestures_label">More gestures to Settings page</string>
     <string name="more_gestures_desc">Enable a one-finger swipe down along the left edge to open settings</string>
     <string name="open_bt_settings">Open system Bluetooth settings</string>
+    <string name="export_logs">Export logs</string>
+    <string name="export_logs_running">Exporting logs…</string>
+    <string name="export_logs_done">Exported %1$d log files to %2$s</string>
+    <string name="export_logs_failed">Could not export logs: %1$s</string>
+    <string name="export_logs_note">Copies xcertplay.log and this app\'s system log to the Download/xcertplay folder, so they can be copied to a USB drive without ADB.</string>
     <string name="save_reconnect">Save and reconnect</string>
     <string name="exit_app">EXIT APPLICATION</string>
     <string name="discard_exit">Discard changes and exit settings</string>

@@ -33,6 +33,11 @@
     <string name="more_gestures_label">更多打开设置页的手势</string>
     <string name="more_gestures_desc">启用单指沿屏幕左侧边缘下滑打开设置</string>
     <string name="open_bt_settings">打开系统蓝牙设置</string>
+    <string name="export_logs">导出日志</string>
+    <string name="export_logs_running">正在导出日志…</string>
+    <string name="export_logs_done">已导出 %1$d 个日志文件到 %2$s</string>
+    <string name="export_logs_failed">导出日志失败：%1$s</string>
+    <string name="export_logs_note">将 xcertplay.log 和本应用的系统日志复制到“下载/xcertplay”文件夹，无需 ADB 即可拷到 U 盘。</string>
     <string name="save_reconnect">保存并重新连接</string>
     <string name="exit_app">退出应用</string>
     <string name="discard_exit">放弃更改并退出设置</string>
