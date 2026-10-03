@@ -79,8 +79,9 @@ object AirPlayPersistence {
     private const val SAFE_AREA_KEY_PREFIX = "safe_area_"
     private const val CUSTOM_ICON_FILE = "airplay-icon.png"
 
-    const val DEFAULT_MANUFACTURER = "xcertplay"
-    const val DEFAULT_MODEL = "xcertplay"
+    // BYD build defaults; sent to the iPhone in iAP2 identification and AirPlay /info.
+    const val DEFAULT_MANUFACTURER = "BYD"
+    const val DEFAULT_MODEL = "Song PLUS"
     const val DEFAULT_MFI_I2C_PATH = "/dev/i2c-1"
 
     fun loadDisplayScaleTenths(context: Context): Int {
