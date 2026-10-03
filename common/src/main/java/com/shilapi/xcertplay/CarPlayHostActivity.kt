@@ -157,7 +157,7 @@ class CarPlayHostActivity : ComponentActivity() {
             name = vehicleName(),
             modelIdentifier = normalizedModel(),
             manufacturer = normalizedManufacturer(),
-            serialNumber = "xcertplay",
+            serialNumber = AccessorySerial.of(this),
             firmwareVersion = "1.0.0",
             hardwareVersion = "1.0",
             carPlayUsbInterfaceNumber = 3,

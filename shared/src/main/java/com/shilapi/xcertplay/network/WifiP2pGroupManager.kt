@@ -604,7 +604,7 @@ class WifiP2pGroupManager(
     }
 }
 
-private const val WIFI_P2P_SSID_PREFIX = "DIRECT-xcertplay"
+private const val WIFI_P2P_SSID_PREFIX = "DIRECT-BYD"
 private const val MFI_CERTIFICATE_SSID_SUFFIX_LENGTH = 4
 private const val MFI_CERTIFICATE_PASSPHRASE_LENGTH = 8
 private const val HEX_DIGITS = "0123456789abcdef"

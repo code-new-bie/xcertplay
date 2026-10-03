@@ -29,16 +29,16 @@ object AirPlayHid {
     private const val BYTES_PER_FINGER = 6
 
     fun touchHidDevice(xMax: Int, yMax: Int, displayUuid: String): Map<String, Any?> =
-        hidDeviceEntry(TOUCH_HID_UID, "xcertplay Touchscreen", multitouchDescriptor(xMax, yMax), displayUuid)
+        hidDeviceEntry(TOUCH_HID_UID, "BYD Touchscreen", multitouchDescriptor(xMax, yMax), displayUuid)
 
     fun knobHidDevice(displayUuid: String): Map<String, Any?> =
-        hidDeviceEntry(KNOB_HID_UID, "xcertplay Knob", knobDescriptor, displayUuid)
+        hidDeviceEntry(KNOB_HID_UID, "BYD Knob", knobDescriptor, displayUuid)
 
     fun mediaHidDevice(displayUuid: String): Map<String, Any?> =
-        hidDeviceEntry(MEDIA_HID_UID, "xcertplay Media", mediaDescriptor, displayUuid)
+        hidDeviceEntry(MEDIA_HID_UID, "BYD Media", mediaDescriptor, displayUuid)
 
     fun telephonyHidDevice(displayUuid: String): Map<String, Any?> =
-        hidDeviceEntry(TELEPHONY_HID_UID, "xcertplay Telephony", telephonyDescriptor, displayUuid)
+        hidDeviceEntry(TELEPHONY_HID_UID, "BYD Telephony", telephonyDescriptor, displayUuid)
 
     fun touchReport(contacts: List<AirPlayContact>): ByteArray {
         val report = ByteArray(BYTES_PER_FINGER * TOUCH_CONTACTS)
