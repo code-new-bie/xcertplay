@@ -6,9 +6,9 @@
     <string name="cat_connection">连接</string>
     <string name="cat_location">位置</string>
     <string name="cat_startup">启动</string>
-    <string name="cat_audio">音频</string>
+    <string name="cat_audio">声音</string>
     <string name="cat_identity">身份与外观</string>
-    <string name="cat_display">显示与视频</string>
+    <string name="cat_display">显示</string>
     <string name="cat_window">窗口</string>
     <string name="cat_diagnostics">诊断</string>
     <string name="cat_android9">Android 9 兼容性</string>
@@ -18,18 +18,18 @@
     <string name="hotspot_status">热点状态</string>
     <string name="auto_start_label">开机自动启动</string>
     <string name="auto_start_desc">设备开机后自动启动 CarPlay</string>
-    <string name="main_media_buffer">主媒体音频缓冲</string>
+    <string name="main_media_buffer">音乐缓冲</string>
     <string name="advanced_mapping_label">高级音频通道映射</string>
     <string name="advanced_mapping_desc">按 CarPlay 音频类型路由 AAOS 音频总线</string>
-    <string name="resolution">分辨率</string>
+    <string name="resolution">画面清晰度</string>
     <string name="frame_rate">帧率</string>
-    <string name="physical_basis">物理尺寸基准</string>
+    <string name="physical_basis">尺寸基准</string>
     <string name="basis_width">按最大宽度</string>
     <string name="basis_height">按最大高度</string>
-    <string name="physical_length">物理长度</string>
+    <string name="physical_length">参考长度</string>
     <string name="hevc_desc">HEVC H.265 视频传输</string>
-    <string name="hevc_sw">HEVC 软件解码器</string>
-    <string name="hevc_sw_desc">使用软件 HEVC 解码器</string>
+    <string name="hevc_sw">软件视频解码</string>
+    <string name="hevc_sw_desc">仅在硬件解码出现绿屏、花屏时开启</string>
     <string name="more_gestures_label">更多打开设置页的手势</string>
     <string name="more_gestures_desc">启用单指沿屏幕左侧边缘下滑打开设置</string>
     <string name="open_bt_settings">打开系统蓝牙设置</string>
@@ -44,7 +44,7 @@
     <string name="discard_exit">放弃更改并退出设置</string>
 
     <!-- MFi -->
-    <string name="mfi_target">MFi 证书与签名来源</string>
+    <string name="mfi_target">认证方式</string>
     <string name="mfi_remote">远程</string>
     <string name="mfi_local">本地文件</string>
     <string name="i2c_device">I2C 设备</string>
@@ -105,7 +105,7 @@
     <string name="hide_top_desc">隐藏状态栏</string>
     <string name="hide_bottom">隐藏底部栏</string>
     <string name="hide_bottom_desc">隐藏导航栏</string>
-    <string name="safe_area">安全区域</string>
+    <string name="safe_area">CarPlay 显示区域</string>
     <string name="set">设置</string>
     <string name="reset">重置</string>
     <string name="draw_outside">在安全区域外绘制</string>
@@ -114,7 +114,7 @@
     <string name="save">保存</string>
 
     <!-- Wi-Fi 会话 -->
-    <string name="wifi_session">Wi-Fi 会话</string>
+    <string name="wifi_session">无线热点方式</string>
     <string name="manual_hotspot">手动热点</string>
     <string name="hotspot_ssid">热点 SSID</string>
     <string name="band">频段</string>
@@ -229,4 +229,44 @@
     <string name="crop_not_ready">图片尚未就绪</string>
     <string name="crop_encode_failed">无法编码图片</string>
     <string name="crop_save_failed">无法保存图片</string>
+
+    <!-- Settings redesign -->
+    <string name="cat_vehicle">车辆</string>
+    <string name="cat_advanced">高级</string>
+    <string name="cat_connection_sub">无线方式、热点和认证</string>
+    <string name="cat_display_sub">图标大小、清晰度和驾驶位</string>
+    <string name="cat_audio_sub">静音、缓冲和麦克风</string>
+    <string name="cat_vehicle_sub">车辆名称、位置和比亚迪功能</string>
+    <string name="cat_advanced_sub">一般无需修改，用于排查问题或特殊车机</string>
+    <string name="cat_diagnostics_sub">日志和技术参数，排查问题时使用</string>
+    <string name="wireless_carplay_switch_desc">关闭后使用 USB 数据线有线连接</string>
+    <string name="hotspot_mode_p2p_recommended">Wi-Fi 直连（推荐，5 GHz）</string>
+    <string name="hint_hotspot_mode">Wi-Fi 直连速度最快；连接不稳定时可改用系统本地热点。</string>
+    <string name="hint_mfi">CarPlay 需要苹果 MFi 认证。USB/CH341：外接转接板；I2C：车机内置芯片；远程：认证服务器；本地文件：证书文件。</string>
+    <string name="icon_size">图标大小</string>
+    <string name="icon_size_large">大</string>
+    <string name="icon_size_medium">中</string>
+    <string name="icon_size_small">小</string>
+    <string name="icon_size_custom_label">自定义</string>
+    <string name="icon_size_hint">让 CarPlay 的图标和文字更大或更小，保存后生效。</string>
+    <string name="icon_size_custom">当前为自定义尺寸（%1$d mm），可在 高级 → 显示尺寸 中调整。</string>
+    <string name="hint_resolution">按车机屏幕分辨率的比例渲染 CarPlay。1.0x 最清晰；画面卡顿时可调低。</string>
+    <string name="hint_driving_side">让 CarPlay 的侧边栏靠近驾驶员一侧。</string>
+    <string name="hint_music_buffer">音乐卡顿时调大；代价是音乐和画面的延迟略增。</string>
+    <string name="hint_mic_gain">Siri 或通话对方听不清时调大。</string>
+    <string name="hint_vehicle_name">显示在 iPhone 的车辆列表和 CarPlay 返回按钮上。留空则使用车机蓝牙名。</string>
+    <string name="hint_bt_settings">配对或管理 iPhone。</string>
+    <string name="hint_frame_rate">车机解码吃力时可调低。</string>
+    <string name="hint_physical">图标大小的精细调整。在「显示」中选择大/中/小会覆盖这里的值。</string>
+    <string name="group_video">视频</string>
+    <string name="group_display_size">显示尺寸</string>
+    <string name="group_display_area">显示区域</string>
+    <string name="group_audio_routing">音频路由</string>
+    <string name="group_identity">身份</string>
+    <string name="group_other">其他</string>
+    <string name="hevc_label">视频编码 H.265</string>
+    <string name="hevc_switch_desc">更省带宽；画面异常时关闭以改用 H.264</string>
+    <string name="settings_summary_wireless">无线 · %1$s · %2$d×%3$d · %4$d 帧 · 图标%5$s</string>
+    <string name="settings_summary_wired">有线 · %1$d×%2$d · %3$d 帧 · 图标%4$s</string>
+    <string name="technical_params">技术参数</string>
 </resources>

@@ -6,9 +6,9 @@
     <string name="cat_connection">Connection</string>
     <string name="cat_location">Location</string>
     <string name="cat_startup">Startup</string>
-    <string name="cat_audio">Audio</string>
+    <string name="cat_audio">Sound</string>
     <string name="cat_identity">Identity &amp; appearance</string>
-    <string name="cat_display">Display &amp; video</string>
+    <string name="cat_display">Display</string>
     <string name="cat_window">Window</string>
     <string name="cat_diagnostics">Diagnostics</string>
     <string name="cat_android9">Android 9 compatibility</string>
@@ -18,18 +18,18 @@
     <string name="hotspot_status">Hotspot status</string>
     <string name="auto_start_label">Auto-start on boot</string>
     <string name="auto_start_desc">Start CarPlay automatically after device boot</string>
-    <string name="main_media_buffer">Main media audio buffer</string>
+    <string name="main_media_buffer">Music buffer</string>
     <string name="advanced_mapping_label">Advanced audio channel mapping</string>
     <string name="advanced_mapping_desc">Route AAOS audio buses by CarPlay audio type</string>
-    <string name="resolution">Resolution</string>
+    <string name="resolution">Picture sharpness</string>
     <string name="frame_rate">Frame rate</string>
-    <string name="physical_basis">Physical size basis</string>
+    <string name="physical_basis">Size reference</string>
     <string name="basis_width">Widest width</string>
     <string name="basis_height">Longest height</string>
-    <string name="physical_length">Physical length</string>
+    <string name="physical_length">Reference length</string>
     <string name="hevc_desc">HEVC H.265 video transport</string>
-    <string name="hevc_sw">HEVC software decoder</string>
-    <string name="hevc_sw_desc">Use software HEVC decoder</string>
+    <string name="hevc_sw">Software video decoder</string>
+    <string name="hevc_sw_desc">Turn on only if hardware decoding shows a green or broken picture</string>
     <string name="more_gestures_label">More gestures to Settings page</string>
     <string name="more_gestures_desc">Enable a one-finger swipe down along the left edge to open settings</string>
     <string name="open_bt_settings">Open system Bluetooth settings</string>
@@ -44,7 +44,7 @@
     <string name="discard_exit">Discard changes and exit settings</string>
 
     <!-- MFi -->
-    <string name="mfi_target">MFI certificate &amp; signing target</string>
+    <string name="mfi_target">Authentication</string>
     <string name="mfi_remote">Remote</string>
     <string name="mfi_local">Local files</string>
     <string name="i2c_device">I2C device</string>
@@ -105,7 +105,7 @@
     <string name="hide_top_desc">Hide the status bar</string>
     <string name="hide_bottom">Hide bottom bar</string>
     <string name="hide_bottom_desc">Hide the navigation bar</string>
-    <string name="safe_area">Safe area</string>
+    <string name="safe_area">CarPlay display area</string>
     <string name="set">Set</string>
     <string name="reset">Reset</string>
     <string name="draw_outside">Draw outside safe area</string>
@@ -114,7 +114,7 @@
     <string name="save">Save</string>
 
     <!-- Wi-Fi session -->
-    <string name="wifi_session">Wi-Fi session</string>
+    <string name="wifi_session">Wireless hotspot type</string>
     <string name="manual_hotspot">Manual hotspot</string>
     <string name="hotspot_ssid">Hotspot SSID</string>
     <string name="band">Band</string>
@@ -229,4 +229,44 @@
     <string name="crop_not_ready">Image is not ready</string>
     <string name="crop_encode_failed">Could not encode image</string>
     <string name="crop_save_failed">Could not save image</string>
+
+    <!-- Settings redesign -->
+    <string name="cat_vehicle">Vehicle</string>
+    <string name="cat_advanced">Advanced</string>
+    <string name="cat_connection_sub">Wireless mode, hotspot and authentication</string>
+    <string name="cat_display_sub">Icon size, sharpness and driving side</string>
+    <string name="cat_audio_sub">Mute, buffering and microphone</string>
+    <string name="cat_vehicle_sub">Vehicle name, location and BYD features</string>
+    <string name="cat_advanced_sub">Rarely needed; for troubleshooting or unusual head units</string>
+    <string name="cat_diagnostics_sub">Logs and technical parameters for troubleshooting</string>
+    <string name="wireless_carplay_switch_desc">Turn off to connect with a USB cable</string>
+    <string name="hotspot_mode_p2p_recommended">Wi-Fi Direct (recommended, 5 GHz)</string>
+    <string name="hint_hotspot_mode">Wi-Fi Direct is fastest. If it is unstable, try the system local hotspot.</string>
+    <string name="hint_mfi">CarPlay needs Apple MFi authentication. USB/CH341: external adapter. I2C: chip inside the head unit. Remote: authentication server. Local files: certificate files.</string>
+    <string name="icon_size">Icon size</string>
+    <string name="icon_size_large">Large</string>
+    <string name="icon_size_medium">Medium</string>
+    <string name="icon_size_small">Small</string>
+    <string name="icon_size_custom_label">Custom</string>
+    <string name="icon_size_hint">Makes CarPlay icons and text larger or smaller. Applies after saving.</string>
+    <string name="icon_size_custom">A custom size is set (%1$d mm). Adjust it under Advanced → Display size.</string>
+    <string name="hint_resolution">Renders CarPlay at this share of the screen resolution. 1.0x is sharpest; lower it if the picture stutters.</string>
+    <string name="hint_driving_side">Puts the CarPlay dock on the driver side.</string>
+    <string name="hint_music_buffer">Raise it if music stutters; music and picture then lag slightly more.</string>
+    <string name="hint_mic_gain">Raise it if Siri or the other caller cannot hear you well.</string>
+    <string name="hint_vehicle_name">Shown in the iPhone car list and on the CarPlay return button. Leave empty to use the head unit Bluetooth name.</string>
+    <string name="hint_bt_settings">Pair or manage the iPhone.</string>
+    <string name="hint_frame_rate">Lower it if the head unit struggles to decode the video.</string>
+    <string name="hint_physical">Fine control of the icon size. Choosing Large/Medium/Small under Display replaces these values.</string>
+    <string name="group_video">Video</string>
+    <string name="group_display_size">Display size</string>
+    <string name="group_display_area">Display area</string>
+    <string name="group_audio_routing">Audio routing</string>
+    <string name="group_identity">Identity</string>
+    <string name="group_other">Other</string>
+    <string name="hevc_label">Video encoding H.265</string>
+    <string name="hevc_switch_desc">Saves bandwidth; turn off to use H.264 if the picture is broken</string>
+    <string name="settings_summary_wireless">Wireless · %1$s · %2$d×%3$d · %4$d fps · icons %5$s</string>
+    <string name="settings_summary_wired">Wired · %1$d×%2$d · %3$d fps · icons %4$s</string>
+    <string name="technical_params">Technical parameters</string>
 </resources>
