@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rounded dark dialog surface; the inset keeps the dialog off the screen edges. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="24dp"
+    android:insetTop="24dp"
+    android:insetRight="24dp"
+    android:insetBottom="24dp">
+    <shape android:shape="rectangle">
+        <corners android:radius="16dp" />
+        <solid android:color="@color/xcertplay_dialog_background" />
+    </shape>
+</inset>

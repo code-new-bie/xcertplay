@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Xcertplay" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Dark so the window shown before the first frame matches the home screen instead of flashing white. -->
+    <style name="Theme.Xcertplay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/xcertplay_background</item>
+        <item name="android:colorBackground">@color/xcertplay_background</item>
+        <item name="android:statusBarColor">@color/xcertplay_background</item>
+        <item name="android:navigationBarColor">@color/xcertplay_background</item>
+        <item name="android:colorAccent">@color/xcertplay_accent</item>
+        <item name="android:alertDialogTheme">@style/Theme.Xcertplay.Dialog</item>
+    </style>
+
+    <style name="Theme.Xcertplay.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_background</item>
+        <item name="android:colorAccent">@color/xcertplay_accent</item>
+        <item name="android:textColorPrimary">@android:color/white</item>
+        <item name="android:textColorSecondary">@color/xcertplay_secondary_text</item>
+        <item name="android:windowMinWidthMajor">50%</item>
+        <item name="android:windowMinWidthMinor">80%</item>
+    </style>
 </resources>

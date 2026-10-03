@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="xcertplay_background">#FF161618</color>
+    <color name="xcertplay_dialog_background">#FF1C2126</color>
+    <color name="xcertplay_accent">#FF7FCD9A</color>
+    <color name="xcertplay_secondary_text">#FFAAB4BE</color>
+</resources>
