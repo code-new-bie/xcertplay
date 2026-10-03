@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CarPlay 画面出来之前的首页 -->
+    <string name="home_settings">设置</string>
+    <string name="home_bt_settings">蓝牙设置</string>
+    <string name="home_reconnect">重新连接</string>
+    <string name="home_use_local_hotspot">改用系统本地热点</string>
+    <string name="home_status_preparing">正在准备 CarPlay</string>
+    <string name="home_status_connecting">正在连接 CarPlay…</string>
+    <string name="home_status_waiting_phone">正在等待 iPhone</string>
+    <string name="home_status_starting">CarPlay 即将显示</string>
+    <string name="home_status_reconnecting">连接已断开，正在重新连接</string>
+    <string name="home_status_retrying">连接失败，正在重试（第 %1$d 次）</string>
+    <string name="home_hint_wireless">请确认 iPhone 已打开蓝牙和 Wi-Fi，并已与本车配对。</string>
+    <string name="home_hint_wired">请用 USB 线连接 iPhone，解锁手机并选择信任此车。</string>
+    <string name="home_mode_wireless">无线 · %1$s</string>
+    <string name="home_mode_wired">有线（USB）</string>
+
+    <string name="step_authentication">认证芯片</string>
+    <string name="step_link_wireless">无线热点</string>
+    <string name="step_link_wired">USB 连接</string>
+    <string name="step_phone">连接 iPhone</string>
+    <string name="step_handshake">握手认证</string>
+    <string name="step_carplay">启动 CarPlay</string>
+    <string name="step_link_detail">%1$s · %2$s · 信道 %3$d</string>
+
+    <string name="failure_authentication">认证芯片或证书不可用。请检查转接板，或在 设置 → 连接 → 认证方式 中确认来源。</string>
+    <string name="failure_bluetooth_off">车机蓝牙未打开。请打开蓝牙后重新连接。</string>
+    <string name="failure_no_paired_iphone">没有连上已配对的 iPhone。请在蓝牙设置中与 iPhone 配对，并保持 iPhone 蓝牙开启。</string>
+    <string name="failure_wifi_p2p">Wi-Fi 直连启动失败，可以改用系统本地热点。</string>
+    <string name="failure_hotspot">无线热点启动失败。请重试，或在设置中更换热点方式。</string>
+    <string name="failure_usb">USB 连接失败。请检查数据线，解锁 iPhone 并选择信任此车。</string>
+    <string name="failure_timeout">连接超时。请保持 iPhone 解锁并靠近车机。</string>
+    <string name="failure_other">连接失败，正在自动重试。</string>
+    <string name="failure_reason">详细信息：%1$s</string>
+    <string name="stage_manual_reconnect">正在重新连接</string>
+    <string name="hotspot_mode_p2p">Wi-Fi 直连</string>
+    <string name="hotspot_mode_local">系统本地热点</string>
+</resources>

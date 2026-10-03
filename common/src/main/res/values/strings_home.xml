@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home screen before CarPlay video is shown -->
+    <string name="home_settings">Settings</string>
+    <string name="home_bt_settings">Bluetooth settings</string>
+    <string name="home_reconnect">Reconnect</string>
+    <string name="home_use_local_hotspot">Use system local hotspot</string>
+    <string name="home_status_preparing">Preparing CarPlay</string>
+    <string name="home_status_connecting">Connecting to CarPlay…</string>
+    <string name="home_status_waiting_phone">Waiting for iPhone</string>
+    <string name="home_status_starting">CarPlay is starting</string>
+    <string name="home_status_reconnecting">Connection lost; reconnecting</string>
+    <string name="home_status_retrying">Connection failed; retrying (attempt %1$d)</string>
+    <string name="home_hint_wireless">Make sure Bluetooth and Wi-Fi are on on the iPhone and that it is paired with this car.</string>
+    <string name="home_hint_wired">Connect the iPhone with a USB cable, unlock it and trust this car.</string>
+    <string name="home_mode_wireless">Wireless · %1$s</string>
+    <string name="home_mode_wired">Wired (USB)</string>
+
+    <string name="step_authentication">Authentication chip</string>
+    <string name="step_link_wireless">Wireless hotspot</string>
+    <string name="step_link_wired">USB connection</string>
+    <string name="step_phone">Connect iPhone</string>
+    <string name="step_handshake">Handshake</string>
+    <string name="step_carplay">Start CarPlay</string>
+    <string name="step_link_detail">%1$s · %2$s · channel %3$d</string>
+
+    <string name="failure_authentication">The authentication chip or certificate is unavailable. Check the adapter, or the source under Settings → Connection → Authentication.</string>
+    <string name="failure_bluetooth_off">Bluetooth is off on the head unit. Turn it on, then reconnect.</string>
+    <string name="failure_no_paired_iphone">No paired iPhone was reached. Pair the iPhone in Bluetooth settings and keep its Bluetooth on.</string>
+    <string name="failure_wifi_p2p">Wi-Fi Direct could not start. You can switch to the system local hotspot.</string>
+    <string name="failure_hotspot">The wireless hotspot could not start. Retry, or choose another hotspot type in Settings.</string>
+    <string name="failure_usb">The USB connection failed. Check the cable, unlock the iPhone and trust this car.</string>
+    <string name="failure_timeout">The connection timed out. Keep the iPhone unlocked and close to the head unit.</string>
+    <string name="failure_other">The connection failed. It is retried automatically.</string>
+    <string name="failure_reason">Details: %1$s</string>
+    <string name="stage_manual_reconnect">Reconnecting</string>
+    <string name="hotspot_mode_p2p">Wi-Fi Direct</string>
+    <string name="hotspot_mode_local">System local hotspot</string>
+</resources>

@@ -280,6 +280,14 @@ class CarPlayHostActivity : ComponentActivity() {
     private var contentRoot: FrameLayout? = null
     private var gestureOverlay: View? = null
     private var disconnectedSettingsButton: View? = null
+    private var homeScreen: HomeScreenView? = null
+    private var homeStep = ConnectionStep.AUTHENTICATION
+    private var homeLinkDetail: String? = null
+    /** The last failure, shown until CarPlay video arrives; [homeFailureFresh] marks its step. */
+    private var homeFailureMessage: String? = null
+    private var homeFailureFresh = false
+    private var homeFailedAttempts = 0
+    private var homeSessionDropped = false
     private var settingsMenu: View? = null
     private var mfiTargetGroup: RadioGroup? = null
     private var mfiI2cFields: View? = null
@@ -785,50 +793,19 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> scrollLogsToBottom() }
         }
-        val stageStatus = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            includeFontPadding = false
-            isSingleLine = true
-            ellipsize = TextUtils.TruncateAt.END
-            maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            text = latestStage
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(10).toFloat()
-                setColor(Color.argb(170, 0, 0, 0))
-            }
-        }
-        val settingsButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_settings)
-            imageTintList = ColorStateList.valueOf(Color.rgb(0xA6, 0x7D, 0xF2))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.rgb(0xE3, 0xE3, 0xE4))
-            }
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            contentDescription = getString(R.string.open_settings)
-            setOnClickListener { openSettingsMenu() }
-        }
+        val home = HomeScreenView(
+            this,
+            onSettings = ::openSettingsMenu,
+            onBluetoothSettings = ::openSystemBluetoothSettings,
+            onReconnect = ::reconnectFromHome,
+            onUseLocalHotspot = ::useLocalHotspotFromHome,
+        )
         val statusParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.START,
         )
         statusParams.setMargins(dp(12), 0, dp(12), dp(12))
-        val stageParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.END,
-        )
-        stageParams.setMargins(dp(12), dp(12), dp(12), 0)
-        val settingsButtonParams = FrameLayout.LayoutParams(
-            dp(56),
-            dp(56),
-            Gravity.BOTTOM or Gravity.END,
-        ).apply { setMargins(dp(16), 0, dp(16), dp(16)) }
 
         val settings = buildSettingsMenu().apply { visibility = View.GONE }
         val editor = buildSafeAreaEditor().apply { visibility = View.GONE }
@@ -841,9 +818,14 @@ class CarPlayHostActivity : ComponentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+        root.addView(
+            home,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
         root.addView(logScroll, statusParams)
-        root.addView(stageStatus, stageParams)
-        root.addView(settingsButton, settingsButtonParams)
         root.addView(
             settings,
             FrameLayout.LayoutParams(
@@ -865,13 +847,14 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         videoView = video
         gestureOverlay = gestureLayer
-        disconnectedSettingsButton = settingsButton
+        disconnectedSettingsButton = home
+        homeScreen = home
         settingsMenu = settings
         safeAreaEditor = editor
         statusView = log
         statusScrollView = logScroll
-        stageStatusView = stageStatus
         updateDebugOverlays()
+        renderHome()
         return root
     }
 
@@ -3786,6 +3769,9 @@ class CarPlayHostActivity : ComponentActivity() {
                     }
                     appearanceSync.start(session)
                     updateBydCallUi()
+                    homeStep = ConnectionStep.CARPLAY
+                    homeFailureFresh = false
+                    renderHome()
                     if (menuOpen) return@runOnUiThread
                     appendLog("AirPlay session active")
                 }
@@ -3803,6 +3789,8 @@ class CarPlayHostActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     activeScreenStreamTypes.clear()
+                    homeSessionDropped = true
+                    resetHomeProgress()
                     setConnectionStage(getString(R.string.stage_session_ended))
                     appendLog("AirPlay session ended; reconnecting from scratch")
                     reconnectAfterLoss("AirPlay session ended")
@@ -3851,6 +3839,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         if (!menuOpen && controllerGeneration == restartGeneration) {
             updateHotspotStatus(status)
+            trackHomeProgress(status)
             val description = status.describe()
             setConnectionStage(description)
             when (status) {
@@ -3905,6 +3894,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun startCarPlay(size: DisplaySize) {
+        resetHomeProgress()
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         val controllerGeneration = restartGeneration
         val config = createRuntimeConfig()
@@ -4467,6 +4457,10 @@ class CarPlayHostActivity : ComponentActivity() {
             if (shuttingDown.get() || generation != restartGeneration) return@runOnUiThread
             if (active) {
                 activeScreenStreamTypes.add(type)
+                // CarPlay is on screen: earlier failures no longer apply.
+                homeFailureMessage = null
+                homeFailedAttempts = 0
+                homeSessionDropped = false
             } else {
                 activeScreenStreamTypes.remove(type)
             }
@@ -4485,6 +4479,136 @@ class CarPlayHostActivity : ComponentActivity() {
         latestStage = message
         stageStatusView?.text = message
         updateDebugOverlays()
+        renderHome()
+    }
+
+    private fun renderHome() {
+        val home = homeScreen ?: return
+        val failure = homeFailureMessage
+        val failureKind = failure?.let(ConnectionProgress::failureKind)
+        val current = homeStep
+        val title = when {
+            failure != null -> getString(R.string.home_status_retrying, homeFailedAttempts)
+            homeSessionDropped -> getString(R.string.home_status_reconnecting)
+            controller == null && current == ConnectionStep.AUTHENTICATION -> getString(R.string.home_status_preparing)
+            current == ConnectionStep.PHONE -> getString(R.string.home_status_waiting_phone)
+            current == ConnectionStep.CARPLAY -> getString(R.string.home_status_starting)
+            else -> getString(R.string.home_status_connecting)
+        }
+        val steps = ConnectionStep.values().map { step ->
+            val state = ConnectionProgress.stateOf(step, current, homeFailureFresh)
+            val detail = when {
+                // A retry stage repeats the failure text the failure card already shows.
+                state == StepState.ACTIVE ->
+                    latestStage.takeIf { it.isNotBlank() && (failure == null || failure !in it) }
+                state == StepState.DONE && step == ConnectionStep.LINK -> homeLinkDetail
+                else -> null
+            }
+            HomeStep(homeStepTitle(step), detail, state)
+        }
+        home.render(
+            HomeModel(
+                title = title,
+                hint = getString(if (wirelessEnabled) R.string.home_hint_wireless else R.string.home_hint_wired),
+                modeLabel = if (wirelessEnabled) {
+                    getString(R.string.home_mode_wireless, hotspotModeName(wirelessHotspotMode))
+                } else {
+                    getString(R.string.home_mode_wired)
+                },
+                steps = steps,
+                failure = failure?.let {
+                    HomeFailure(failureAdvice(checkNotNull(failureKind)), getString(R.string.failure_reason, it))
+                },
+                showUseLocalHotspot = failureKind == FailureKind.WIFI_P2P && wirelessEnabled &&
+                    wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P,
+            ),
+        )
+    }
+
+    private fun homeStepTitle(step: ConnectionStep): String = getString(
+        when (step) {
+            ConnectionStep.AUTHENTICATION -> R.string.step_authentication
+            ConnectionStep.LINK -> if (wirelessEnabled) R.string.step_link_wireless else R.string.step_link_wired
+            ConnectionStep.PHONE -> R.string.step_phone
+            ConnectionStep.HANDSHAKE -> R.string.step_handshake
+            ConnectionStep.CARPLAY -> R.string.step_carplay
+        },
+    )
+
+    private fun hotspotModeName(mode: WirelessHotspotMode): String = getString(
+        when (mode) {
+            WirelessHotspotMode.WIFI_P2P -> R.string.hotspot_mode_p2p
+            WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> R.string.hotspot_mode_local
+            WirelessHotspotMode.MANUAL -> R.string.manual_hotspot
+        },
+    )
+
+    private fun failureAdvice(kind: FailureKind): String = getString(
+        when (kind) {
+            FailureKind.AUTHENTICATION -> R.string.failure_authentication
+            FailureKind.BLUETOOTH_OFF -> R.string.failure_bluetooth_off
+            FailureKind.NO_PAIRED_IPHONE -> R.string.failure_no_paired_iphone
+            FailureKind.WIFI_P2P -> R.string.failure_wifi_p2p
+            FailureKind.HOTSPOT -> R.string.failure_hotspot
+            FailureKind.USB -> R.string.failure_usb
+            FailureKind.TIMEOUT -> R.string.failure_timeout
+            FailureKind.OTHER -> R.string.failure_other
+        },
+    )
+
+    /** Feeds a controller stage into the home screen's steps; a failure stays shown until CarPlay connects. */
+    private fun trackHomeProgress(status: CarPlayStatus) {
+        when (status) {
+            is CarPlayStatus.Failed -> {
+                homeFailureMessage = status.message
+                homeFailureFresh = true
+                homeFailedAttempts++
+            }
+            is CarPlayStatus.HotspotReady -> {
+                homeLinkDetail = getString(R.string.step_link_detail, hotspotBackendName(status.backend), status.band, status.channel)
+                homeStep = ConnectionStep.PHONE
+                homeFailureFresh = false
+            }
+            else -> ConnectionProgress.stepOf(status)?.let {
+                homeStep = it
+                homeFailureFresh = false
+            }
+        }
+    }
+
+    private fun hotspotBackendName(backend: String): String = when {
+        backend.contains("P2P", ignoreCase = true) -> getString(R.string.hotspot_mode_p2p)
+        backend.contains("LocalOnly", ignoreCase = true) -> getString(R.string.hotspot_mode_local)
+        else -> getString(R.string.manual_hotspot)
+    }
+
+    private fun resetHomeProgress() {
+        homeStep = ConnectionStep.AUTHENTICATION
+        homeLinkDetail = null
+        homeFailureFresh = false
+    }
+
+    private fun reconnectFromHome() {
+        if (menuOpen || shuttingDown.get()) return
+        homeFailedAttempts = 0
+        homeFailureMessage = null
+        resetHomeProgress()
+        appendLog("Reconnect requested from the home screen")
+        if (controller != null) {
+            restartCarPlay(getString(R.string.stage_manual_reconnect))
+        } else {
+            requestStartupPrerequisites()
+            maybeStartCarPlay()
+            renderHome()
+        }
+    }
+
+    private fun useLocalHotspotFromHome() {
+        wirelessHotspotMode = WirelessHotspotMode.LOCAL_ONLY_HOTSPOT
+        AirPlayPersistence.saveWirelessHotspotMode(this, wirelessHotspotMode)
+        hotspotStatus = HotspotStatus(state = "stopped")
+        appendLog("Wi-Fi session mode switched to LocalOnlyHotspot from the home screen")
+        reconnectFromHome()
     }
 
     private fun updateDebugOverlays() {
@@ -4492,10 +4616,6 @@ class CarPlayHostActivity : ComponentActivity() {
         statusScrollView?.visibility = if (showLogs) View.VISIBLE else View.GONE
         disconnectedSettingsButton?.visibility =
             if (!menuOpen && activeScreenStreamTypes.isEmpty()) View.VISIBLE else View.GONE
-        val showStage = !debugLogsEnabled &&
-            !menuOpen &&
-            activeScreenStreamTypes.isEmpty()
-        stageStatusView?.visibility = if (showStage) View.VISIBLE else View.GONE
         updateMediaMetricsOverlay()
     }
 
