@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A gauge arc around a play symbol: driving plus media. Kept inside the 66dp safe zone. -->
+<!-- A gauge arc opening toward the play symbol: driving plus media. Kept inside the 66dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:pathData="M34.91,73.09 A27,27 0 1,1 73.09,73.09"
+        android:pathData="M73.09,73.09 A27,27 0 1,1 73.09,34.91"
         android:strokeWidth="5"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round" />
