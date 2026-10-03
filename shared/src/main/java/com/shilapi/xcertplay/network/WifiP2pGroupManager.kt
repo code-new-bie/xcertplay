@@ -105,7 +105,10 @@ class WifiP2pGroupManager(
             }
 
             val frequencies = WifiChannelPreference.creationFrequencies(preferredChannel)
-            for ((index, frequency) in frequencies.withIndex()) {
+            var frequencyIndex = 0
+            var busyRetries = 0
+            while (true) {
+                val frequency = frequencies[frequencyIndex]
                 val config = WifiP2pConfig.Builder()
                     .setNetworkName(credentials.ssid)
                     .setPassphrase(credentials.passphrase)
@@ -130,9 +133,31 @@ class WifiP2pGroupManager(
                 } catch (rejected: P2pCreateRejected) {
                     // Only an explicit rejection permits another request; a timeout may still
                     // create a group, so it is never retried.
-                    if (index == frequencies.lastIndex) throw rejected
-                    Log.w(TAG, "Wi-Fi P2P channel $preferredChannel rejected; using automatic 5 GHz", rejected)
-                    synchronized(stateLock) { attempt.failure = null }
+                    when (
+                        P2pCreateRetry.next(rejected.reason, busyRetries, frequencyIndex < frequencies.lastIndex)
+                    ) {
+                        P2pCreateRetry.Next.RETRY_SAME -> {
+                            // The radio is still releasing a previous hotspot or group.
+                            busyRetries++
+                            val delayMillis = P2pCreateRetry.busyDelayMillis(busyRetries)
+                            Log.w(TAG, "Wi-Fi P2P busy; retry $busyRetries in ${delayMillis}ms")
+                            synchronized(stateLock) {
+                                attempt.failure = null
+                                // wait(0) would block forever, so an exhausted deadline fails instead.
+                                val waitNanos = minOf(delayMillis * NANOS_PER_MILLISECOND, remainingNanos(deadlineNanos))
+                                if (waitNanos <= 0) throw rejected
+                                waitNanos(waitNanos)
+                                ensureStartActiveLocked(attempt)
+                            }
+                        }
+                        P2pCreateRetry.Next.NEXT_FREQUENCY -> {
+                            Log.w(TAG, "Wi-Fi P2P channel $preferredChannel rejected; using automatic 5 GHz", rejected)
+                            synchronized(stateLock) { attempt.failure = null }
+                            frequencyIndex++
+                            busyRetries = 0
+                        }
+                        P2pCreateRetry.Next.FAIL -> throw rejected
+                    }
                 }
             }
 
@@ -211,7 +236,7 @@ class WifiP2pGroupManager(
         override fun onFailure(reason: Int) {
             failAttempt(
                 attempt,
-                P2pCreateRejected("Wi-Fi P2P createGroup failed: ${failureReason(reason)}"),
+                P2pCreateRejected(reason, "Wi-Fi P2P createGroup failed: ${failureReason(reason)}"),
             )
         }
     }
@@ -512,7 +537,7 @@ class WifiP2pGroupManager(
 
     private fun is5Ghz(frequencyMHz: Int): Boolean = frequencyMHz in 5150..5895
 
-    private class P2pCreateRejected(message: String) : IOException(message)
+    private class P2pCreateRejected(val reason: Int, message: String) : IOException(message)
 
     private class StartAttempt {
         var channel: WifiP2pManager.Channel? = null
@@ -534,3 +559,20 @@ private const val WIFI_P2P_SSID_PREFIX = "DIRECT-xcertplay"
 private const val MFI_CERTIFICATE_SSID_SUFFIX_LENGTH = 4
 private const val MFI_CERTIFICATE_PASSPHRASE_LENGTH = 8
 private const val HEX_DIGITS = "0123456789abcdef"
+
+/** What to do after the framework rejects a createGroup request. */
+internal object P2pCreateRetry {
+    const val MAX_BUSY_RETRIES = 3
+    private const val BUSY_RETRY_STEP_MILLIS = 500L
+
+    enum class Next { RETRY_SAME, NEXT_FREQUENCY, FAIL }
+
+    fun next(reason: Int, busyRetries: Int, hasNextFrequency: Boolean): Next = when {
+        reason == WifiP2pManager.BUSY && busyRetries < MAX_BUSY_RETRIES -> Next.RETRY_SAME
+        hasNextFrequency -> Next.NEXT_FREQUENCY
+        else -> Next.FAIL
+    }
+
+    /** 0.5 s, 1 s, 1.5 s: enough for a hotspot that was just stopped to release the radio. */
+    fun busyDelayMillis(retry: Int): Long = BUSY_RETRY_STEP_MILLIS * retry
+}
