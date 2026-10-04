@@ -28,6 +28,9 @@ import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.PairingStore
+import com.shilapi.xcertplay.hud.BydCallUiSettings
+import com.shilapi.xcertplay.hud.BydSettingsAvailability
+import com.shilapi.xcertplay.hud.HfpCallHandoff
 import com.shilapi.xcertplay.iap2.message.Iap2HidMessages
 import com.shilapi.xcertplay.iap2.message.Iap2MediaRemoteCommand
 import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingAccumulator
@@ -166,6 +169,7 @@ class CarPlayController(
     private val appContext = context.applicationContext
     /** Held only while a wireless session runs: keeps the radio out of power-save stalls. */
     private val wirelessPerformanceLock = WirelessPerformanceLock(appContext, ::debugLog)
+    private val hfpCallHandoff = HfpCallHandoff(appContext, ::debugLog)
     /** Carries the iPhone's Bluetooth location request onto the Wi-Fi tunnel link. */
     private val wirelessLocationRequest = Iap2LocationRequest()
     private val usbManager = context.getSystemService(UsbManager::class.java)
@@ -253,6 +257,7 @@ class CarPlayController(
             if (activeSession === session) {
                 activeSession = null
                 wirelessPerformanceLock.release()
+                hfpCallHandoff.release()
             }
             debugLog("AirPlay session ended peer=${session.host}")
             uiListener?.onSessionEnded(session)
@@ -301,6 +306,14 @@ class CarPlayController(
                 )
                 armWirelessHandoffWatchdog(wirelessGeneration.get())
                 maybeCompleteWirelessHandoff()
+            }
+            if (
+                config.transport == CarPlayTransport.WIRELESS &&
+                !closed &&
+                activeSession === session &&
+                isBluetoothHandoffCommand(type)
+            ) {
+                handOffCallsFromBluetooth(params["deviceID"]?.toString())
             }
             uiListener?.onCommand(session, type, params)
         }
@@ -483,6 +496,7 @@ class CarPlayController(
             closed = true
         }
         wirelessPerformanceLock.release()
+        hfpCallHandoff.close()
         closeReceivers()
         stopFileTransferReceivers()
         availabilityPollGeneration.incrementAndGet()
@@ -1534,6 +1548,23 @@ class CarPlayController(
             cause = cause.cause
         }
         return false
+    }
+
+    /**
+     * disableBluetooth asks the accessory to drop its Bluetooth link to the iPhone. With the BYD
+     * "hide stock call popups" option on, the hands-free link is disconnected so the stock phone
+     * never shows the call; CarPlay carries it instead.
+     */
+    private fun handOffCallsFromBluetooth(iphoneAddress: String?) {
+        if (!BydSettingsAvailability.available(appContext) || !BydCallUiSettings.enabled(appContext)) {
+            debugLog("disableBluetooth: hiding stock call popups is off; leaving HFP connected")
+            return
+        }
+        if (iphoneAddress.isNullOrBlank()) {
+            debugLog("disableBluetooth without an iPhone Bluetooth address; leaving HFP connected")
+            return
+        }
+        hfpCallHandoff.hold(iphoneAddress)
     }
 
     private fun isBluetoothHandoffCommand(type: String): Boolean =

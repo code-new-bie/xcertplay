@@ -22,8 +22,8 @@
     <!-- 比亚迪 -->
     <string name="byd_settings_header">比亚迪</string>
     <string name="byd_hide_call_label">隐藏原车来电弹窗（实验性）</string>
-    <string name="byd_hide_call_desc">CarPlay 已连接并显示在屏幕上时，关闭比亚迪原车来电弹窗</string>
-    <string name="byd_hide_call_note">CarPlay 已连接并显示在屏幕上时，借助原车 HiCar 接口关闭来电弹窗。无需 ADB。弹窗可能会短暂出现后再关闭。关闭此选项即可恢复原车来电界面。</string>
+    <string name="byd_hide_call_desc">把通话交给 CarPlay，比亚迪原车来电弹窗不再出现</string>
+    <string name="byd_hide_call_note">无线 CarPlay 运行期间，按 CarPlay 的要求断开车机与 iPhone 的蓝牙通话（免提）连接，通话只走 CarPlay，原车电话不会弹窗；CarPlay 结束后自动恢复连接。若车机拒绝断开，则改用原车 HiCar 接口关闭弹窗，可能会短暂闪现。关闭此选项即可保留原车来电界面。</string>
     <string name="byd_vehicle_data_title">车辆数据（DiLink 4）</string>
     <string name="byd_vehicle_speed_label">隧道导航使用车速和挡位</string>
     <string name="byd_vehicle_speed_note">iPhone 请求时读取比亚迪车辆数据（只读）。需要已授权的网络 ADB，并开启位置上报。</string>
