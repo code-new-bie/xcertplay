@@ -121,6 +121,7 @@ class Iap2WiredControlClient(
 
                     else -> {
                         onProgress("iap2 rx=0x${incoming.messageId.toString(16).padStart(4, '0')}")
+                        if (incoming.messageId == Iap2CallState.MESSAGE_ID) onProgress(Iap2CallState.describe(incoming))
                         onIncoming(incoming)
                         forwardedFrames++
                     }

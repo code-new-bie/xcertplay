@@ -31,6 +31,7 @@ internal class MicrophoneUplink(
     private val microphoneGainPercent = MicrophoneGain.sanitize(microphoneGainPercent)
     private val running = AtomicBoolean(false)
     private val firstPacketLogged = AtomicBoolean(false)
+    val sentPackets = java.util.concurrent.atomic.AtomicLong()
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var socket: DatagramSocket? = null
     @Volatile private var opusEncoder: OpusEncoder? = null
@@ -158,6 +159,7 @@ internal class MicrophoneUplink(
             )
             try {
                 activeSocket.send(DatagramPacket(packet, packet.size, config.host, config.port))
+                sentPackets.incrementAndGet()
                 if (firstPacketLogged.compareAndSet(false, true)) {
                     Log.i(
                         TAG,

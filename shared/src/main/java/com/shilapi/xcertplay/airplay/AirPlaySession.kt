@@ -506,6 +506,8 @@ class AirPlaySession(
         return result
     }
 
+    @Volatile private var lastAppStates: String? = null
+
     private fun handleCommand(request: RtspMessage.Request): RtspMessage.Response {
         val body = try {
             asMap(BplistCodec.decode(request.body)) ?: emptyMap()
@@ -524,6 +526,10 @@ class AirPlaySession(
                         "permanent=${long(resource["permanentEntity"])}"
                 }
             debugLog("airplay modesChanged resources=${resources ?: "missing"}")
+            CarPlayAppStates.describe(params["appStates"])?.takeIf { it != lastAppStates }?.let {
+                lastAppStates = it
+                debugLog(it)
+            }
         }
         if (type == "requestUI") listener.onHostUiRequested(this)
         listener.onCommand(this, type, params)

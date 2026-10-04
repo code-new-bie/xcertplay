@@ -58,6 +58,12 @@ class AndroidMediaSink(
     private val pendingVideoCodec = ConcurrentHashMap<Int, VideoCodec>()
     private val activeScreenTypes = mutableSetOf<Int>()
     private val videoGaps = ConcurrentHashMap<Int, ArrivalGapDetector>()
+    private val callStreams = ConcurrentHashMap<AudioStreamId, CallStreamStats>()
+
+    /** Packets of a call or Siri stream, logged when it ends to show whether audio really flowed. */
+    private class CallStreamStats(val startedMs: Long) {
+        val received = java.util.concurrent.atomic.AtomicLong()
+    }
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
 
     fun setSurface(type: Int, surface: Surface) {
@@ -106,6 +112,8 @@ class AndroidMediaSink(
         val arrivalMs = arrivalUs / 1_000L
         videoGaps.computeIfAbsent(type) { ArrivalGapDetector(ArrivalGapDetector.VIDEO_THRESHOLD_MS) }
             .onArrival(arrivalMs)
+            // The call screen refreshes about once a second, so pauses during a call are not stalls.
+            ?.takeIf { callStreams.keys.none { channelOf(it) == AudioChannel.PHONE } }
             ?.let { reportStall("video type=$type", it) }
         videoDecoder(type).submit(naluBytes, arrivalUs)
     }
@@ -129,6 +137,9 @@ class AndroidMediaSink(
             AudioChannel.PHONE -> CarPlayAudioFocus.onCallStarted(context, diagnostic)
             else -> Unit
         }
+        if (channelOf(id) == AudioChannel.PHONE || channelOf(id) == AudioChannel.ASSISTANT) {
+            callStreams[id] = CallStreamStats(System.nanoTime() / 1_000_000L)
+        }
         audioRenderer(id, format).start()
     }
 
@@ -140,11 +151,19 @@ class AndroidMediaSink(
     ).channel
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
+        callStreams[id]?.received?.incrementAndGet()
         audioRenderer(id, format).submit(rtp, sample)
     }
 
     override fun onAudioStopped(id: AudioStreamId) {
         if (channelOf(id) == AudioChannel.PHONE) CarPlayAudioFocus.onCallStopped()
+        callStreams.remove(id)?.let { stats ->
+            val seconds = (System.nanoTime() / 1_000_000L - stats.startedMs) / 1000.0
+            report(
+                "Call audio stream ended type=${id.type} audioType=${id.audioType} after " +
+                    "${"%.1f".format(seconds)}s: received ${stats.received.get()} packets",
+            )
+        }
         audioRenderers.remove(id)?.close()
     }
 
@@ -156,7 +175,10 @@ class AndroidMediaSink(
     }
 
     override fun onMicrophoneStopped(id: AudioStreamId) {
-        microphoneUplinks.remove(id)?.close()
+        microphoneUplinks.remove(id)?.let { uplink ->
+            uplink.close()
+            report("Microphone uplink ended type=${id.type} audioType=${id.audioType}: sent ${uplink.sentPackets.get()} packets")
+        }
     }
 
     fun close() {
@@ -182,6 +204,11 @@ class AndroidMediaSink(
                 requestKeyFrame = { videoRecoveryHandlers[type]?.invoke() ?: false },
             )
         }
+
+    private fun report(message: String) {
+        Log.i("xcertplay-usb", message)
+        runCatching { diagnostic(message) }
+    }
 
     /** The log line's time is when packets resumed; the stall began [gapMs] earlier. */
     private fun reportStall(stream: String, gapMs: Long) {
