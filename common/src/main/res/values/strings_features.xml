@@ -65,4 +65,12 @@
     <string name="cluster_call_test_running">Testing (10 s)…</string>
     <string name="cluster_call_test_note">Sends the instrument cluster a 10-second test call (name \"CarPlay test\" and a call timer) through ADB, the way BYD\'s Bluetooth phone does. Watch whether the cluster shows it and whether the AC fan drops.</string>
     <string name="cluster_call_test_done">Results (0 usually means accepted):\n%1$s\n\nDid the cluster show the call, and did the AC fan drop?</string>
+    <string name="wifi_scan_pause_label">Pause head-unit Wi-Fi search during CarPlay (recommended)</string>
+    <string name="wifi_scan_pause_desc">Stops the stutter from the head unit scanning Wi-Fi every 10 s</string>
+    <string name="wifi_scan_pause_note">BYD head units search for Wi-Fi networks every 10 s while their Wi-Fi is not joined, and each search pulls the radio off the CarPlay channel. Through the authorized ADB link this pauses the search while wireless CarPlay runs and resumes it 15 s after CarPlay ends. Meanwhile the head unit does not join saved Wi-Fi networks. Needs ADB authorization (BYD group); without it nothing changes.</string>
+    <string name="cluster_song_label">Song and lyrics on the cluster</string>
+    <string name="cluster_song_desc">CarPlay song in the instrument cluster\'s music card</string>
+    <string name="cluster_song_on_change_label">Only when the song changes</string>
+    <string name="cluster_song_on_change_desc">A new song shows for 5 seconds, then the card empties</string>
+    <string name="cluster_song_note">Shows \"title — artist\" with play and pause; for lyrics, turn on car or Bluetooth lyrics in the music app (QQ Music, NetEase Cloud Music…), which puts the current line in the title. Written through the authorized ADB link; the card shows as \"other\" music source.</string>
 </resources>

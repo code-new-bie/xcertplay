@@ -28,6 +28,8 @@ import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.PairingStore
+import com.shilapi.xcertplay.hud.BydClusterSong
+import com.shilapi.xcertplay.hud.BydSettingsAvailability
 import com.shilapi.xcertplay.iap2.message.Iap2HidMessages
 import com.shilapi.xcertplay.iap2.message.Iap2MediaRemoteCommand
 import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingAccumulator
@@ -47,6 +49,8 @@ import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.network.LocalOnlyHotspotManager
 import com.shilapi.xcertplay.network.ManualHotspotManager
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
+import com.shilapi.xcertplay.network.WifiScanPause
+import com.shilapi.xcertplay.network.WifiScanPauseSettings
 import com.shilapi.xcertplay.network.WirelessActivityLog
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.network.WirelessHotspotManager
@@ -171,6 +175,8 @@ class CarPlayController(
     private val wirelessPerformanceLock = WirelessPerformanceLock(appContext, ::debugLog)
     private val bluetoothHandoff = BluetoothHandoff.shared(appContext).also { it.diagnostic = ::debugLog }
     private val wirelessActivityLog = WirelessActivityLog(appContext, ::debugLog)
+    private val wifiScanPause = WifiScanPause.shared(appContext).also { it.diagnostic = ::debugLog }
+    private val bydHeadUnit by lazy { BydSettingsAvailability.available(appContext) }
     /** Carries the iPhone's Bluetooth location request onto the Wi-Fi tunnel link. */
     private val wirelessLocationRequest = Iap2LocationRequest()
     private val usbManager = context.getSystemService(UsbManager::class.java)
@@ -263,6 +269,8 @@ class CarPlayController(
                 wirelessPerformanceLock.release()
                 wirelessActivityLog.stop()
                 bluetoothHandoff.releaseLater()
+                wifiScanPause.resumeLater()
+                BydClusterSong.end()
             }
             debugLog("AirPlay session ended peer=${session.host}")
             uiListener?.onSessionEnded(session)
@@ -417,7 +425,9 @@ class CarPlayController(
     private fun onIap2Incoming(frame: Iap2Frame) {
         if (frame.messageId != NOW_PLAYING_UPDATE) return
         try {
-            CarPlayMediaSessionBridge.publish(this, nowPlaying.update(frame))
+            val state = nowPlaying.update(frame)
+            CarPlayMediaSessionBridge.publish(this, state)
+            if (bydHeadUnit) BydClusterSong.onNowPlaying(appContext, state, ::debugLog)
         } catch (error: RuntimeException) {
             debugLog("Could not decode iAP2 NowPlayingUpdate", error)
         }
@@ -504,6 +514,8 @@ class CarPlayController(
         wirelessPerformanceLock.release()
         wirelessActivityLog.close()
         bluetoothHandoff.releaseLater()
+        wifiScanPause.resumeLater()
+        BydClusterSong.end()
         closeReceivers()
         stopFileTransferReceivers()
         availabilityPollGeneration.incrementAndGet()
@@ -963,6 +975,7 @@ class CarPlayController(
                     "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
                     "frequency=${hotspotInfo.frequencyMHz?.toString() ?: "unknown"}MHz",
             )
+            if (WifiScanPauseSettings.enabled(appContext)) wifiScanPause.pause()
             onStatus(
                 CarPlayStatus.HotspotReady(
                     ssid = hotspotInfo.ssid,

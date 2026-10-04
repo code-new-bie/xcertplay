@@ -71,6 +71,7 @@ import com.shilapi.xcertplay.airplay.CarPlayMediaEngine
 import com.shilapi.xcertplay.airplay.CarPlayVoiceKey
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
+import com.shilapi.xcertplay.hud.BydClusterSongSettings
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.adb.LocalAdb
@@ -81,6 +82,7 @@ import com.shilapi.xcertplay.hud.BydVehicleSettings
 import com.shilapi.xcertplay.hud.BydWheelSpeedSource
 import com.shilapi.xcertplay.network.BluetoothHandoffSettings
 import com.shilapi.xcertplay.network.P2pChannelPreference
+import com.shilapi.xcertplay.network.WifiScanPauseSettings
 import com.shilapi.xcertplay.transport.EvChargingConnectors
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
 import com.shilapi.xcertplay.hud.BydCallUiSuppressor
@@ -1140,6 +1142,15 @@ class CarPlayHostActivity : ComponentActivity() {
             getString(R.string.bluetooth_handoff_note),
             topMarginDp = 12,
         )
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.wifi_scan_pause_label),
+                checked = WifiScanPauseSettings.enabled(this),
+                description = getString(R.string.wifi_scan_pause_desc),
+            ) { checked -> WifiScanPauseSettings.setEnabled(this, checked) },
+            getString(R.string.wifi_scan_pause_note),
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             addSetting(
                 page,
@@ -1255,6 +1266,25 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             addSetting(page, buildBydVehicleDataSection())
             buildHeadUnitBluetoothSection(page)
+            addSetting(
+                page,
+                settingsSwitchRow(
+                    label = getString(R.string.cluster_song_label),
+                    checked = BydClusterSongSettings.enabled(this),
+                    description = getString(R.string.cluster_song_desc),
+                ) { checked -> BydClusterSongSettings.setEnabled(this, checked) },
+                topMarginDp = 12,
+            )
+            addSetting(
+                page,
+                settingsSwitchRow(
+                    label = getString(R.string.cluster_song_on_change_label),
+                    checked = BydClusterSongSettings.onlyOnChange(this),
+                    description = getString(R.string.cluster_song_on_change_desc),
+                ) { checked -> BydClusterSongSettings.setOnlyOnChange(this, checked) },
+                getString(R.string.cluster_song_note),
+                topMarginDp = 12,
+            )
             addButton(page, buildClusterCallTestButton(), getString(R.string.cluster_call_test_note))
         }
         addButton(

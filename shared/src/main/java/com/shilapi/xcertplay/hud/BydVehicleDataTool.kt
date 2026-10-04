@@ -47,10 +47,61 @@ object BydVehicleDataTool {
 
     private const val CALL_TEST_SECONDS = 10
 
+    /** BYD's instrument device type; setMediaState/setMediaInfo take it explicitly. */
+    private const val INSTRUMENT_DEVICE = 1007
+
+    /**
+     * Writes the dashboard music card: source, play state and text ("-" skips one), the way BYD's
+     * media center does underneath its focus-owner check. The signal IDs differ between firmware
+     * builds (Song PLUS 2021 and Tang 2024 use different values), so they are read from this
+     * firmware's BYDAutoFeatureIds; when they cannot be read nothing is written.
+     */
+    private fun clusterSong(context: Context, args: List<String>) {
+        val ids = Class.forName("android.hardware.bydauto.BYDAutoFeatureIds")
+        fun id(name: String): Int = ids.getField(name).getInt(null)
+        val sourceId = id("INSTRUMENT_MUSIC_SOURCE_SET")
+        val stateId = id("INSTRUMENT_MUSIC_STATE_SET")
+        val infoId = id("INSTRUMENT_MUSIC_INFO_SET")
+        val instrument = Device("instrument.BYDAutoInstrumentDevice", context)
+        val results = mutableListOf<String>()
+        args.getOrNull(0)?.takeIf { it != "-" }?.let {
+            results += "source=${instrument.write("setMediaState", INSTRUMENT_DEVICE, sourceId, it.toInt())}"
+        }
+        args.getOrNull(1)?.takeIf { it != "-" }?.let {
+            results += "state=${instrument.write("setMediaState", INSTRUMENT_DEVICE, stateId, it.toInt())}"
+        }
+        args.getOrNull(2)?.takeIf { it != "-" }?.let { encoded ->
+            val text = String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8).toByteArray(Charsets.UTF_16LE)
+            results += "text=${if (text.size > 255) "too long" else instrument.write("setMediaInfo", INSTRUMENT_DEVICE, infoId, text)}"
+        }
+        println("XCERTPLAY clustersong ${results.joinToString(" ")}")
+    }
+
+    /**
+     * Turns the head unit's automatic Wi-Fi network search on or off. BYD scans every 10 s while its
+     * Wi-Fi client is not joined, pulling the radio off the CarPlay channel; the shell holds
+     * CONNECTIVITY_INTERNAL, which is all enableWifiConnectivityManager checks. Called by name, so
+     * firmware builds with different binder transaction numbers need nothing special.
+     */
+    @SuppressLint("PrivateApi")
+    private fun wifiScan(enabled: Boolean) {
+        val binder = Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java)
+            .invoke(null, "wifi") as android.os.IBinder
+        val wifi = Class.forName("android.net.wifi.IWifiManager\$Stub")
+            .getMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+            ?: error("no wifi service")
+        wifi.javaClass.getMethod("enableWifiConnectivityManager", Boolean::class.javaPrimitiveType).invoke(wifi, enabled)
+        println("XCERTPLAY wifiscan enabled=$enabled ok")
+    }
+
     @JvmStatic
     @SuppressLint("PrivateApi")
     fun main(args: Array<String>) {
         try {
+            if (args.firstOrNull() == "wifiscan") {
+                wifiScan(args.getOrNull(1) == "on")
+                return
+            }
             runCatching { android.os.Looper.prepareMainLooper() }
             val thread = Class.forName("android.app.ActivityThread")
             val main = thread.getMethod("systemMain").invoke(null)
@@ -58,6 +109,10 @@ object BydVehicleDataTool {
             val mode = args.firstOrNull() ?: return
             if (mode == "calltest") {
                 callInfoTest(context)
+                return
+            }
+            if (mode == "clustersong") {
+                clusterSong(context, args.drop(1))
                 return
             }
             val once = args.getOrNull(1) == "once"
