@@ -15,7 +15,37 @@ object BydVehicleDataTool {
             type.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }.newInstance(context)
         }
         fun read(method: String): Number = type.getMethod(method).invoke(instance) as Number
+
+        /** Calls a setter; the result code, or the failure, is returned as text for the test log. */
+        fun write(method: String, vararg args: Any): String = try {
+            val types = args.map { if (it is ByteArray) ByteArray::class.java else Int::class.javaPrimitiveType!! }
+            type.getMethod(method, *types.toTypedArray()).invoke(instance, *args).toString()
+        } catch (error: InvocationTargetException) {
+            val cause = error.targetException
+            "failed ${cause.javaClass.simpleName} ${cause.message?.take(80).orEmpty()}"
+        }
     }
+
+    /**
+     * Sends the instrument cluster what BYD's phone app sends during a Bluetooth call: the caller
+     * name (UTF-16LE) and a running call time. Shows whether the shell may write these and whether
+     * the car reacts (cluster call card, lowered fan).
+     */
+    private fun callInfoTest(context: Context) {
+        val instrument = Device("instrument.BYDAutoInstrumentDevice", context)
+        val name = "CarPlay test".toByteArray(Charsets.UTF_16LE)
+        println("XCERTPLAY calltest sendCallInfo=${instrument.write("sendCallInfo", name)}")
+        for (second in 0..CALL_TEST_SECONDS) {
+            val result = instrument.write("sendCallTime", 0, 0, second)
+            // One line a second also keeps adb's 5-second read deadline alive.
+            println("XCERTPLAY calltest sendCallTime(0,0,$second)=$result")
+            System.out.flush()
+            Thread.sleep(1_000L)
+        }
+        println("XCERTPLAY calltest done")
+    }
+
+    private const val CALL_TEST_SECONDS = 10
 
     @JvmStatic
     @SuppressLint("PrivateApi")
@@ -26,6 +56,10 @@ object BydVehicleDataTool {
             val main = thread.getMethod("systemMain").invoke(null)
             val context = thread.getMethod("getSystemContext").invoke(main) as Context
             val mode = args.firstOrNull() ?: return
+            if (mode == "calltest") {
+                callInfoTest(context)
+                return
+            }
             val once = args.getOrNull(1) == "once"
             val speed = if (mode == "speed") Device("speed.BYDAutoSpeedDevice", context) else null
             val gearbox = if (speed != null) Device("gearbox.BYDAutoGearboxDevice", context) else null

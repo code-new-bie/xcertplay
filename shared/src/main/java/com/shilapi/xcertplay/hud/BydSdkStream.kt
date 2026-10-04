@@ -82,7 +82,7 @@ internal class BydSdkStream(
 
     companion object {
         fun command(context: Context, mode: String, once: Boolean = false): String {
-            require(mode == "speed" || mode == "battery")
+            require(mode == "speed" || mode == "battery" || mode == "calltest")
             val apk = context.applicationInfo.sourceDir.replace("'", "'\\''")
             return "CLASSPATH='$apk' app_process /system/bin ${BydVehicleDataTool::class.java.name} $mode" +
                 if (once) " once" else ""

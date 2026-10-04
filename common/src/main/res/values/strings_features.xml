@@ -61,4 +61,8 @@
     <string name="wifi_scan_diag_done">Wrote %1$d lines to the log. Export the logs to send them.</string>
     <string name="phone_audio_channel_label">Call audio channel</string>
     <string name="phone_audio_channel_note">For calls on BYD head units try 6 (Bluetooth call channel) first, then 0 (call channel). The test tone plays through the chosen channel.</string>
+    <string name="cluster_call_test">Test: send call info to the cluster</string>
+    <string name="cluster_call_test_running">Testing (10 s)…</string>
+    <string name="cluster_call_test_note">Sends the instrument cluster a 10-second test call (name \"CarPlay test\" and a call timer) through ADB, the way BYD\'s Bluetooth phone does. Watch whether the cluster shows it and whether the AC fan drops.</string>
+    <string name="cluster_call_test_done">Results (0 usually means accepted):\n%1$s\n\nDid the cluster show the call, and did the AC fan drop?</string>
 </resources>

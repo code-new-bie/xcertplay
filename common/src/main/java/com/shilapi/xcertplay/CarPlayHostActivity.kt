@@ -1255,6 +1255,7 @@ class CarPlayHostActivity : ComponentActivity() {
             )
             addSetting(page, buildBydVehicleDataSection())
             buildHeadUnitBluetoothSection(page)
+            addButton(page, buildClusterCallTestButton(), getString(R.string.cluster_call_test_note))
         }
         addButton(
             page,
@@ -1264,6 +1265,37 @@ class CarPlayHostActivity : ComponentActivity() {
             },
             getString(R.string.hint_bt_settings),
         )
+    }
+
+    /** BYD group: sends the cluster a test call (name and timer) the way BYD's phone app does. */
+    private fun buildClusterCallTestButton(): Button = Button(this).apply {
+        text = getString(R.string.cluster_call_test)
+        setOnClickListener {
+            isEnabled = false
+            text = getString(R.string.cluster_call_test_running)
+            appendLog("Cluster call-info test started")
+            kotlin.concurrent.thread(name = "xcertplay-cluster-call-test", isDaemon = true) {
+                val result = runCatching { BydVehicleAccess.callInfoTest(applicationContext) }
+                runOnUiThread {
+                    isEnabled = true
+                    text = getString(R.string.cluster_call_test)
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val message = result.fold({ (access, lines) ->
+                        when (access) {
+                            LocalAdb.Access.READY -> {
+                                lines.forEach { appendLog("Cluster call-info test: $it") }
+                                getString(R.string.cluster_call_test_done, lines.joinToString("\n"))
+                            }
+                            LocalAdb.Access.NOT_APPROVED -> getString(R.string.byd_adb_not_approved)
+                            LocalAdb.Access.UNREACHABLE -> getString(R.string.byd_adb_unreachable)
+                            LocalAdb.Access.UNSUPPORTED -> getString(R.string.byd_adb_unsupported)
+                        }
+                    }, { getString(R.string.byd_adb_failed, it.javaClass.simpleName) })
+                    AlertDialog.Builder(this@CarPlayHostActivity).setTitle(R.string.cluster_call_test)
+                        .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
     }
 
     /** BYD group: reads the head unit's real Bluetooth address through ADB so the iPhone receives it. */

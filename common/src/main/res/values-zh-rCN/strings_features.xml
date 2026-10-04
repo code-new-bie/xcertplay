@@ -61,4 +61,8 @@
     <string name="wifi_scan_diag_done">已向日志写入 %1$d 行。请导出日志发送。</string>
     <string name="phone_audio_channel_label">通话音频通道</string>
     <string name="phone_audio_channel_note">比亚迪车机的通话建议先试 6（蓝牙通话通道），再试 0（通话通道）。“测试”会通过所选通道播放提示音。</string>
+    <string name="cluster_call_test">测试：向仪表发送通话信息</string>
+    <string name="cluster_call_test_running">正在测试（10 秒）…</string>
+    <string name="cluster_call_test_note">通过 ADB 像比亚迪蓝牙电话那样，向仪表发送一个 10 秒的测试通话（名称“CarPlay test”和通话计时）。请观察仪表是否显示、空调风量是否降低。</string>
+    <string name="cluster_call_test_done">结果（0 通常表示接受）：\n%1$s\n\n仪表是否显示了通话？空调风量是否降低？</string>
 </resources>
