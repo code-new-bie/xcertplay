@@ -44,6 +44,8 @@ class AndroidMediaSink(
     private val mediaChannel: Int = VehicleAudioChannel.AUTOMATIC,
     private val navigationChannel: Int = VehicleAudioChannel.AUTOMATIC,
     private val muteLocalMediaPlayback: Boolean = false,
+    /** Written to the session log: audio routes and microphone sources. */
+    private val diagnostic: (String) -> Unit = {},
 ) : MediaSink {
     private val defaultSurface = surface
     @Volatile private var screenStreamActiveChanged = onScreenStreamActiveChanged
@@ -133,7 +135,7 @@ class AndroidMediaSink(
 
     override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
         val uplink = microphoneUplinks.computeIfAbsent(id) {
-            MicrophoneUplink(context, config, microphoneGainPercent)
+            MicrophoneUplink(context, config, microphoneGainPercent, diagnostic)
         }
         if (!uplink.start()) microphoneUplinks.remove(id, uplink)
     }
@@ -185,6 +187,7 @@ class AndroidMediaSink(
             mediaMetricsMonitor,
             mediaChannel,
             navigationChannel,
+            diagnostic,
         ).also {
             audioRenderers[id] = it
         }
@@ -577,6 +580,7 @@ private class AudioRenderer(
     mediaMetricsMonitor: MediaMetricsMonitor?,
     private val mediaChannel: Int,
     private val navigationChannel: Int,
+    private val diagnostic: (String) -> Unit,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -776,12 +780,11 @@ private class AudioRenderer(
             .setContentType(contentType)
             .build())
             .also {
-                Log.i(
-                    TAG,
-                    "audio route type=${format.payloadType} audioType=${format.audioType} " +
-                        "mode=$mode channel=${selection.channel} " +
-                        "usage=$usage contentType=$contentType streamOverride=$streamOverride",
-                )
+                val message = "audio route type=${format.payloadType} audioType=${format.audioType} " +
+                    "mode=$mode channel=${selection.channel} " +
+                    "usage=$usage contentType=$contentType streamOverride=$streamOverride"
+                Log.i(TAG, message)
+                runCatching { diagnostic(message) }
             }
     }
 

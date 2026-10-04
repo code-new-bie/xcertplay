@@ -2,7 +2,6 @@ package com.shilapi.xcertplay.media
 
 import android.content.Context
 import android.media.AudioFormat as AndroidAudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import java.io.ByteArrayOutputStream
@@ -11,7 +10,30 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal const val MICROPHONE_CAPTURE_RATE_HZ = 16_000
 
-internal fun openMicrophoneRecorder(requestedBufferBytes: Int): AudioRecord {
+/**
+ * The Android capture source for a CarPlay microphone stream. Calls use VOICE_COMMUNICATION for the
+ * platform echo canceller and Siri uses VOICE_RECOGNITION; neither changes the audio mode, which
+ * BYD head units reserve for their own Bluetooth phone path.
+ */
+internal object MicrophoneSource {
+    fun forAudioType(audioType: String): Int = when (audioType.lowercase()) {
+        "telephony" -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
+        "speechrecognition" -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+        else -> MediaRecorder.AudioSource.MIC
+    }
+
+    fun label(source: Int): String = when (source) {
+        MediaRecorder.AudioSource.VOICE_COMMUNICATION -> "VOICE_COMMUNICATION"
+        MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
+        MediaRecorder.AudioSource.MIC -> "MIC"
+        else -> source.toString()
+    }
+}
+
+internal fun openMicrophoneRecorder(
+    requestedBufferBytes: Int,
+    source: Int = MediaRecorder.AudioSource.MIC,
+): AudioRecord {
     val minBuffer = AudioRecord.getMinBufferSize(
         MICROPHONE_CAPTURE_RATE_HZ,
         AndroidAudioFormat.CHANNEL_IN_MONO,
@@ -19,7 +41,7 @@ internal fun openMicrophoneRecorder(requestedBufferBytes: Int): AudioRecord {
     )
     check(minBuffer > 0) { "microphone unavailable at $MICROPHONE_CAPTURE_RATE_HZ Hz" }
     val recorder = AudioRecord.Builder()
-        .setAudioSource(MediaRecorder.AudioSource.MIC)
+        .setAudioSource(source)
         .setAudioFormat(
             AndroidAudioFormat.Builder()
                 .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT)
@@ -69,61 +91,6 @@ object MicrophoneGain {
         (peak.coerceIn(0, 32_768) * 100 / 32_768).coerceIn(0, 100)
 }
 
-/** Keeps communication mode active until every microphone recorder has closed. */
-internal class AudioModeLeaseManager(
-    private val readMode: () -> Int,
-    private val writeMode: (Int) -> Unit,
-    private val communicationMode: Int,
-) {
-    private var users = 0
-    private var previousMode = 0
-    private var changedMode = false
-
-    @Synchronized
-    fun acquire(): Closeable {
-        if (users == 0) {
-            previousMode = readMode()
-            changedMode = previousMode != communicationMode
-            if (changedMode) writeMode(communicationMode)
-            check(readMode() == communicationMode) {
-                "Android communication audio mode was not enabled"
-            }
-        }
-        users++
-        val closed = AtomicBoolean(false)
-        return Closeable {
-            if (closed.compareAndSet(false, true)) release()
-        }
-    }
-
-    @Synchronized
-    private fun release() {
-        check(users > 0)
-        users--
-        if (users == 0 && changedMode && readMode() == communicationMode) {
-            writeMode(previousMode)
-        }
-    }
-}
-
-internal object MicrophoneAudioMode {
-    private var leases: AudioModeLeaseManager? = null
-
-    @Synchronized
-    fun acquire(context: Context): Closeable {
-        val manager = leases ?: run {
-            val audioManager =
-                context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            AudioModeLeaseManager(
-                readMode = { audioManager.mode },
-                writeMode = { audioManager.mode = it },
-                communicationMode = AudioManager.MODE_IN_COMMUNICATION,
-            ).also { leases = it }
-        }
-        return manager.acquire()
-    }
-}
-
 /** Records the same stream used by CarPlay and reports the amplified peak every ~100 ms. */
 class MicrophoneLevelMonitor(
     context: Context,
@@ -155,10 +122,8 @@ class MicrophoneLevelMonitor(
 
     private fun capture() {
         var failure: Throwable? = null
-        var audioModeLease: Closeable? = null
         var activeRecorder: AudioRecord? = null
         try {
-            audioModeLease = MicrophoneAudioMode.acquire(appContext)
             val frameBytes =
                 MICROPHONE_CAPTURE_RATE_HZ * BYTES_PER_SAMPLE * REPORT_MILLIS / 1000
             activeRecorder = openMicrophoneRecorder(frameBytes * 2)
@@ -187,11 +152,6 @@ class MicrophoneLevelMonitor(
             }
             try {
                 activeRecorder?.release()
-            } catch (_: Exception) {
-                // Best effort.
-            }
-            try {
-                audioModeLease?.close()
             } catch (_: Exception) {
                 // Best effort.
             }

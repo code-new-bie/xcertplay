@@ -3692,6 +3692,7 @@ class CarPlayHostActivity : ComponentActivity() {
         mediaChannel = mediaAudioChannel,
         navigationChannel = navigationAudioChannel,
         muteLocalMediaPlayback = muteLocalMediaPlayback,
+        diagnostic = { message -> mainHandler.post { appendLog(message) } },
     )
 
     private fun createMediaEngine(sink: AndroidMediaSink): CarPlayMediaEngine =

@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.media
 
 import android.content.Context
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AudioCodecKind
@@ -25,11 +26,11 @@ internal class MicrophoneUplink(
     private val context: Context,
     private val config: MicrophoneConfig,
     microphoneGainPercent: Int,
+    private val diagnostic: (String) -> Unit = {},
 ) : Closeable {
     private val microphoneGainPercent = MicrophoneGain.sanitize(microphoneGainPercent)
     private val running = AtomicBoolean(false)
     private val firstPacketLogged = AtomicBoolean(false)
-    @Volatile private var audioModeLease: Closeable? = null
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var socket: DatagramSocket? = null
     @Volatile private var opusEncoder: OpusEncoder? = null
@@ -48,8 +49,6 @@ internal class MicrophoneUplink(
     }
 
     private fun startCapture() {
-        audioModeLease = MicrophoneAudioMode.acquire(context)
-
         if (config.codec == AudioCodecKind.OPUS) {
             opusEncoder = OpusEncoder(
                 config.sampleRate,
@@ -60,7 +59,8 @@ internal class MicrophoneUplink(
 
         val captureFrameBytes =
             MICROPHONE_CAPTURE_RATE_HZ * config.frameMillis / 1000 * BYTES_PER_SAMPLE
-        val nextRecorder = openMicrophoneRecorder(captureFrameBytes * 4)
+        val source = MicrophoneSource.forAudioType(config.audioType)
+        val nextRecorder = openMicrophoneRecorder(captureFrameBytes * 4, source)
         recorder = nextRecorder
 
         val nextSocket = DatagramSocket(null).apply {
@@ -74,13 +74,16 @@ internal class MicrophoneUplink(
             isDaemon = true
             start()
         }
-        Log.i(
-            TAG,
-            "microphone uplink started type=${config.audioType} codec=${config.codec} " +
-                "captureRate=$MICROPHONE_CAPTURE_RATE_HZ outputRate=${config.sampleRate} " +
-                "channels=${config.channels} gain=${microphoneGainPercent}% " +
-                "frameMs=${config.frameMillis} port=${config.port}",
-        )
+        val audioMode = runCatching {
+            (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode
+        }.getOrDefault(-1)
+        val message = "microphone uplink started type=${config.audioType} " +
+            "source=${MicrophoneSource.label(source)} audioMode=$audioMode codec=${config.codec} " +
+            "captureRate=$MICROPHONE_CAPTURE_RATE_HZ outputRate=${config.sampleRate} " +
+            "channels=${config.channels} gain=${microphoneGainPercent}% " +
+            "frameMs=${config.frameMillis} port=${config.port}"
+        Log.i(TAG, message)
+        runCatching { diagnostic(message) }
     }
 
     private fun capture(activeRecorder: AudioRecord, activeSocket: DatagramSocket) {
@@ -223,13 +226,6 @@ internal class MicrophoneUplink(
             // Best effort.
         }
 
-        val currentAudioModeLease = audioModeLease
-        audioModeLease = null
-        try {
-            currentAudioModeLease?.close()
-        } catch (_: Exception) {
-            // Best effort.
-        }
     }
 
     private companion object {
