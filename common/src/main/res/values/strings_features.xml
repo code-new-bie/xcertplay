@@ -59,4 +59,6 @@
     <string name="wifi_scan_diag_running">Reading…</string>
     <string name="wifi_scan_diag_note">Reads through ADB which apps and system services scan Wi-Fi, and writes it to the log. Frequent scans make Wi-Fi P2P stall. Export the logs afterwards.</string>
     <string name="wifi_scan_diag_done">Wrote %1$d lines to the log. Export the logs to send them.</string>
+    <string name="phone_audio_channel_label">Call audio channel</string>
+    <string name="phone_audio_channel_note">For calls on BYD head units try 6 (Bluetooth call channel) first, then 0 (call channel). The test tone plays through the chosen channel.</string>
 </resources>

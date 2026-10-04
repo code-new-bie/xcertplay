@@ -15,6 +15,7 @@ import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -363,6 +364,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var advancedAudioChannelMapping = false
     private var mediaAudioChannel = VehicleAudioChannel.AUTOMATIC
     private var navigationAudioChannel = VehicleAudioChannel.AUTOMATIC
+    private var phoneAudioChannel = VehicleAudioChannel.AUTOMATIC
     private val channelPreview = AudioChannelPreview { channel ->
         Toast.makeText(this, getString(R.string.audio_channel_preview_failed, channel), Toast.LENGTH_SHORT).show()
     }
@@ -577,6 +579,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
         mediaAudioChannel = AirPlayPersistence.loadMediaAudioChannel(this)
         navigationAudioChannel = AirPlayPersistence.loadNavigationAudioChannel(this)
+        phoneAudioChannel = AirPlayPersistence.loadPhoneAudioChannel(this)
         mainMediaAudioBufferDurationMs =
             AirPlayPersistence.loadMainMediaAudioBufferDurationMs(this)
         microphoneGainPercent = AirPlayPersistence.loadMicrophoneGainPercent(this)
@@ -1415,13 +1418,34 @@ class CarPlayHostActivity : ComponentActivity() {
         addGroupHeader(page, getString(R.string.group_audio_routing))
         addSetting(
             page,
-            buildVehicleAudioChannelRow(getString(R.string.media_audio_channel_label), navigation = false),
+            buildVehicleAudioChannelRow(
+                getString(R.string.media_audio_channel_label),
+                { mediaAudioChannel },
+                { mediaAudioChannel = it },
+                AudioAttributes.USAGE_MEDIA,
+            ),
             topMarginDp = 12,
         )
         addSetting(
             page,
-            buildVehicleAudioChannelRow(getString(R.string.navigation_audio_channel_label), navigation = true),
-            getString(R.string.audio_channel_note, VehicleAudioChannel.MAX),
+            buildVehicleAudioChannelRow(
+                getString(R.string.navigation_audio_channel_label),
+                { navigationAudioChannel },
+                { navigationAudioChannel = it },
+                AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
+            ),
+            topMarginDp = 10,
+        )
+        addSetting(
+            page,
+            buildVehicleAudioChannelRow(
+                getString(R.string.phone_audio_channel_label),
+                { phoneAudioChannel },
+                { phoneAudioChannel = it },
+                AudioAttributes.USAGE_VOICE_COMMUNICATION,
+            ),
+            getString(R.string.audio_channel_note, VehicleAudioChannel.MAX) + "\n" +
+                getString(R.string.phone_audio_channel_note),
             topMarginDp = 10,
         )
         if (advancedAudioChannelMappingSupported) {
@@ -1672,6 +1696,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveAdvancedAudioChannelMapping(this, advancedAudioChannelMapping)
         AirPlayPersistence.saveMediaAudioChannel(this, mediaAudioChannel)
         AirPlayPersistence.saveNavigationAudioChannel(this, navigationAudioChannel)
+        AirPlayPersistence.savePhoneAudioChannel(this, phoneAudioChannel)
         AirPlayPersistence.saveMainMediaAudioBufferDurationMs(
             this,
             mainMediaAudioBufferDurationMs,
@@ -1733,7 +1758,7 @@ class CarPlayHostActivity : ComponentActivity() {
             runCatching { AirPlayPersistence.loadCustomAirPlayIconFile(this)?.readBytes()?.contentHashCode() }
                 .getOrNull(),
             audioPacketCaptureEnabled,
-            advancedAudioChannelMapping, mediaAudioChannel, navigationAudioChannel,
+            advancedAudioChannelMapping, mediaAudioChannel, navigationAudioChannel, phoneAudioChannel,
             mainMediaAudioBufferDurationMs, microphoneGainPercent,
             BydVehicleSettings.speedEnabled(this), BydVehicleSettings.batteryEnabled(this),
             BydVehicleSettings.dcChargingEnabled(this), BydVehicleSettings.capacityKwh(this),
@@ -2315,16 +2340,20 @@ class CarPlayHostActivity : ComponentActivity() {
         return section
     }
 
-    private fun buildVehicleAudioChannelRow(label: String, navigation: Boolean): View {
+    /** [usage] is what CarPlay plays on this channel; the test tone uses it when the channel is automatic. */
+    private fun buildVehicleAudioChannelRow(
+        label: String,
+        current: () -> Int,
+        update: (Int) -> Unit,
+        usage: Int,
+    ): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val current = if (navigation) navigationAudioChannel else mediaAudioChannel
         row.addView(
-            settingsInputRow(label, current.toString(), numeric = true) { value ->
-                val channel = VehicleAudioChannel.sanitize(value.trim().toIntOrNull() ?: 0)
-                if (navigation) navigationAudioChannel = channel else mediaAudioChannel = channel
+            settingsInputRow(label, current().toString(), numeric = true) { value ->
+                update(VehicleAudioChannel.sanitize(value.trim().toIntOrNull() ?: 0))
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
         )
@@ -2337,12 +2366,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 backgroundTintList = ColorStateList.valueOf(MENU_ACCENT)
                 minWidth = dp(78)
                 contentDescription = getString(R.string.audio_channel_test_desc, label)
-                setOnClickListener {
-                    channelPreview.play(
-                        if (navigation) navigationAudioChannel else mediaAudioChannel,
-                        navigation,
-                    )
-                }
+                setOnClickListener { channelPreview.play(current(), usage) }
             },
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -3757,6 +3781,7 @@ class CarPlayHostActivity : ComponentActivity() {
         },
         mediaChannel = mediaAudioChannel,
         navigationChannel = navigationAudioChannel,
+        phoneChannel = phoneAudioChannel,
         diagnostic = { message -> mainHandler.post { appendLog(message) } },
     )
 

@@ -473,8 +473,9 @@ class CarPlayController(
 
     private fun sendMediaRemoteCommand(command: Iap2MediaRemoteCommand): Boolean {
         if (closed) return false
-        val session = activeMediaRemoteSession ?: return false
-        if (session.isClosed) return false
+        val session = activeMediaRemoteSession
+        debugLog("Media key $command -> CarPlay${if (session == null || session.isClosed) " (no session)" else ""}")
+        if (session == null || session.isClosed) return false
         return try {
             touchExecutor.execute {
                 if (closed || activeMediaRemoteSession !== session || session.isClosed) return@execute

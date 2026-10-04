@@ -59,4 +59,6 @@
     <string name="wifi_scan_diag_running">正在读取…</string>
     <string name="wifi_scan_diag_note">通过 ADB 读取哪些应用和系统服务在扫描 Wi-Fi，并写入日志。频繁扫描会让 Wi-Fi P2P 卡顿。读取后请导出日志。</string>
     <string name="wifi_scan_diag_done">已向日志写入 %1$d 行。请导出日志发送。</string>
+    <string name="phone_audio_channel_label">通话音频通道</string>
+    <string name="phone_audio_channel_note">比亚迪车机的通话建议先试 6（蓝牙通话通道），再试 0（通话通道）。“测试”会通过所选通道播放提示音。</string>
 </resources>

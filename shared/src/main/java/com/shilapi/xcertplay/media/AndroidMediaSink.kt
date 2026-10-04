@@ -43,6 +43,8 @@ class AndroidMediaSink(
     /** Head-unit legacy stream numbers ([VehicleAudioChannel]); 0 keeps usage routing. */
     private val mediaChannel: Int = VehicleAudioChannel.AUTOMATIC,
     private val navigationChannel: Int = VehicleAudioChannel.AUTOMATIC,
+    /** Head-unit stream number for CarPlay calls; 0 keeps usage routing. */
+    private val phoneChannel: Int = VehicleAudioChannel.AUTOMATIC,
     /** Written to the session log: audio routes and microphone sources. */
     private val diagnostic: (String) -> Unit = {},
 ) : MediaSink {
@@ -122,14 +124,27 @@ class AndroidMediaSink(
     }
 
     override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {
+        when (channelOf(id)) {
+            AudioChannel.MEDIA -> CarPlayAudioFocus.onMediaStarted(context, diagnostic)
+            AudioChannel.PHONE -> CarPlayAudioFocus.onCallStarted(context, diagnostic)
+            else -> Unit
+        }
         audioRenderer(id, format).start()
     }
+
+    private fun channelOf(id: AudioStreamId): AudioChannel = AudioChannelMapper.map(
+        id.audioType,
+        id.type,
+        if (advancedAudioChannelMapping) AudioChannelMappingMode.AUTOMOTIVE_BUS
+        else AudioChannelMappingMode.MOBILE_COMPATIBLE,
+    ).channel
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
         audioRenderer(id, format).submit(rtp, sample)
     }
 
     override fun onAudioStopped(id: AudioStreamId) {
+        if (channelOf(id) == AudioChannel.PHONE) CarPlayAudioFocus.onCallStopped()
         audioRenderers.remove(id)?.close()
     }
 
@@ -153,6 +168,7 @@ class AndroidMediaSink(
         audioRenderers.clear()
         microphoneUplinks.values.forEach(MicrophoneUplink::close)
         microphoneUplinks.clear()
+        CarPlayAudioFocus.releaseAll()
     }
 
     private fun videoDecoder(type: Int): VideoDecoder =
@@ -186,6 +202,7 @@ class AndroidMediaSink(
             mediaMetricsMonitor,
             mediaChannel,
             navigationChannel,
+            phoneChannel,
             diagnostic,
         ).also {
             audioRenderers[id] = it
@@ -579,6 +596,7 @@ private class AudioRenderer(
     mediaMetricsMonitor: MediaMetricsMonitor?,
     private val mediaChannel: Int,
     private val navigationChannel: Int,
+    private val phoneChannel: Int,
     private val diagnostic: (String) -> Unit,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
@@ -774,6 +792,7 @@ private class AudioRenderer(
         val streamOverride = when (selection.channel) {
             AudioChannel.MEDIA -> mediaChannel
             AudioChannel.NAVIGATION -> navigationChannel
+            AudioChannel.PHONE -> phoneChannel
             else -> VehicleAudioChannel.AUTOMATIC
         }
         return (VehicleAudioChannel.attributes(streamOverride) ?: AudioAttributes.Builder()

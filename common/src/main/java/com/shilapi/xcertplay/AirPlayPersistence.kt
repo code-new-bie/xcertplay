@@ -42,6 +42,7 @@ object AirPlayPersistence {
     private const val KEY_ADVANCED_AUDIO_CHANNEL_MAPPING = "advanced_audio_channel_mapping"
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
+    private const val KEY_PHONE_AUDIO_CHANNEL = "phone_audio_channel"
     private const val KEY_MAIN_MEDIA_AUDIO_BUFFER_DURATION_MS = "main_media_audio_buffer_duration_ms"
     private const val KEY_MICROPHONE_GAIN_PERCENT = "microphone_gain_percent"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
@@ -146,6 +147,18 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_NAVIGATION_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
     )
+
+    /** 0 keeps usage routing; otherwise a head-unit legacy stream number for calls. */
+    fun loadPhoneAudioChannel(context: Context): Int = VehicleAudioChannel.sanitize(
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_PHONE_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
+    )
+
+    fun savePhoneAudioChannel(context: Context, channel: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_PHONE_AUDIO_CHANNEL, VehicleAudioChannel.sanitize(channel))
+            .apply()
+    }
 
     fun saveNavigationAudioChannel(context: Context, channel: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

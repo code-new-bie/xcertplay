@@ -35,7 +35,7 @@ class AudioChannelPreviewTest {
         ShadowAudioTrack.addAudioDataListener(listener)
         try {
             AudioChannelPreview { fail("Preview should be available") }.use { preview ->
-                preview.play(3, navigation = false)
+                preview.play(3, AudioAttributes.USAGE_MEDIA)
                 awaitPlayback(preview)
                 assertEquals(1, tracks.size)
                 assertEquals(listOf(AudioAttributes.USAGE_MEDIA), usages)
@@ -65,9 +65,9 @@ class AudioChannelPreviewTest {
         ShadowAudioTrack.addAudioDataListener(listener)
         try {
             AudioChannelPreview { fail("Preview should be available") }.use { preview ->
-                preview.play(3, navigation = false)
+                preview.play(3, AudioAttributes.USAGE_MEDIA)
                 assertTrue(firstWrite.await(5, TimeUnit.SECONDS))
-                preview.play(5, navigation = false)
+                preview.play(5, AudioAttributes.USAGE_MEDIA)
                 releaseWrite.countDown()
                 awaitPlayback(preview)
                 assertEquals(2, tracks.size)
@@ -75,7 +75,7 @@ class AudioChannelPreviewTest {
                 assertTrue(tracks.all { it.state == AudioTrack.STATE_UNINITIALIZED })
 
                 preview.stop()
-                preview.play(0, navigation = true)
+                preview.play(0, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                 awaitPlayback(preview)
                 assertEquals(3, tracks.size)
                 assertEquals(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
@@ -93,20 +93,20 @@ class AudioChannelPreviewTest {
         ShadowAudioTrack.enableIllegalStateOnPlay(true)
         val preview = AudioChannelPreview(unavailable::add)
         try {
-            preview.play(3, navigation = false)
+            preview.play(3, AudioAttributes.USAGE_MEDIA)
             awaitPlayback(preview)
             preview.stop()
             shadowOf(Looper.getMainLooper()).idle()
             assertTrue(unavailable.isEmpty())
 
-            preview.play(5, navigation = false)
+            preview.play(5, AudioAttributes.USAGE_MEDIA)
             awaitPlayback(preview)
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(listOf(5), unavailable)
 
             preview.close()
             preview.close()
-            preview.play(3, navigation = false)
+            preview.play(3, AudioAttributes.USAGE_MEDIA)
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(listOf(5), unavailable)
         } finally {

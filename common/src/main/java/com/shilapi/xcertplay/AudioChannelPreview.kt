@@ -24,7 +24,8 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
     private var pending: Future<*>? = null
     @Volatile private var closed = false
 
-    fun play(channel: Int, navigation: Boolean) {
+    /** [usage] routes the tone when [channel] is 0 (automatic), as CarPlay audio of that kind would be. */
+    fun play(channel: Int, usage: Int) {
         if (closed) return
         require(channel in 0..40)
         val request = generation.incrementAndGet()
@@ -36,10 +37,9 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
                 if (closed || generation.get() != request) return@submit
                 val attributes = if (channel == 0) {
                     AudioAttributes.Builder()
-                        .setUsage(if (navigation) AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
-                            else AudioAttributes.USAGE_MEDIA)
-                        .setContentType(if (navigation) AudioAttributes.CONTENT_TYPE_SPEECH
-                            else AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(usage)
+                        .setContentType(if (usage == AudioAttributes.USAGE_MEDIA) AudioAttributes.CONTENT_TYPE_MUSIC
+                            else AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 } else {
                     AudioAttributes.Builder().setLegacyStreamType(channel).build()
@@ -76,7 +76,7 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
                     written += count
                 }
                 if (!closed && generation.get() == request && written == pcm.size) {
-                    Log.i(TAG, "Preview started channel=$channel navigation=$navigation")
+                    Log.i(TAG, "Preview started channel=$channel usage=$usage")
                 }
                 Thread.sleep(120L)
             } catch (_: InterruptedException) {
