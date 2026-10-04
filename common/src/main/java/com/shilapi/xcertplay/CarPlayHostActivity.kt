@@ -361,7 +361,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private var hevcSoftwareDecoderEnabled = false
     private var advancedAudioChannelMappingSupported = false
     private var advancedAudioChannelMapping = false
-    private var muteLocalMediaPlayback = false
     private var mediaAudioChannel = VehicleAudioChannel.AUTOMATIC
     private var navigationAudioChannel = VehicleAudioChannel.AUTOMATIC
     private val channelPreview = AudioChannelPreview { channel ->
@@ -576,7 +575,6 @@ class CarPlayHostActivity : ComponentActivity() {
         advancedAudioChannelMapping =
             advancedAudioChannelMappingSupported &&
                 AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
-        muteLocalMediaPlayback = AirPlayPersistence.loadMuteLocalMediaPlayback(this)
         mediaAudioChannel = AirPlayPersistence.loadMediaAudioChannel(this)
         navigationAudioChannel = AirPlayPersistence.loadNavigationAudioChannel(this)
         mainMediaAudioBufferDurationMs =
@@ -1124,11 +1122,20 @@ class CarPlayHostActivity : ComponentActivity() {
         addSetting(
             page,
             settingsSwitchRow(
-                label = getString(R.string.bluetooth_handoff_label),
-                checked = BluetoothHandoffSettings.enabled(this),
-                description = getString(R.string.bluetooth_handoff_desc),
-            ) { checked -> BluetoothHandoffSettings.setEnabled(this, checked) },
+                label = getString(R.string.bluetooth_handoff_calls_label),
+                checked = BluetoothHandoffSettings.callsEnabled(this),
+                description = getString(R.string.bluetooth_handoff_calls_desc),
+            ) { checked -> BluetoothHandoffSettings.setCallsEnabled(this, checked) },
+        )
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.bluetooth_handoff_audio_label),
+                checked = BluetoothHandoffSettings.audioEnabled(this),
+                description = getString(R.string.bluetooth_handoff_audio_desc),
+            ) { checked -> BluetoothHandoffSettings.setAudioEnabled(this, checked) },
             getString(R.string.bluetooth_handoff_note),
+            topMarginDp = 12,
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             addSetting(
@@ -1188,18 +1195,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun buildAudioPage(page: LinearLayout) {
         addSetting(
             page,
-            settingsSwitchRow(
-                label = getString(R.string.mute_local_media_label),
-                checked = muteLocalMediaPlayback,
-                description = getString(R.string.mute_local_media_desc),
-            ) { checked ->
-                muteLocalMediaPlayback = checked
-                appendLog("Local media playback ${if (checked) "muted" else "enabled"}; applies when settings close")
-            },
-            topMarginDp = 8,
-        )
-        addSetting(
-            page,
             buildStepSliderSection(
                 title = getString(R.string.main_media_buffer),
                 values = (
@@ -1215,6 +1210,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 onValueChanged = { value -> mainMediaAudioBufferDurationMs = value },
             ),
             getString(R.string.hint_music_buffer),
+            topMarginDp = 8,
         )
         addSetting(page, buildMicrophoneGainSection(), getString(R.string.hint_mic_gain))
         if (sessionKeptForSettings) {
@@ -1491,13 +1487,44 @@ class CarPlayHostActivity : ComponentActivity() {
         addSetting(page, buildMediaMetricsSection(), topMarginDp = 20)
         addSetting(page, buildAudioPacketCaptureSection(), topMarginDp = 20)
         addButton(page, buildExportLogsButton(), getString(R.string.export_logs_note))
+        addButton(page, buildWifiScanDiagnosticsButton(), getString(R.string.wifi_scan_diag_note))
         addGroupHeader(page, getString(R.string.technical_params))
         val preview = menuText("", 15f, MENU_SECONDARY).apply { setLineSpacing(0f, 1.2f) }
         addSetting(page, preview, topMarginDp = 12)
         resolutionPreviewView = preview
     }
 
-    /** Large/Medium/Small set the physical width reported to the iPhone, which sizes CarPlay controls. */
+    /** Writes who scans Wi-Fi, read through ADB, to the session log. */
+    private fun buildWifiScanDiagnosticsButton(): Button = Button(this).apply {
+        text = getString(R.string.wifi_scan_diag)
+        setOnClickListener {
+            isEnabled = false
+            text = getString(R.string.wifi_scan_diag_running)
+            kotlin.concurrent.thread(name = "xcertplay-wifi-scan-diag", isDaemon = true) {
+                val result = runCatching { WifiScanDiagnostics.collect(applicationContext) }
+                runOnUiThread {
+                    isEnabled = true
+                    text = getString(R.string.wifi_scan_diag)
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val message = result.fold({ (access, lines) ->
+                        when (access) {
+                            LocalAdb.Access.READY -> {
+                                appendLog("Wi-Fi scan diagnostics (${lines.size} lines):")
+                                lines.forEach { appendLog("WifiScanDiag| $it") }
+                                getString(R.string.wifi_scan_diag_done, lines.size)
+                            }
+                            LocalAdb.Access.NOT_APPROVED -> getString(R.string.byd_adb_not_approved)
+                            LocalAdb.Access.UNREACHABLE -> getString(R.string.byd_adb_unreachable)
+                            LocalAdb.Access.UNSUPPORTED -> getString(R.string.byd_adb_unsupported)
+                        }
+                    }, { getString(R.string.byd_adb_failed, it.javaClass.simpleName) })
+                    AlertDialog.Builder(this@CarPlayHostActivity).setTitle(R.string.wifi_scan_diag)
+                        .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
+    }
+
     /** One line for the settings bottom bar: the values the next connection uses. */
     private fun settingsSummary(): String {
         val native = activeDisplaySize ?: currentActivitySize()
@@ -1643,7 +1670,6 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveLocationReportingEnabled(this, locationReportingEnabled)
         AirPlayPersistence.saveAutoStartOnBoot(this, autoStartOnBoot)
         AirPlayPersistence.saveAdvancedAudioChannelMapping(this, advancedAudioChannelMapping)
-        AirPlayPersistence.saveMuteLocalMediaPlayback(this, muteLocalMediaPlayback)
         AirPlayPersistence.saveMediaAudioChannel(this, mediaAudioChannel)
         AirPlayPersistence.saveNavigationAudioChannel(this, navigationAudioChannel)
         AirPlayPersistence.saveMainMediaAudioBufferDurationMs(
@@ -1707,7 +1733,7 @@ class CarPlayHostActivity : ComponentActivity() {
             runCatching { AirPlayPersistence.loadCustomAirPlayIconFile(this)?.readBytes()?.contentHashCode() }
                 .getOrNull(),
             audioPacketCaptureEnabled,
-            advancedAudioChannelMapping, muteLocalMediaPlayback, mediaAudioChannel, navigationAudioChannel,
+            advancedAudioChannelMapping, mediaAudioChannel, navigationAudioChannel,
             mainMediaAudioBufferDurationMs, microphoneGainPercent,
             BydVehicleSettings.speedEnabled(this), BydVehicleSettings.batteryEnabled(this),
             BydVehicleSettings.dcChargingEnabled(this), BydVehicleSettings.capacityKwh(this),
@@ -3731,7 +3757,6 @@ class CarPlayHostActivity : ComponentActivity() {
         },
         mediaChannel = mediaAudioChannel,
         navigationChannel = navigationAudioChannel,
-        muteLocalMediaPlayback = muteLocalMediaPlayback,
         diagnostic = { message -> mainHandler.post { appendLog(message) } },
     )
 

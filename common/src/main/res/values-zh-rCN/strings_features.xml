@@ -4,9 +4,6 @@
     <string name="vehicle_name_label">车辆名称</string>
 
     <!-- 音频 -->
-    <string name="mute_local_media_label">静音本机媒体播放</string>
-    <string name="mute_local_media_desc">保留 CarPlay 导航、通话和 Siri 的声音；音乐请在 iPhone 上单独选择蓝牙输出</string>
-    <string name="mute_local_media_note">只静音 xcertplay 中的音乐；导航提示、通话和 Siri 仍会播放。</string>
     <string name="media_audio_channel_label">媒体音频通道</string>
     <string name="navigation_audio_channel_label">导航音频通道</string>
     <string name="audio_channel_test">测试</string>
@@ -53,7 +50,13 @@
     <string name="head_unit_bt_read_ok">已读取并保存 %1$s，下次连接生效。</string>
     <string name="head_unit_bt_read_empty">ADB 已连接，但车机没有返回有效的蓝牙地址。请打开蓝牙后重试。</string>
     <string name="head_unit_bt_note">iPhone 通过这个地址识别车辆。下次连接生效；更换后建议在 iPhone 上忘记此车辆并重新配对。</string>
-    <string name="bluetooth_handoff_label">CarPlay 期间断开 iPhone 蓝牙（推荐）</string>
-    <string name="bluetooth_handoff_desc">通话和音乐只走 CarPlay</string>
-    <string name="bluetooth_handoff_note">按 CarPlay 的要求，无线 CarPlay 期间关闭车机与 iPhone 的蓝牙通话（HFP）和蓝牙音乐（A2DP）。否则 iPhone 可能继续用蓝牙播放音乐，容易卡顿并拖慢 Wi-Fi，原车电话也会弹出来电窗口。CarPlay 结束后自动恢复。下次连接生效。</string>
+    <string name="bluetooth_handoff_calls_label">CarPlay 期间断开 iPhone 蓝牙通话（推荐）</string>
+    <string name="bluetooth_handoff_calls_desc">通话走 CarPlay，原车电话不再弹窗</string>
+    <string name="bluetooth_handoff_audio_label">CarPlay 期间断开 iPhone 蓝牙音乐</string>
+    <string name="bluetooth_handoff_audio_desc">音乐走 CarPlay，不走蓝牙</string>
+    <string name="bluetooth_handoff_note">这是 CarPlay 要求车机断开的蓝牙连接。若经 Wi-Fi 播放的音乐卡顿，可在“音频”中调大音乐缓冲，或关闭“断开蓝牙音乐”让音乐继续走蓝牙（iPhone 的播放输出会显示为蓝牙）。CarPlay 结束 15 秒后自动恢复两项连接。下次连接生效。</string>
+    <string name="wifi_scan_diag">Wi-Fi 扫描诊断</string>
+    <string name="wifi_scan_diag_running">正在读取…</string>
+    <string name="wifi_scan_diag_note">通过 ADB 读取哪些应用和系统服务在扫描 Wi-Fi，并写入日志。频繁扫描会让 Wi-Fi P2P 卡顿。读取后请导出日志。</string>
+    <string name="wifi_scan_diag_done">已向日志写入 %1$d 行。请导出日志发送。</string>
 </resources>

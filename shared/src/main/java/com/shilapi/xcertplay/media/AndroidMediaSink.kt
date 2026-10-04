@@ -43,7 +43,6 @@ class AndroidMediaSink(
     /** Head-unit legacy stream numbers ([VehicleAudioChannel]); 0 keeps usage routing. */
     private val mediaChannel: Int = VehicleAudioChannel.AUTOMATIC,
     private val navigationChannel: Int = VehicleAudioChannel.AUTOMATIC,
-    private val muteLocalMediaPlayback: Boolean = false,
     /** Written to the session log: audio routes and microphone sources. */
     private val diagnostic: (String) -> Unit = {},
 ) : MediaSink {
@@ -57,8 +56,6 @@ class AndroidMediaSink(
     private val pendingVideoCodec = ConcurrentHashMap<Int, VideoCodec>()
     private val activeScreenTypes = mutableSetOf<Int>()
     private val videoGaps = ConcurrentHashMap<Int, ArrivalGapDetector>()
-    private val audioGaps = ConcurrentHashMap<AudioStreamId, ArrivalGapDetector>()
-    private val linkStalls = LinkStallCorrelator()
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
 
     fun setSurface(type: Int, surface: Surface) {
@@ -107,7 +104,7 @@ class AndroidMediaSink(
         val arrivalMs = arrivalUs / 1_000L
         videoGaps.computeIfAbsent(type) { ArrivalGapDetector(ArrivalGapDetector.VIDEO_THRESHOLD_MS) }
             .onArrival(arrivalMs)
-            ?.let { gap -> linkStalls.onVideoGap(arrivalMs, gap)?.let { reportLinkStall(gap, it) } }
+            ?.let { reportStall("video type=$type", it) }
         videoDecoder(type).submit(naluBytes, arrivalUs)
     }
 
@@ -125,27 +122,14 @@ class AndroidMediaSink(
     }
 
     override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {
-        if (!shouldPlayLocally(format)) {
-            Log.i("xcertplay-usb", "local media playback muted type=${format.payloadType} audioType=${format.audioType}")
-            return
-        }
         audioRenderer(id, format).start()
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
-        val arrivalMs = System.nanoTime() / 1_000_000L
-        audioGaps.computeIfAbsent(id) {
-            ArrivalGapDetector(ArrivalGapDetector.AUDIO_THRESHOLD_MS, warmupMs = ArrivalGapDetector.AUDIO_WARMUP_MS)
-        }.onArrival(arrivalMs)?.let { gap ->
-            reportStall("audio type=${id.type} audioType=${id.audioType}", gap)
-            linkStalls.onAudioGap(arrivalMs, gap)?.let { reportLinkStall(gap, it) }
-        }
-        if (!shouldPlayLocally(format)) return
         audioRenderer(id, format).submit(rtp, sample)
     }
 
     override fun onAudioStopped(id: AudioStreamId) {
-        audioGaps.remove(id)
         audioRenderers.remove(id)?.close()
     }
 
@@ -183,27 +167,12 @@ class AndroidMediaSink(
             )
         }
 
-    /** Audio and video paused together: the Wi-Fi link itself stalled. */
-    private fun reportLinkStall(gapMs: Long, overlapMs: Long) {
-        val message = "Link stall: audio and video paused together for ${overlapMs}ms (gap ${gapMs}ms)"
-        Log.w("xcertplay-usb", message)
-        runCatching { diagnostic(message) }
-    }
-
     /** The log line's time is when packets resumed; the stall began [gapMs] earlier. */
     private fun reportStall(stream: String, gapMs: Long) {
         val message = "Media stall $stream: no packets for ${gapMs}ms"
         Log.w("xcertplay-usb", message)
         runCatching { diagnostic(message) }
     }
-
-    private fun shouldPlayLocally(format: AudioFormat): Boolean = AudioChannelMapper.shouldPlayLocally(
-        format.audioType,
-        format.payloadType,
-        if (advancedAudioChannelMapping) AudioChannelMappingMode.AUTOMOTIVE_BUS
-        else AudioChannelMappingMode.MOBILE_COMPATIBLE,
-        muteLocalMediaPlayback,
-    )
 
     @Synchronized
     private fun audioRenderer(id: AudioStreamId, format: AudioFormat): AudioRenderer {
@@ -622,6 +591,8 @@ private class AudioRenderer(
     private var pcm = ByteArray(64 * 1024)
     private var playbackStarted = false
     private var prebufferBytes = 0
+    private var lastUnderrunCheckNs = 0L
+    private var reportedUnderruns = 0
     private var startThresholdBytes = 0
     private var fadeApplied = false
     private var droppedPacketsLogged = false
@@ -1020,6 +991,21 @@ private class AudioRenderer(
                 }
             }
         }
+        if (playbackStarted) reportUnderruns(track)
+    }
+
+    /** Underruns are audible gaps: the track ran out of data. Checked at most once a second. */
+    private fun reportUnderruns(track: AudioTrack) {
+        val nowNs = System.nanoTime()
+        if (nowNs - lastUnderrunCheckNs < UNDERRUN_CHECK_INTERVAL_NS) return
+        lastUnderrunCheckNs = nowNs
+        val total = runCatching { track.underrunCount }.getOrNull() ?: return
+        if (total <= reportedUnderruns) return
+        val message = "Audio underrun type=${format.payloadType} audioType=${format.audioType}: " +
+            "+${total - reportedUnderruns} (total $total)"
+        reportedUnderruns = total
+        Log.w(TAG, message)
+        runCatching { diagnostic(message) }
     }
 
     private fun playbackHeadFrames(track: AudioTrack): Long {
@@ -1130,6 +1116,7 @@ private class AudioRenderer(
         const val OPUS_SEEK_PRE_ROLL_NANOS = 80_000_000L
         const val INPUT_TIMEOUT_US = 10_000L
         const val MAX_QUEUED_PACKETS = 64
+        const val UNDERRUN_CHECK_INTERVAL_NS = 1_000_000_000L
         const val MIN_TRACK_BUFFER_BYTES = 16 * 1024
         const val MIN_START_BUFFER_BYTES = 4 * 1024
         const val PREBUFFER_WRITE_CHUNK_BYTES = 2 * 1024

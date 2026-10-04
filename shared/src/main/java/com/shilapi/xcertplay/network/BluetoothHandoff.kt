@@ -10,41 +10,44 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import java.io.Closeable
-import java.util.concurrent.atomic.AtomicBoolean
 
-/** Whether wireless CarPlay takes the iPhone's calls and audio off classic Bluetooth. */
+/** Which of the iPhone's classic Bluetooth links wireless CarPlay turns off. */
 object BluetoothHandoffSettings {
     private const val PREFS = "xcertplay_bluetooth_handoff"
-    private const val KEY_ENABLED = "enabled"
+    private const val KEY_CALLS = "disconnect_calls"
+    private const val KEY_AUDIO = "disconnect_audio"
 
-    fun enabled(context: Context): Boolean = prefs(context).getBoolean(KEY_ENABLED, true)
+    /** Hands-free (HFP): calls go through CarPlay and the stock phone shows no popup. */
+    fun callsEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_CALLS, true)
 
-    fun setEnabled(context: Context, enabled: Boolean) =
-        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+    fun setCallsEnabled(context: Context, enabled: Boolean) =
+        prefs(context).edit().putBoolean(KEY_CALLS, enabled).apply()
+
+    /** Bluetooth audio (A2DP): music goes through CarPlay instead of Bluetooth. */
+    fun audioEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AUDIO, true)
+
+    fun setAudioEnabled(context: Context, enabled: Boolean) =
+        prefs(context).edit().putBoolean(KEY_AUDIO, enabled).apply()
 
     internal fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
 
 /**
- * Does what CarPlay's disableBluetooth asks: while a wireless session runs, the head unit's
- * hands-free (HFP client) and Bluetooth audio (A2DP sink) links to that iPhone are turned off, so
- * calls and media go only through CarPlay. Otherwise the iPhone keeps playing media to Bluetooth,
- * the stock phone shows call popups, and Bluetooth traffic competes with Wi-Fi for the radio.
+ * Does what CarPlay's disableBluetooth asks: while wireless CarPlay runs, the head unit's
+ * hands-free (HFP client) and/or Bluetooth audio (A2DP sink) links to that iPhone are turned off,
+ * so calls and media go through CarPlay.
  *
- * Each profile's connection priority is saved and set to off, which BYD's Bluetooth stack checks
- * before any reconnect, and the link is disconnected. When the session ends the priority is
- * restored and the link reconnected. The saved priorities persist, so a process killed while
- * holding is repaired the next time the app starts ([restoreLeftover]).
+ * Each link's connection priority is saved and set to off, which BYD's Bluetooth stack checks
+ * before any reconnect, and the link is disconnected. One instance serves the whole process, so a
+ * reconnect (settings saved, reconnect button, brief drop) keeps the links off: [releaseLater]
+ * restores them only if no session holds them again within [RELEASE_DELAY_MS]. The saved
+ * priorities persist, so a process killed while holding is repaired on the next start.
  *
  * BYD's HeadsetClientService and A2dpSinkService only require BLUETOOTH_ADMIN; the methods are
  * hidden API and are called reflectively. All state lives on the main thread.
  */
-class BluetoothHandoff(
-    context: Context,
-    private val diagnostic: (String) -> Unit,
-) : Closeable {
+class BluetoothHandoff private constructor(context: Context) {
     private enum class Link(val profile: Int, val label: String, val stateChanged: String) {
         CALLS(16, "HFP", "android.bluetooth.headsetclient.profile.action.CONNECTION_STATE_CHANGED"),
         AUDIO(11, "A2DP", "android.bluetooth.a2dp-sink.profile.action.CONNECTION_STATE_CHANGED"),
@@ -59,14 +62,20 @@ class BluetoothHandoff(
     private val proxies = mutableMapOf<Link, BluetoothProfile>()
     private val requested = mutableSetOf<Link>()
     private val pending = mutableMapOf<Link, MutableList<(BluetoothProfile) -> Unit>>()
+    private val held = mutableSetOf<Link>()
     private var target: String? = null
     private var receiverRegistered = false
-    private var closed = false
     private val guards = Link.values().associateWith { HandoffReconnectGuard() }
+    private val delayedRelease = Runnable { releaseNow("no CarPlay session for ${RELEASE_DELAY_MS / 1000}s") }
+
+    /** Where progress is written; the controller of the current connection sets it. */
+    @Volatile
+    var diagnostic: (String) -> Unit = {}
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val link = Link.values().firstOrNull { it.stateChanged == intent.action } ?: return
+            if (link !in held) return
             @Suppress("DEPRECATION")
             val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
             val address = target ?: return
@@ -81,53 +90,71 @@ class BluetoothHandoff(
         }
     }
 
-    /** Turns off HFP and A2DP to [address] (the iPhone's Bluetooth address) until [release]. */
-    fun hold(address: String) {
+    init {
+        // Repair priorities left off by a process that died while holding.
         handler.post {
-            if (closed) return@post
+            val address = prefs.getString(KEY_HELD_ADDRESS, null) ?: return@post
+            if (target != null) return@post
+            report("Bluetooth handoff: restoring links left off by an earlier run for $address")
+            for (link in Link.values()) restoreLink(link, address)
+        }
+    }
+
+    /**
+     * Turns off the iPhone's HFP when [calls] and A2DP when [audio] until released; a link no
+     * longer wanted is restored. Cancels a pending delayed release.
+     */
+    fun hold(address: String, calls: Boolean, audio: Boolean) {
+        handler.post {
+            handler.removeCallbacks(delayedRelease)
             val normalized = address.trim().uppercase()
             if (!BluetoothAdapterAddress.isValid(normalized)) {
                 report("Bluetooth handoff skipped: invalid iPhone Bluetooth address $address")
                 return@post
             }
-            if (target == normalized) return@post
-            if (target != null) releaseNow()
+            if (target != null && target != normalized) releaseNow("another iPhone took over")
             target = normalized
-            guards.values.forEach(HandoffReconnectGuard::reset)
             registerReceiver()
+            val wanted = buildSet {
+                if (calls) add(Link.CALLS)
+                if (audio) add(Link.AUDIO)
+            }
             for (link in Link.values()) {
-                withProxy(link) { profile ->
-                    if (target != normalized) return@withProxy
-                    turnOff(link, profile, normalized)
+                when {
+                    link in wanted && link !in held -> {
+                        held += link
+                        guards.getValue(link).reset()
+                        withProxy(link) { profile -> if (link in held) turnOff(link, profile, normalized) }
+                    }
+                    link in wanted -> report("${link.label} to $normalized still off for CarPlay")
+                    link in held -> {
+                        held -= link
+                        restoreLink(link, normalized)
+                    }
+                    else -> report("${link.label} to $normalized left connected (setting off)")
                 }
             }
         }
     }
 
-    /** Restores the saved priorities and reconnects. */
-    fun release() {
-        handler.post { releaseNow() }
-    }
-
-    /** Repairs priorities left off by a process that died while holding. */
-    fun restoreLeftover() {
-        if (!leftoverChecked.compareAndSet(false, true)) return
+    /** Restores the links after [RELEASE_DELAY_MS] unless a session holds them again first. */
+    fun releaseLater() {
         handler.post {
-            val address = prefs.getString(KEY_HELD_ADDRESS, null) ?: return@post
-            if (target != null) return@post
-            report("Bluetooth handoff: restoring priorities left from an earlier session for $address")
-            restore(address)
+            if (target == null) return@post
+            handler.removeCallbacks(delayedRelease)
+            handler.postDelayed(delayedRelease, RELEASE_DELAY_MS)
+            report("Bluetooth handoff: restoring in ${RELEASE_DELAY_MS / 1000}s unless CarPlay reconnects")
         }
     }
 
-    override fun close() {
-        handler.post {
-            if (closed) return@post
-            releaseNow()
-            closed = true
-            for ((link, profile) in proxies) runCatching { adapter?.closeProfileProxy(link.profile, profile) }
-            proxies.clear()
-        }
+    private fun releaseNow(reason: String) {
+        val address = target ?: return
+        handler.removeCallbacks(delayedRelease)
+        report("Bluetooth handoff: restoring links ($reason)")
+        target = null
+        held.clear()
+        unregisterReceiver()
+        for (link in Link.values()) restoreLink(link, address)
     }
 
     private fun turnOff(link: Link, profile: BluetoothProfile, address: String) {
@@ -152,29 +179,21 @@ class BluetoothHandoff(
         report("${link.label} to $address disconnect: ${describe(call(profile, "disconnect", device))}")
     }
 
-    private fun releaseNow() {
-        val address = target ?: return
-        target = null
-        unregisterReceiver()
-        restore(address)
-    }
-
-    private fun restore(address: String) {
-        for (link in Link.values()) {
-            val key = priorityKey(link)
-            if (!prefs.contains(key)) continue
-            val original = prefs.getInt(key, PRIORITY_ON).takeIf { it >= 0 } ?: PRIORITY_ON
-            withProxy(link) { profile ->
-                val device = remoteDevice(address) ?: return@withProxy
-                val priority = describe(call(profile, "setPriority", device, original))
-                val reconnect = if (original > PRIORITY_OFF) describe(call(profile, "connect", device)) else "skipped"
-                prefs.edit().remove(key).apply {
-                    if (Link.values().none { other -> other != link && prefs.contains(priorityKey(other)) }) {
-                        remove(KEY_HELD_ADDRESS)
-                    }
-                }.commit()
-                report("${link.label} to $address restored after CarPlay: priority $original $priority, reconnect $reconnect")
+    private fun restoreLink(link: Link, address: String) {
+        val key = priorityKey(link)
+        if (!prefs.contains(key)) return
+        val original = prefs.getInt(key, PRIORITY_ON).takeIf { it >= 0 } ?: PRIORITY_ON
+        withProxy(link) { profile ->
+            if (link in held) return@withProxy
+            val device = remoteDevice(address) ?: return@withProxy
+            val priority = describe(call(profile, "setPriority", device, original))
+            val reconnect = if (original > PRIORITY_OFF) describe(call(profile, "connect", device)) else "skipped"
+            val editor = prefs.edit().remove(key)
+            if (Link.values().none { other -> other != link && prefs.contains(priorityKey(other)) }) {
+                editor.remove(KEY_HELD_ADDRESS)
             }
+            editor.commit()
+            report("${link.label} to $address restored: priority $original $priority, reconnect $reconnect")
         }
     }
 
@@ -210,10 +229,6 @@ class BluetoothHandoff(
             bluetooth.getProfileProxy(app, object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profileId: Int, service: BluetoothProfile) {
                     handler.post {
-                        if (closed) {
-                            runCatching { bluetooth.closeProfileProxy(link.profile, service) }
-                            return@post
-                        }
                         proxies[link] = service
                         pending.remove(link)?.forEach { it(service) }
                     }
@@ -258,11 +273,20 @@ class BluetoothHandoff(
         runCatching { diagnostic(message) }
     }
 
-    private companion object {
-        const val PRIORITY_OFF = 0
-        const val PRIORITY_ON = 100
-        const val KEY_HELD_ADDRESS = "held_address"
-        val leftoverChecked = AtomicBoolean(false)
+    companion object {
+        /** Long enough for a settings save or reconnect to bring the session back. */
+        const val RELEASE_DELAY_MS = 15_000L
+        private const val PRIORITY_OFF = 0
+        private const val PRIORITY_ON = 100
+        private const val KEY_HELD_ADDRESS = "held_address"
+
+        @Volatile
+        private var instance: BluetoothHandoff? = null
+
+        fun shared(context: Context): BluetoothHandoff =
+            instance ?: synchronized(this) {
+                instance ?: BluetoothHandoff(context).also { instance = it }
+            }
     }
 }
 

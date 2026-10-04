@@ -169,7 +169,7 @@ class CarPlayController(
     private val appContext = context.applicationContext
     /** Held only while a wireless session runs: keeps the radio out of power-save stalls. */
     private val wirelessPerformanceLock = WirelessPerformanceLock(appContext, ::debugLog)
-    private val bluetoothHandoff = BluetoothHandoff(appContext, ::debugLog).also { it.restoreLeftover() }
+    private val bluetoothHandoff = BluetoothHandoff.shared(appContext).also { it.diagnostic = ::debugLog }
     private val wirelessActivityLog = WirelessActivityLog(appContext, ::debugLog)
     /** Carries the iPhone's Bluetooth location request onto the Wi-Fi tunnel link. */
     private val wirelessLocationRequest = Iap2LocationRequest()
@@ -262,7 +262,7 @@ class CarPlayController(
                 activeSession = null
                 wirelessPerformanceLock.release()
                 wirelessActivityLog.stop()
-                bluetoothHandoff.release()
+                bluetoothHandoff.releaseLater()
             }
             debugLog("AirPlay session ended peer=${session.host}")
             uiListener?.onSessionEnded(session)
@@ -502,7 +502,7 @@ class CarPlayController(
         }
         wirelessPerformanceLock.release()
         wirelessActivityLog.close()
-        bluetoothHandoff.close()
+        bluetoothHandoff.releaseLater()
         closeReceivers()
         stopFileTransferReceivers()
         availabilityPollGeneration.incrementAndGet()
@@ -1561,15 +1561,15 @@ class CarPlayController(
      * calls and media go through CarPlay instead of the head unit's hands-free and Bluetooth audio.
      */
     private fun handOffFromBluetooth(iphoneAddress: String?) {
-        if (!BluetoothHandoffSettings.enabled(appContext)) {
-            debugLog("disableBluetooth: Bluetooth handoff is off; leaving HFP and A2DP connected")
-            return
-        }
         if (iphoneAddress.isNullOrBlank()) {
             debugLog("disableBluetooth without an iPhone Bluetooth address; leaving Bluetooth connected")
             return
         }
-        bluetoothHandoff.hold(iphoneAddress)
+        bluetoothHandoff.hold(
+            iphoneAddress,
+            calls = BluetoothHandoffSettings.callsEnabled(appContext),
+            audio = BluetoothHandoffSettings.audioEnabled(appContext),
+        )
     }
 
     private fun isBluetoothHandoffCommand(type: String): Boolean =

@@ -4,9 +4,6 @@
     <string name="vehicle_name_label">Vehicle name</string>
 
     <!-- Audio -->
-    <string name="mute_local_media_label">Mute local media playback</string>
-    <string name="mute_local_media_desc">Keep CarPlay navigation, calls and Siri audible; select Bluetooth music output on the iPhone separately</string>
-    <string name="mute_local_media_note">Mutes music in xcertplay only; navigation prompts, calls and Siri still play.</string>
     <string name="media_audio_channel_label">Media audio channel</string>
     <string name="navigation_audio_channel_label">Navigation audio channel</string>
     <string name="audio_channel_test">Test</string>
@@ -53,7 +50,13 @@
     <string name="head_unit_bt_read_ok">Read and saved %1$s. It is used from the next connection.</string>
     <string name="head_unit_bt_read_empty">ADB is connected, but the head unit returned no valid Bluetooth address. Turn Bluetooth on and try again.</string>
     <string name="head_unit_bt_note">The iPhone uses this address to recognise the car. Takes effect on the next connection; after changing it, forget this car on the iPhone and pair again.</string>
-    <string name="bluetooth_handoff_label">Disconnect iPhone Bluetooth during CarPlay (recommended)</string>
-    <string name="bluetooth_handoff_desc">Calls and music go only through CarPlay</string>
-    <string name="bluetooth_handoff_note">As CarPlay requires, wireless CarPlay turns off the head unit\'s Bluetooth calls (HFP) and Bluetooth audio (A2DP) with the iPhone. Otherwise the iPhone may keep playing music over Bluetooth, which can stutter and slow Wi-Fi, and the stock phone shows call popups. Both are restored when CarPlay ends. Applies on the next connection.</string>
+    <string name="bluetooth_handoff_calls_label">Disconnect iPhone Bluetooth calls during CarPlay (recommended)</string>
+    <string name="bluetooth_handoff_calls_desc">Calls go through CarPlay; the stock phone shows no popup</string>
+    <string name="bluetooth_handoff_audio_label">Disconnect iPhone Bluetooth music during CarPlay</string>
+    <string name="bluetooth_handoff_audio_desc">Music goes through CarPlay instead of Bluetooth</string>
+    <string name="bluetooth_handoff_note">CarPlay asks the head unit to drop these Bluetooth links. If music over Wi-Fi stutters, raise the music buffer under Audio, or turn off the music option to keep music on Bluetooth (the iPhone then shows Bluetooth as its output). Both links are restored 15 s after CarPlay ends. Applies on the next connection.</string>
+    <string name="wifi_scan_diag">Wi-Fi scan diagnostics</string>
+    <string name="wifi_scan_diag_running">Reading…</string>
+    <string name="wifi_scan_diag_note">Reads through ADB which apps and system services scan Wi-Fi, and writes it to the log. Frequent scans make Wi-Fi P2P stall. Export the logs afterwards.</string>
+    <string name="wifi_scan_diag_done">Wrote %1$d lines to the log. Export the logs to send them.</string>
 </resources>
