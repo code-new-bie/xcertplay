@@ -6,7 +6,9 @@ import org.junit.Test
 class AudioChannelMappingTest {
     @Test
     fun vehicleAudioChannelIsLimitedToHeadUnitRange() {
-        assertEquals(0, VehicleAudioChannel.sanitize(-3))
+        assertEquals(VehicleAudioChannel.AUTOMATIC, VehicleAudioChannel.sanitize(-3))
+        assertEquals(0, VehicleAudioChannel.sanitize(0))
+        assertEquals(null, VehicleAudioChannel.attributes(VehicleAudioChannel.AUTOMATIC))
         assertEquals(7, VehicleAudioChannel.sanitize(7))
         assertEquals(VehicleAudioChannel.MAX, VehicleAudioChannel.sanitize(99))
     }

@@ -43,6 +43,7 @@ object AirPlayPersistence {
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_PHONE_AUDIO_CHANNEL = "phone_audio_channel"
+    private const val KEY_AUDIO_CHANNEL_AUTO_IS_MINUS_ONE = "audio_channel_auto_is_minus_one"
     private const val KEY_MAIN_MEDIA_AUDIO_BUFFER_DURATION_MS = "main_media_audio_buffer_duration_ms"
     private const val KEY_MICROPHONE_GAIN_PERCENT = "microphone_gain_percent"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
@@ -130,9 +131,23 @@ object AirPlayPersistence {
             .apply()
     }
 
-    /** 0 keeps usage routing; otherwise a head-unit legacy stream number. */
+    /**
+     * Automatic was 0 and is now -1, because 0 is a real head-unit channel (BYD: calls). Saved 0s
+     * meant automatic, so they become -1 once.
+     */
+    private fun migrateAudioChannels(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_AUDIO_CHANNEL_AUTO_IS_MINUS_ONE, false)) return
+        val editor = prefs.edit()
+        for (key in listOf(KEY_MEDIA_AUDIO_CHANNEL, KEY_NAVIGATION_AUDIO_CHANNEL, KEY_PHONE_AUDIO_CHANNEL)) {
+            if (prefs.contains(key) && prefs.getInt(key, 0) == 0) editor.putInt(key, VehicleAudioChannel.AUTOMATIC)
+        }
+        editor.putBoolean(KEY_AUDIO_CHANNEL_AUTO_IS_MINUS_ONE, true).commit()
+    }
+
+    /** -1 keeps usage routing; otherwise a head-unit legacy stream number. */
     fun loadMediaAudioChannel(context: Context): Int = VehicleAudioChannel.sanitize(
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.also(::migrateAudioChannels).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_MEDIA_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
     )
 
@@ -142,15 +157,15 @@ object AirPlayPersistence {
             .apply()
     }
 
-    /** 0 keeps usage routing; otherwise a head-unit legacy stream number. */
+    /** -1 keeps usage routing; otherwise a head-unit legacy stream number. */
     fun loadNavigationAudioChannel(context: Context): Int = VehicleAudioChannel.sanitize(
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.also(::migrateAudioChannels).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_NAVIGATION_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
     )
 
-    /** 0 keeps usage routing; otherwise a head-unit legacy stream number for calls. */
+    /** -1 keeps usage routing; otherwise a head-unit legacy stream number for calls. */
     fun loadPhoneAudioChannel(context: Context): Int = VehicleAudioChannel.sanitize(
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.also(::migrateAudioChannels).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_PHONE_AUDIO_CHANNEL, VehicleAudioChannel.AUTOMATIC),
     )
 

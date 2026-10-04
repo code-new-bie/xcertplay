@@ -8,7 +8,7 @@
     <string name="navigation_audio_channel_label">导航音频通道</string>
     <string name="audio_channel_test">测试</string>
     <string name="audio_channel_test_desc">测试%1$s</string>
-    <string name="audio_channel_note">0 = 自动路由。1-%1$d = 车机音频通道号；“测试”会通过该通道播放一段短提示音。关闭设置后生效。</string>
+    <string name="audio_channel_note">-1 = 自动路由。0-%1$d = 车机音频通道号（比亚迪：0 通话，6 蓝牙通话，14 导航）；“测试”会通过该通道播放一段短提示音。关闭设置后生效。</string>
     <string name="audio_channel_preview_failed">无法在此车机上试听音频通道 %1$d</string>
 
     <!-- 窗口 -->

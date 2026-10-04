@@ -24,10 +24,10 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
     private var pending: Future<*>? = null
     @Volatile private var closed = false
 
-    /** [usage] routes the tone when [channel] is 0 (automatic), as CarPlay audio of that kind would be. */
+    /** [usage] routes the tone when [channel] is -1 (automatic), as CarPlay audio of that kind would be. */
     fun play(channel: Int, usage: Int) {
         if (closed) return
-        require(channel in 0..40)
+        require(channel in -1..40)
         val request = generation.incrementAndGet()
         pending?.cancel(true)
         activeTrack.get()?.let { runCatching { it.stop() } }
@@ -35,7 +35,7 @@ internal class AudioChannelPreview(private val onUnavailable: (Int) -> Unit) : C
             var track: AudioTrack? = null
             try {
                 if (closed || generation.get() != request) return@submit
-                val attributes = if (channel == 0) {
+                val attributes = if (channel < 0) {
                     AudioAttributes.Builder()
                         .setUsage(usage)
                         .setContentType(if (usage == AudioAttributes.USAGE_MEDIA) AudioAttributes.CONTENT_TYPE_MUSIC

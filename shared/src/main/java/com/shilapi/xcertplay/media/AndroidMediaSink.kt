@@ -725,7 +725,10 @@ private class AudioRenderer(
             audioType = format.audioType,
             payloadType = format.payloadType,
         )
-        val bufferBytes = if (configuredMainMediaBuffer) {
+        // Music is prefilled to the configured duration before it starts, so a Wi-Fi pause shorter
+        // than that drains the buffer instead of going silent; the track keeps headroom above it so
+        // prefill writes never block before play().
+        val configuredBytes = if (configuredMainMediaBuffer) {
             MainMediaAudioBuffer.bufferSizeBytes(
                 durationMs = mainMediaAudioBufferDurationMs,
                 sampleRate = format.sampleRate,
@@ -733,10 +736,15 @@ private class AudioRenderer(
                 minBufferBytes = minBuffer,
             )
         } else {
+            0
+        }
+        val bufferBytes = if (configuredMainMediaBuffer) {
+            configuredBytes + maxOf(minBuffer, MIN_TRACK_BUFFER_BYTES)
+        } else {
             maxOf(minBuffer * 4, MIN_TRACK_BUFFER_BYTES)
         }
-        startThresholdBytes = if (format.audioType == "telephony" || format.audioType == "speechrecognition") {
-            maxOf(minBuffer, MIN_START_BUFFER_BYTES)
+        startThresholdBytes = if (configuredMainMediaBuffer) {
+            configuredBytes
         } else {
             maxOf(minBuffer, MIN_START_BUFFER_BYTES)
         }
@@ -754,18 +762,17 @@ private class AudioRenderer(
             .build()
         // AudioTrack consumes 16-bit PCM, so frame size follows the channel mask configured above.
         trackBytesPerFrame = trackChannelCount * BYTES_PER_PCM_16_SAMPLE
-        Log.i(
-            TAG,
-            "audio track prepared type=${format.payloadType} audioType=${format.audioType} " +
-                "codec=${format.codec} " +
-                "rate=${format.sampleRate} channels=${format.channels} " +
-                "bufferBytes=$bufferBytes" +
-                if (configuredMainMediaBuffer) {
-                    " configuredDurationMs=${MainMediaAudioBuffer.sanitizeDurationMs(mainMediaAudioBufferDurationMs)}"
-                } else {
-                    ""
-                },
-        )
+        val prepared = "audio track prepared type=${format.payloadType} audioType=${format.audioType} " +
+            "codec=${format.codec} " +
+            "rate=${format.sampleRate} channels=${format.channels} " +
+            "bufferBytes=$bufferBytes prefillBytes=$startThresholdBytes" +
+            if (configuredMainMediaBuffer) {
+                " configuredDurationMs=${MainMediaAudioBuffer.sanitizeDurationMs(mainMediaAudioBufferDurationMs)}"
+            } else {
+                ""
+            }
+        Log.i(TAG, prepared)
+        runCatching { diagnostic(prepared) }
     }
 
     private fun aacAudioSpecificConfig(): ByteArray {

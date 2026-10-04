@@ -2352,8 +2352,8 @@ class CarPlayHostActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         row.addView(
-            settingsInputRow(label, current().toString(), numeric = true) { value ->
-                update(VehicleAudioChannel.sanitize(value.trim().toIntOrNull() ?: 0))
+            settingsInputRow(label, current().toString(), numeric = true, signed = true) { value ->
+                update(VehicleAudioChannel.sanitize(value.trim().toIntOrNull() ?: VehicleAudioChannel.AUTOMATIC))
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
         )
@@ -2998,6 +2998,7 @@ class CarPlayHostActivity : ComponentActivity() {
         value: String,
         password: Boolean = false,
         numeric: Boolean = false,
+        signed: Boolean = false,
         onInputCreated: ((EditText) -> Unit)? = null,
         onChanged: (String) -> Unit,
     ): View = LinearLayout(this).apply {
@@ -3022,6 +3023,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 minHeight = dp(48)
                 isSingleLine = true
                 inputType = when {
+                    numeric && signed -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
                     numeric -> InputType.TYPE_CLASS_NUMBER
                     password -> InputType.TYPE_CLASS_TEXT or
                         InputType.TYPE_TEXT_VARIATION_PASSWORD or

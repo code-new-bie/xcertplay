@@ -8,7 +8,7 @@
     <string name="navigation_audio_channel_label">Navigation audio channel</string>
     <string name="audio_channel_test">Test</string>
     <string name="audio_channel_test_desc">Test %1$s</string>
-    <string name="audio_channel_note">0 = automatic routing. 1-%1$d = a head-unit audio channel number; Test plays a short tone through it. Applies when settings close.</string>
+    <string name="audio_channel_note">-1 = automatic routing. 0-%1$d = head-unit audio channel number (BYD: 0 call, 6 Bluetooth call, 14 navigation); \"Test\" plays a short tone through it. Applies when settings close.</string>
     <string name="audio_channel_preview_failed">Cannot preview audio channel %1$d on this head unit</string>
 
     <!-- Window -->

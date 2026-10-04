@@ -75,7 +75,7 @@ class AudioChannelPreviewTest {
                 assertTrue(tracks.all { it.state == AudioTrack.STATE_UNINITIALIZED })
 
                 preview.stop()
-                preview.play(0, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                preview.play(-1, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                 awaitPlayback(preview)
                 assertEquals(3, tracks.size)
                 assertEquals(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
