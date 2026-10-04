@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.network
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.util.Log
 import java.io.Closeable
 
@@ -17,11 +18,13 @@ internal class WirelessPerformanceLock(
 ) : Closeable {
     private val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
     private var lock: WifiManager.WifiLock? = null
+    private var lowLatencyLock: WifiManager.WifiLock? = null
 
-    @Suppress("DEPRECATION") // WIFI_MODE_FULL_HIGH_PERF is still the only low-latency mode.
+    @Suppress("DEPRECATION") // WIFI_MODE_FULL_HIGH_PERF still keeps power save off in the background.
     @Synchronized
     fun acquire() {
         if (lock != null) return
+        acquireLowLatency()
         val manager = wifi ?: run {
             report("Wi-Fi lock unavailable: no WifiManager on this head unit")
             return
@@ -48,8 +51,31 @@ internal class WirelessPerformanceLock(
         )
     }
 
+    /**
+     * Android 10's low-latency mode also asks the Wi-Fi driver for low latency, but only applies
+     * while the app is in the foreground with the screen on, so the high-performance lock stays
+     * held for the background.
+     */
+    private fun acquireLowLatency() {
+        if (lowLatencyLock != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val manager = wifi ?: return
+        lowLatencyLock = runCatching {
+            manager.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "$TAG-low-latency").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.onFailure {
+            report("Wi-Fi low-latency lock refused: ${it.javaClass.simpleName} ${it.message?.take(120) ?: ""}".trim())
+        }.getOrNull()
+        if (lowLatencyLock != null) report("Wi-Fi low-latency lock held for this session")
+    }
+
     @Synchronized
     fun release() {
+        lowLatencyLock?.let { current ->
+            lowLatencyLock = null
+            runCatching { if (current.isHeld) current.release() }
+        }
         val current = lock ?: return
         lock = null
         runCatching { if (current.isHeld) current.release() }

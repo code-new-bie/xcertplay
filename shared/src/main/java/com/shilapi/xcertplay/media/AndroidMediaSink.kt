@@ -56,6 +56,8 @@ class AndroidMediaSink(
     private val videoRecoveryHandlers = ConcurrentHashMap<Int, () -> Boolean>()
     private val pendingVideoCodec = ConcurrentHashMap<Int, VideoCodec>()
     private val activeScreenTypes = mutableSetOf<Int>()
+    private val videoGaps = ConcurrentHashMap<Int, ArrivalGapDetector>()
+    private val audioGaps = ConcurrentHashMap<AudioStreamId, ArrivalGapDetector>()
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
 
     fun setSurface(type: Int, surface: Surface) {
@@ -101,6 +103,9 @@ class AndroidMediaSink(
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) {
         val arrivalUs = System.nanoTime() / 1_000L
+        videoGaps.computeIfAbsent(type) { ArrivalGapDetector(ArrivalGapDetector.VIDEO_THRESHOLD_MS) }
+            .onArrival(arrivalUs / 1_000L)
+            ?.let { reportStall("video type=$type", it) }
         videoDecoder(type).submit(naluBytes, arrivalUs)
     }
 
@@ -108,6 +113,7 @@ class AndroidMediaSink(
         synchronized(activeScreenTypes) {
             if (active) activeScreenTypes.add(type) else activeScreenTypes.remove(type)
         }
+        videoGaps.remove(type)
         if (!active) {
             videoDecoders.remove(type)?.close()
             pendingVideoCodec.remove(type)
@@ -125,11 +131,15 @@ class AndroidMediaSink(
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
+        audioGaps.computeIfAbsent(id) { ArrivalGapDetector(ArrivalGapDetector.AUDIO_THRESHOLD_MS) }
+            .onArrival(System.nanoTime() / 1_000_000L)
+            ?.let { reportStall("audio type=${id.type} audioType=${id.audioType}", it) }
         if (!shouldPlayLocally(format)) return
         audioRenderer(id, format).submit(rtp, sample)
     }
 
     override fun onAudioStopped(id: AudioStreamId) {
+        audioGaps.remove(id)
         audioRenderers.remove(id)?.close()
     }
 
@@ -166,6 +176,13 @@ class AndroidMediaSink(
                 requestKeyFrame = { videoRecoveryHandlers[type]?.invoke() ?: false },
             )
         }
+
+    /** The log line's time is when packets resumed; the stall began [gapMs] earlier. */
+    private fun reportStall(stream: String, gapMs: Long) {
+        val message = "Media stall $stream: no packets for ${gapMs}ms"
+        Log.w("xcertplay-usb", message)
+        runCatching { diagnostic(message) }
+    }
 
     private fun shouldPlayLocally(format: AudioFormat): Boolean = AudioChannelMapper.shouldPlayLocally(
         format.audioType,

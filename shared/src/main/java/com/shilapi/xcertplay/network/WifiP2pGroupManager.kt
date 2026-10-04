@@ -57,6 +57,8 @@ class WifiP2pGroupManager(
     private val networkName: String,
     private val passphrase: String,
     private val diagnostic: (String) -> Unit = {},
+    /** A user-chosen 5 GHz channel, tried before the automatic plan; 0 is automatic. */
+    private val preferredChannel: Int = P2pChannelPreference.AUTOMATIC,
 ) : WirelessHotspotManager {
     private val appContext = context.applicationContext
     private val p2pManager = appContext.getSystemService(WifiP2pManager::class.java)
@@ -106,9 +108,11 @@ class WifiP2pGroupManager(
             }
 
             val stationFrequency = stationFrequencyMHz()
-            val plan = P2pFrequencyPlan.candidates(stationFrequency)
+            val preferredFrequency = P2pChannelPreference.frequency(preferredChannel)
+            val plan = P2pFrequencyPlan.candidates(stationFrequency, preferredFrequency)
             report(
-                "Wi-Fi P2P station=${stationFrequency?.let { "${it}MHz" } ?: "not connected"} " +
+                "Wi-Fi P2P channel=${P2pChannelPreference.describe(preferredChannel)} " +
+                    "station=${stationFrequency?.let { "${it}MHz" } ?: "not connected"} " +
                     "plan=${plan.joinToString { it?.let { mhz -> "${mhz}MHz" } ?: "5GHz-band" }}" +
                     (P2pFrequencyPlan.sharedRadioNote(stationFrequency)?.let { "; $it" } ?: ""),
             )
@@ -636,12 +640,16 @@ internal object P2pFrequencyPlan {
     val GROUP_OWNER_5GHZ = listOf(5180, 5200, 5220, 5240, 5745, 5765, 5785, 5805, 5825)
     private val FALLBACKS = listOf(5745, 5180)
 
-    /** Candidates in order; null asks the framework for any 5 GHz channel. */
-    fun candidates(stationFrequencyMHz: Int?): List<Int?> = buildList {
+    /**
+     * Candidates in order; null asks the framework for any 5 GHz channel. A chosen frequency comes
+     * first, then the automatic plan: the station channel, any 5 GHz channel, the fallbacks.
+     */
+    fun candidates(stationFrequencyMHz: Int?, preferredFrequencyMHz: Int? = null): List<Int?> = buildList {
+        if (preferredFrequencyMHz in GROUP_OWNER_5GHZ) add(preferredFrequencyMHz)
         if (stationFrequencyMHz in GROUP_OWNER_5GHZ) add(stationFrequencyMHz)
         add(null)
-        FALLBACKS.filterNot { it == stationFrequencyMHz }.forEach(::add)
-    }
+        FALLBACKS.forEach(::add)
+    }.distinct()
 
     /** Why the group cannot share the station channel, or null when it can or no station is connected. */
     fun sharedRadioNote(stationFrequencyMHz: Int?): String? = when {
@@ -649,4 +657,19 @@ internal object P2pFrequencyPlan {
         stationFrequencyMHz < 5000 -> "station is on 2.4 GHz; the radio will alternate channels"
         else -> "station channel cannot host a group owner (DFS); the radio will alternate channels"
     }
+}
+
+/** The Wi-Fi P2P channel setting: automatic or a 5 GHz channel a group owner may use. */
+object P2pChannelPreference {
+    const val AUTOMATIC = 0
+
+    /** Non-DFS 5 GHz channels, matching [P2pFrequencyPlan.GROUP_OWNER_5GHZ]. */
+    val CHANNELS = listOf(36, 40, 44, 48, 149, 153, 157, 161, 165)
+
+    fun sanitize(channel: Int): Int = channel.takeIf { it in CHANNELS } ?: AUTOMATIC
+
+    fun frequency(channel: Int): Int? = sanitize(channel).takeIf { it != AUTOMATIC }?.let { 5000 + it * 5 }
+
+    fun describe(channel: Int): String =
+        frequency(channel)?.let { "${sanitize(channel)} (${it}MHz)" } ?: "automatic"
 }

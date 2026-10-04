@@ -78,6 +78,7 @@ import com.shilapi.xcertplay.hud.BydCallUiSettings
 import com.shilapi.xcertplay.hud.BydVehicleAccess
 import com.shilapi.xcertplay.hud.BydVehicleSettings
 import com.shilapi.xcertplay.hud.BydWheelSpeedSource
+import com.shilapi.xcertplay.network.P2pChannelPreference
 import com.shilapi.xcertplay.transport.EvChargingConnectors
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
 import com.shilapi.xcertplay.hud.BydCallUiSuppressor
@@ -183,6 +184,7 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotBand = manualHotspotBand,
         manualHotspotChannel = manualHotspotChannel,
         manualHotspotSecurity = manualHotspotSecurity,
+        wifiP2pChannel = wifiP2pChannel,
         locationReportingEnabled = locationReportingEnabled,
     )
 
@@ -402,6 +404,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotPassphrase = ""
     private var manualHotspotBand = ManualHotspotBand.AUTO
     private var manualHotspotChannel = 0
+    private var wifiP2pChannel = P2pChannelPreference.AUTOMATIC
     private var manualHotspotSecurity = ManualHotspotSecurity.OPEN
     private var awaitingVpnConsent = false
     private var awaitingWirelessPermissions = false
@@ -612,6 +615,7 @@ class CarPlayHostActivity : ComponentActivity() {
         manualHotspotPassphrase = AirPlayPersistence.loadManualHotspotPassphrase(this)
         manualHotspotBand = AirPlayPersistence.loadManualHotspotBand(this)
         manualHotspotChannel = AirPlayPersistence.loadManualHotspotChannel(this)
+        wifiP2pChannel = AirPlayPersistence.loadWifiP2pChannel(this)
         manualHotspotSecurity = AirPlayPersistence.loadManualHotspotSecurity(this)
         wirelessPermissionsReady = !wirelessEnabled || hasRequiredWirelessPermissions()
     }
@@ -1116,6 +1120,31 @@ class CarPlayHostActivity : ComponentActivity() {
             topMarginDp = 8,
         )
         addSetting(page, buildHotspotModeSection(), getString(R.string.hint_hotspot_mode))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            addSetting(
+                page,
+                settingsChoiceRow(
+                    getString(R.string.wifi_p2p_channel_label),
+                    listOf(P2pChannelPreference.AUTOMATIC to getString(R.string.wifi_p2p_channel_auto)) +
+                        P2pChannelPreference.CHANNELS.map { channel ->
+                            channel to getString(
+                                R.string.wifi_p2p_channel_value,
+                                channel,
+                                P2pChannelPreference.frequency(channel) ?: 0,
+                            )
+                        },
+                    wifiP2pChannel,
+                ) { channel ->
+                    if (wifiP2pChannel == channel) return@settingsChoiceRow
+                    wifiP2pChannel = channel
+                    appendLog(
+                        "Wi-Fi P2P channel: ${P2pChannelPreference.describe(channel)}; applies when settings close",
+                    )
+                    updateResolutionMenu()
+                },
+                getString(R.string.hint_wifi_p2p_channel),
+            )
+        }
         addSetting(page, menuText(getString(R.string.hotspot_status), 18f, MENU_SECONDARY), topMarginDp = 20)
         val hotspotStatusView = menuText("", 16f, MENU_ACCENT)
         addSetting(page, hotspotStatusView, topMarginDp = 6)
@@ -1599,6 +1628,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveManualHotspotPassphrase(this, manualHotspotPassphrase)
         AirPlayPersistence.saveManualHotspotBand(this, manualHotspotBand)
         AirPlayPersistence.saveManualHotspotChannel(this, manualHotspotChannel)
+        AirPlayPersistence.saveWifiP2pChannel(this, wifiP2pChannel)
         AirPlayPersistence.saveManualHotspotSecurity(this, manualHotspotSecurity)
         AirPlayPersistence.saveLocationReportingEnabled(this, locationReportingEnabled)
         AirPlayPersistence.saveAutoStartOnBoot(this, autoStartOnBoot)
@@ -1659,7 +1689,7 @@ class CarPlayHostActivity : ComponentActivity() {
             wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
             localMfiCertificateUri, localMfiPrivateKeyUri,
             wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
-            manualHotspotChannel, manualHotspotSecurity,
+            manualHotspotChannel, manualHotspotSecurity, wifiP2pChannel,
             locationReportingEnabled, customVehicleName, manufacturer, model,
             displayScaleTenths, fps, widthPhysicalMm, physicalSizeBasis, hevcEnabled, hevcSoftwareDecoderEnabled,
             rightHandDrive, hideTopBar, hideBottomBar, safeAreaDrawOutside,

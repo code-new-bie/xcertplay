@@ -62,6 +62,8 @@ class CarPlayRuntimeConfig(
     val manualHotspotPassphrase: String? = null,
     val manualHotspotBand: ManualHotspotBand = ManualHotspotBand.AUTO,
     val manualHotspotChannel: Int = 0,
+    /** Wi-Fi P2P group channel ([com.shilapi.xcertplay.network.P2pChannelPreference]); 0 is automatic. */
+    val wifiP2pChannel: Int = 0,
     val manualHotspotSecurity: ManualHotspotSecurity = ManualHotspotSecurity.WPA2,
     val locationReportingEnabled: Boolean = false,
 ) {

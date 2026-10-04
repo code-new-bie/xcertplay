@@ -48,6 +48,7 @@ import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.network.LocalOnlyHotspotManager
 import com.shilapi.xcertplay.network.ManualHotspotManager
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
+import com.shilapi.xcertplay.network.WirelessActivityLog
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.network.WirelessHotspotManager
 import com.shilapi.xcertplay.network.WirelessPerformanceLock
@@ -170,6 +171,7 @@ class CarPlayController(
     /** Held only while a wireless session runs: keeps the radio out of power-save stalls. */
     private val wirelessPerformanceLock = WirelessPerformanceLock(appContext, ::debugLog)
     private val hfpCallHandoff = HfpCallHandoff(appContext, ::debugLog)
+    private val wirelessActivityLog = WirelessActivityLog(appContext, ::debugLog)
     /** Carries the iPhone's Bluetooth location request onto the Wi-Fi tunnel link. */
     private val wirelessLocationRequest = Iap2LocationRequest()
     private val usbManager = context.getSystemService(UsbManager::class.java)
@@ -245,7 +247,10 @@ class CarPlayController(
     private val sessionListener = object : AirPlaySessionListener {
         override fun onSessionActive(session: AirPlaySession) {
             activeSession = session
-            if (config.transport == CarPlayTransport.WIRELESS) wirelessPerformanceLock.acquire()
+            if (config.transport == CarPlayTransport.WIRELESS) {
+                wirelessPerformanceLock.acquire()
+                wirelessActivityLog.start()
+            }
             debugLog(
                 "AirPlay session active controller=${session.controllerId ?: "unknown"} " +
                     "peer=${session.host}",
@@ -257,6 +262,7 @@ class CarPlayController(
             if (activeSession === session) {
                 activeSession = null
                 wirelessPerformanceLock.release()
+                wirelessActivityLog.stop()
                 hfpCallHandoff.release()
             }
             debugLog("AirPlay session ended peer=${session.host}")
@@ -496,6 +502,7 @@ class CarPlayController(
             closed = true
         }
         wirelessPerformanceLock.release()
+        wirelessActivityLog.close()
         hfpCallHandoff.close()
         closeReceivers()
         stopFileTransferReceivers()
@@ -1590,6 +1597,7 @@ class CarPlayController(
                         networkName = credentials.ssid,
                         passphrase = credentials.passphrase,
                         diagnostic = ::debugLog,
+                        preferredChannel = config.wifiP2pChannel,
                     )
                 }
             WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> LocalOnlyHotspotManager(appContext, ::debugLog)

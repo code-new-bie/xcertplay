@@ -269,4 +269,8 @@
     <string name="settings_summary_wireless">Wireless · %1$s · %2$d×%3$d · %4$d fps · icons %5$s</string>
     <string name="settings_summary_wired">Wired · %1$d×%2$d · %3$d fps · icons %4$s</string>
     <string name="technical_params">Technical parameters</string>
+    <string name="wifi_p2p_channel_label">Wi-Fi P2P channel</string>
+    <string name="wifi_p2p_channel_auto">Automatic (recommended)</string>
+    <string name="wifi_p2p_channel_value">Channel %1$d · %2$d MHz</string>
+    <string name="hint_wifi_p2p_channel">Only applies to Wi-Fi P2P; the system local hotspot and a manual hotspot choose their own channel. Automatic shares the head unit\'s Wi-Fi channel when it is connected. A chosen channel is tried first and falls back to automatic if the head unit refuses it; if the head unit\'s own Wi-Fi is on another channel, the radio alternates and may stutter. Applies on the next connection.</string>
 </resources>

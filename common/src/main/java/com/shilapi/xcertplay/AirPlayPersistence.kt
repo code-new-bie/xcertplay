@@ -12,6 +12,7 @@ import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.MicrophoneGain
 import com.shilapi.xcertplay.media.VehicleAudioChannel
+import com.shilapi.xcertplay.network.P2pChannelPreference
 import com.shilapi.xcertplay.orchestration.ManualHotspotBand
 import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.orchestration.MfiTarget
@@ -50,6 +51,7 @@ object AirPlayPersistence {
     private const val KEY_MANUAL_HOTSPOT_PASSPHRASE = "manual_hotspot_passphrase"
     private const val KEY_MANUAL_HOTSPOT_BAND = "manual_hotspot_band"
     private const val KEY_MANUAL_HOTSPOT_CHANNEL = "manual_hotspot_channel"
+    private const val KEY_WIFI_P2P_CHANNEL = "wifi_p2p_channel"
     private const val KEY_MANUAL_HOTSPOT_SECURITY = "manual_hotspot_security"
     private const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
     private const val KEY_MEDIA_METRICS_ENABLED = "media_metrics_enabled"
@@ -463,6 +465,17 @@ object AirPlayPersistence {
         val real = AccessoryIds.realBluetoothAddress(listOf(address))
         if (real == null) editor.remove(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS) else editor.putString(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS, real)
         editor.apply()
+    }
+
+    fun loadWifiP2pChannel(context: Context): Int = P2pChannelPreference.sanitize(
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_WIFI_P2P_CHANNEL, P2pChannelPreference.AUTOMATIC),
+    )
+
+    fun saveWifiP2pChannel(context: Context, channel: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_WIFI_P2P_CHANNEL, P2pChannelPreference.sanitize(channel))
+            .apply()
     }
 
     fun saveCustomVehicleName(context: Context, name: String) {

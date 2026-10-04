@@ -32,4 +32,17 @@ class P2pFrequencyPlanTest {
             }
         }
     }
+
+    @Test
+    fun aChosenChannelIsTriedFirstThenTheAutomaticPlan() {
+        assertEquals(
+            listOf(5745, 5200, null, 5180),
+            P2pFrequencyPlan.candidates(5200, P2pChannelPreference.frequency(149)),
+        )
+        assertEquals(listOf(5180, null, 5745), P2pFrequencyPlan.candidates(null, 5180))
+        // DFS and 2.4 GHz choices are not offered and fall back to automatic.
+        assertEquals(P2pChannelPreference.AUTOMATIC, P2pChannelPreference.sanitize(52))
+        assertNull(P2pChannelPreference.frequency(P2pChannelPreference.AUTOMATIC))
+        assertEquals("149 (5745MHz)", P2pChannelPreference.describe(149))
+    }
 }
