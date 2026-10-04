@@ -58,6 +58,7 @@ class AndroidMediaSink(
     private val activeScreenTypes = mutableSetOf<Int>()
     private val videoGaps = ConcurrentHashMap<Int, ArrivalGapDetector>()
     private val audioGaps = ConcurrentHashMap<AudioStreamId, ArrivalGapDetector>()
+    private val linkStalls = LinkStallCorrelator()
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
 
     fun setSurface(type: Int, surface: Surface) {
@@ -103,9 +104,10 @@ class AndroidMediaSink(
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) {
         val arrivalUs = System.nanoTime() / 1_000L
+        val arrivalMs = arrivalUs / 1_000L
         videoGaps.computeIfAbsent(type) { ArrivalGapDetector(ArrivalGapDetector.VIDEO_THRESHOLD_MS) }
-            .onArrival(arrivalUs / 1_000L)
-            ?.let { reportStall("video type=$type", it) }
+            .onArrival(arrivalMs)
+            ?.let { gap -> linkStalls.onVideoGap(arrivalMs, gap)?.let { reportLinkStall(gap, it) } }
         videoDecoder(type).submit(naluBytes, arrivalUs)
     }
 
@@ -131,9 +133,13 @@ class AndroidMediaSink(
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
-        audioGaps.computeIfAbsent(id) { ArrivalGapDetector(ArrivalGapDetector.AUDIO_THRESHOLD_MS) }
-            .onArrival(System.nanoTime() / 1_000_000L)
-            ?.let { reportStall("audio type=${id.type} audioType=${id.audioType}", it) }
+        val arrivalMs = System.nanoTime() / 1_000_000L
+        audioGaps.computeIfAbsent(id) {
+            ArrivalGapDetector(ArrivalGapDetector.AUDIO_THRESHOLD_MS, warmupMs = ArrivalGapDetector.AUDIO_WARMUP_MS)
+        }.onArrival(arrivalMs)?.let { gap ->
+            reportStall("audio type=${id.type} audioType=${id.audioType}", gap)
+            linkStalls.onAudioGap(arrivalMs, gap)?.let { reportLinkStall(gap, it) }
+        }
         if (!shouldPlayLocally(format)) return
         audioRenderer(id, format).submit(rtp, sample)
     }
@@ -176,6 +182,13 @@ class AndroidMediaSink(
                 requestKeyFrame = { videoRecoveryHandlers[type]?.invoke() ?: false },
             )
         }
+
+    /** Audio and video paused together: the Wi-Fi link itself stalled. */
+    private fun reportLinkStall(gapMs: Long, overlapMs: Long) {
+        val message = "Link stall: audio and video paused together for ${overlapMs}ms (gap ${gapMs}ms)"
+        Log.w("xcertplay-usb", message)
+        runCatching { diagnostic(message) }
+    }
 
     /** The log line's time is when packets resumed; the stall began [gapMs] earlier. */
     private fun reportStall(stream: String, gapMs: Long) {

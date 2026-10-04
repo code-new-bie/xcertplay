@@ -78,6 +78,7 @@ import com.shilapi.xcertplay.hud.BydCallUiSettings
 import com.shilapi.xcertplay.hud.BydVehicleAccess
 import com.shilapi.xcertplay.hud.BydVehicleSettings
 import com.shilapi.xcertplay.hud.BydWheelSpeedSource
+import com.shilapi.xcertplay.network.BluetoothHandoffSettings
 import com.shilapi.xcertplay.network.P2pChannelPreference
 import com.shilapi.xcertplay.transport.EvChargingConnectors
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
@@ -1120,6 +1121,15 @@ class CarPlayHostActivity : ComponentActivity() {
             topMarginDp = 8,
         )
         addSetting(page, buildHotspotModeSection(), getString(R.string.hint_hotspot_mode))
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.bluetooth_handoff_label),
+                checked = BluetoothHandoffSettings.enabled(this),
+                description = getString(R.string.bluetooth_handoff_desc),
+            ) { checked -> BluetoothHandoffSettings.setEnabled(this, checked) },
+            getString(R.string.bluetooth_handoff_note),
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             addSetting(
                 page,

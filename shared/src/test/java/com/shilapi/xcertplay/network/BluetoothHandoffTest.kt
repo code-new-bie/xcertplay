@@ -1,13 +1,13 @@
-package com.shilapi.xcertplay.hud
+package com.shilapi.xcertplay.network
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class HfpCallHandoffTest {
+class BluetoothHandoffTest {
     @Test
     fun reconnectsAreDisconnectedAgainOnlyWithinTheLimit() {
-        val guard = HfpReconnectGuard(maxRetries = 3, windowMillis = 60_000L)
+        val guard = HandoffReconnectGuard(maxRetries = 3, windowMillis = 60_000L)
         assertTrue(guard.allow(0))
         assertTrue(guard.allow(1_000))
         assertTrue(guard.allow(2_000))

@@ -22,8 +22,8 @@
     <!-- BYD -->
     <string name="byd_settings_header">BYD</string>
     <string name="byd_hide_call_label">Hide stock call popups (experimental)</string>
-    <string name="byd_hide_call_desc">Hand calls to CarPlay so the BYD call popup does not appear</string>
-    <string name="byd_hide_call_note">While wireless CarPlay runs, disconnect the head unit\'s Bluetooth hands-free link to the iPhone, as CarPlay requests, so calls go only through CarPlay and the stock phone shows nothing. The link is restored when CarPlay ends. If the head unit refuses, the stock HiCar interface dismisses popups instead, which may flash briefly. Turn off to keep the stock call interface.</string>
+    <string name="byd_hide_call_desc">Dismiss the BYD call popup while connected CarPlay is on screen</string>
+    <string name="byd_hide_call_note">While connected CarPlay is on screen, use the stock HiCar interface to dismiss call popups. No ADB required. A popup may briefly appear before closing. With "Disconnect iPhone Bluetooth during CarPlay" on, popups normally do not appear at all. Turn off to restore the stock call interface.</string>
     <string name="byd_vehicle_data_title">Vehicle data (DiLink 4)</string>
     <string name="byd_vehicle_speed_label">Vehicle speed and gear for tunnel navigation</string>
     <string name="byd_vehicle_speed_note">Read-only BYD vehicle data when the iPhone requests it. Requires authorized network ADB and Location reporting.</string>
@@ -53,4 +53,7 @@
     <string name="head_unit_bt_read_ok">Read and saved %1$s. It is used from the next connection.</string>
     <string name="head_unit_bt_read_empty">ADB is connected, but the head unit returned no valid Bluetooth address. Turn Bluetooth on and try again.</string>
     <string name="head_unit_bt_note">The iPhone uses this address to recognise the car. Takes effect on the next connection; after changing it, forget this car on the iPhone and pair again.</string>
+    <string name="bluetooth_handoff_label">Disconnect iPhone Bluetooth during CarPlay (recommended)</string>
+    <string name="bluetooth_handoff_desc">Calls and music go only through CarPlay</string>
+    <string name="bluetooth_handoff_note">As CarPlay requires, wireless CarPlay turns off the head unit\'s Bluetooth calls (HFP) and Bluetooth audio (A2DP) with the iPhone. Otherwise the iPhone may keep playing music over Bluetooth, which can stutter and slow Wi-Fi, and the stock phone shows call popups. Both are restored when CarPlay ends. Applies on the next connection.</string>
 </resources>
