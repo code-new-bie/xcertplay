@@ -73,14 +73,14 @@ class BluetoothHandoffRestoreTest {
     }
 
     @Test
-    fun rejectedReconnectCanBeRetriedWithoutLosingTheOriginalPriority() {
+    fun rejectedReconnectStillCountsAsRestoredOncePriorityReadsBack() {
+        // BYD's A2DP sink rejects connects it did not start; the restriction is already gone once
+        // the priority reads back, so exiting must not wait for a reconnect that never comes.
         hold()
         calls.acceptConnect = false
-        assertFalse(restore())
-        assertEquals(100, calls.priority)
-        assertTrue(prefs().contains("saved_priority_calls"))
-        calls.acceptConnect = true
         assertTrue(restore())
+        assertEquals(100, calls.priority)
+        assertEquals(1, calls.connects)
         assertFalse(prefs().contains("saved_priority_calls"))
     }
 

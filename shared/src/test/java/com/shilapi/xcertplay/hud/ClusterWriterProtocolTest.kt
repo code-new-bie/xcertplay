@@ -65,6 +65,27 @@ class ClusterWriterProtocolTest {
         assertTrue(lines.last().contains("owner heartbeat expired"))
     }
 
+    @Test fun aShortMailboxReadGapRecoversWithoutClearingTheCard() {
+        var time = 1000L
+        var reads = 0
+        var clears = 0
+        val applied = mutableListOf<Long>()
+        val lines = mutableListOf<String>()
+        ClusterWriterLoop(token, {
+            when (reads++) {
+                0 -> null
+                1 -> frame(sequence = 2, now = 1100)
+                else -> frame(sequence = 2, now = time).copy(stop = true, state = 3)
+            }
+        }, { time }, { time += it }, { applied += it.sequence; "state=0" },
+            { clears++; "state=0" }, lines::add).run()
+        assertEquals(listOf(2L), applied)
+        assertEquals(1, clears)
+        assertTrue(lines.any { it.contains("mailbox unavailable") })
+        assertTrue(lines.any { it.contains("mailbox recovered") })
+        assertFalse(lines.last().contains("mailbox unavailable"))
+    }
+
     @Test fun aFailedSdkWriteStillAttemptsCardCleanup() {
         var clears = 0
         assertThrows(IOException::class.java) {
@@ -91,5 +112,13 @@ class ClusterWriterProtocolTest {
         val missing = ClusterWriterWatchdog(token)
         assertFalse(missing.shouldTerminate(null, 1000))
         assertTrue(missing.shouldTerminate(null, 2000))
+    }
+
+    @Test fun theWatchdogAllowsAMissingMailboxToRecoverBeforeKillingTheHelper() {
+        val watchdog = ClusterWriterWatchdog(token)
+        assertFalse(watchdog.shouldTerminate(null, 1000))
+        assertFalse(watchdog.shouldTryClear(1400))
+        assertFalse(watchdog.shouldTerminate(frame(now = 1100), 1100))
+        assertFalse(watchdog.shouldTryClear(1600))
     }
 }

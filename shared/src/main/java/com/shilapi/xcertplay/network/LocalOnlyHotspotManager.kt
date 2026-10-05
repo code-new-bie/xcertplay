@@ -13,6 +13,9 @@ import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
+import com.shilapi.xcertplay.adb.AdbKeys
+import com.shilapi.xcertplay.adb.LocalAdb
+import java.util.concurrent.FutureTask
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -34,6 +37,7 @@ class LocalOnlyHotspotManager(
     context: Context,
     private val diagnostic: (String) -> Unit = {},
 ) : WirelessHotspotManager {
+    private val app = context.applicationContext
     private val connectivityManager =
         context.applicationContext.getSystemService(ConnectivityManager::class.java)
     private val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
@@ -109,6 +113,10 @@ class LocalOnlyHotspotManager(
                 deadlineNanos = deadlineNanos,
             )
 
+            val liveRadio = runCatching { readLiveRadio(apInterface?.name) }.getOrNull()
+            report("LocalOnlyHotspot radio: configuredBand=${configuration.bandLabel} " +
+                "configuredChannel=${configuration.channel} liveFrequencyMHz=${liveRadio?.frequencyMHz ?: "unknown"} " +
+                "liveChannel=${liveRadio?.number ?: "unknown"}")
             synchronized(stateLock) {
                 ensureStartActiveLocked(attempt)
                 reservation = activeReservation
@@ -123,17 +131,40 @@ class LocalOnlyHotspotManager(
                 ssid = configuration.ssid,
                 passphrase = configuration.passphrase,
                 security = configuration.security,
-                channel = configuration.channel,
-                frequencyMHz = null,
+                channel = liveRadio?.number ?: configuration.channel,
+                frequencyMHz = liveRadio?.frequencyMHz,
                 bssid = apInterface?.bssid ?: configuration.bssid,
                 interfaceName = apInterface?.name,
                 hostAddress = apInterface?.hostAddress,
-                bandLabel = configuration.bandLabel,
+                bandLabel = liveRadio?.bandLabel ?: configuration.bandLabel,
                 backend = WirelessHotspotBackend.LOCAL_ONLY_HOTSPOT,
             )
         } catch (failure: Exception) {
             cleanupFailedStart(attempt, acquiredMulticastLock)
             throw failure
+        }
+    }
+
+    private fun readLiveRadio(interfaceName: String?): LocalOnlyHotspotRadio.Channel? {
+        if (interfaceName == null || !interfaceName.matches(Regex("[A-Za-z0-9_.-]+"))) return null
+        val adb = LocalAdb(AdbKeys.load(app))
+        val task = FutureTask {
+            adb.use {
+                if (it.connect(mayAsk = false) != LocalAdb.Access.READY) null
+                else LocalOnlyHotspotRadio.parseIw(it.shell("iw dev '$interfaceName' info"), interfaceName)
+            }
+        }
+        Thread(task, "xcertplay-ap-radio").apply { isDaemon = true; start() }
+        return try {
+            task.get(1_000, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            adb.close()
+            task.cancel(true)
         }
     }
 
@@ -367,7 +398,7 @@ class LocalOnlyHotspotManager(
         } catch (_: ReflectiveOperationException) {
             null
         }
-        return band?.let(::softApBandLabel) ?: legacyBandLabel(channel)
+        return LocalOnlyHotspotRadio.legacyBandLabel(band, channel)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

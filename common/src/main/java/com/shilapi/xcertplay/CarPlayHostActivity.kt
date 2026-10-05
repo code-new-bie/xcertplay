@@ -22,6 +22,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.Editable
@@ -72,6 +73,8 @@ import com.shilapi.xcertplay.airplay.CarPlayVoiceKey
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.hud.BydClusterSongSettings
+import com.shilapi.xcertplay.hud.BydCallWindSettings
+import com.shilapi.xcertplay.hud.BydCallWindTest
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.adb.LocalAdb
@@ -764,6 +767,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        BydCallWindTest.cancelManual("test screen destroyed")
         bydCallUiSuppressor.close()
         channelPreview.close()
         appearanceMonitor?.stop()
@@ -944,7 +948,12 @@ class CarPlayHostActivity : ComponentActivity() {
                 setTextColor(Color.WHITE)
                 backgroundTintList = ColorStateList.valueOf(MENU_DANGER)
                 minHeight = dp(48)
-                setOnClickListener { exitApplication() }
+                setOnClickListener {
+                    // Cleanup takes a moment; show at once that the tap was taken.
+                    isEnabled = false
+                    text = getString(R.string.exit_app_running)
+                    exitApplication()
+                }
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
@@ -1279,6 +1288,17 @@ class CarPlayHostActivity : ComponentActivity() {
                 topMarginDp = 12,
             )
             addButton(page, buildClusterCallTestButton(), getString(R.string.cluster_call_test_note))
+            addSetting(
+                page,
+                settingsSwitchRow(
+                    label = getString(R.string.call_wind_label),
+                    checked = BydCallWindSettings.enabled(this),
+                    description = getString(R.string.call_wind_desc),
+                ) { checked -> BydCallWindSettings.setEnabled(this, checked) },
+                getString(R.string.call_wind_note),
+                topMarginDp = 12,
+            )
+            addButton(page, buildCallWindTestButton(), getString(R.string.call_wind_test_note))
         }
         addButton(
             page,
@@ -1288,6 +1308,45 @@ class CarPlayHostActivity : ComponentActivity() {
             },
             getString(R.string.hint_bt_settings),
         )
+    }
+
+    private fun buildCallWindTestButton(): Button = Button(this).apply {
+        var running = false
+        text = getString(R.string.call_wind_test)
+        setOnClickListener {
+            if (shuttingDown.get()) return@setOnClickListener
+            if (running) {
+                isEnabled = false
+                text = getString(R.string.call_wind_test_stopping)
+                BydCallWindTest.cancelManual("manual stop")
+                return@setOnClickListener
+            }
+            running = true
+            text = getString(R.string.call_wind_test_stop)
+            val started = BydCallWindTest.start(applicationContext,
+                { line -> runOnUiThread { if (!isDestroyed) appendLog(line) } },
+                { result -> runOnUiThread {
+                    running = false
+                    isEnabled = true
+                    text = getString(R.string.call_wind_test)
+                    if (!isFinishing && !isDestroyed && !shuttingDown.get()) {
+                        val message = when {
+                            result.released -> getString(R.string.call_wind_test_released)
+                            result.cancelled && !result.requested -> getString(R.string.call_wind_test_cancelled)
+                            else -> getString(R.string.call_wind_test_unavailable)
+                        }
+                        AlertDialog.Builder(this@CarPlayHostActivity).setTitle(R.string.call_wind_test)
+                            .setMessage("$message\n\n${result.details}")
+                            .setPositiveButton(android.R.string.ok, null).show()
+                    }
+                } },
+            )
+            if (!started) {
+                running = false
+                text = getString(R.string.call_wind_test)
+                Toast.makeText(this@CarPlayHostActivity, R.string.call_wind_test_busy, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     /** BYD group: sends the cluster a test call (name and timer) the way BYD's phone app does. */
@@ -4413,10 +4472,14 @@ class CarPlayHostActivity : ComponentActivity() {
         if (shuttingDown.get()) return
         restoreSettingsBaseline()
         shutdown(terminateProcess = true, reason = "settings exit application")
+        // Show the head-unit home at once; the cleanup finishes in the background and then the
+        // activity and process end.
+        moveTaskToBack(true)
     }
 
     private fun shutdown(terminateProcess: Boolean, reason: String) {
         if (!shuttingDown.compareAndSet(false, true)) return
+        val windStopped = BydCallWindTest.cancel("application shutdown")
         stopMicrophoneGainTest()
         restartGeneration += 1
         appearanceSync.stop()
@@ -4429,12 +4492,18 @@ class CarPlayHostActivity : ComponentActivity() {
         updateBydCallUi()
         sink = null
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
+        val shutdownStartedMs = SystemClock.elapsedRealtime()
+        if (terminateProcess) appendFileLog("Exit started", System.currentTimeMillis())
         teardownExecutor.execute {
             val cleanup = runCarPlayShutdown(
                 disconnect = {
                     oldController?.close()
                     val timeout = if (terminateProcess) EXIT_CLOSE_TIMEOUT_MILLIS else CONTROLLER_CLOSE_TIMEOUT_MILLIS
-                    oldController?.awaitClosed(timeout) ?: true
+                    val closed = oldController?.awaitClosed(timeout) ?: true
+                    val windReleased = runCatching { windStopped.get(2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }
+                        .getOrDefault(false)
+                    if (!windReleased) appendLog("Call wind: release not confirmed; helper watchdog remains armed")
+                    closed && windReleased
                 },
                 closeMedia = {
                     try {
@@ -4460,7 +4529,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 Log.i(TAG, "exit cleanup wireless=$clean bluetoothRestored=$bluetooth wifiSearchResumed=$wifiSearch")
                 appendFileLog(
                     "Exit cleanup: wireless stack closed=$clean, Bluetooth restored=$bluetooth, " +
-                        "Wi-Fi search resumed=$wifiSearch",
+                        "Wi-Fi search resumed=$wifiSearch, took ${SystemClock.elapsedRealtime() - shutdownStartedMs}ms",
                     System.currentTimeMillis(),
                 )
                 try {

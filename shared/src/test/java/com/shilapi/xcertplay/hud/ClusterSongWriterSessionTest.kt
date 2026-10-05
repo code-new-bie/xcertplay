@@ -33,6 +33,7 @@ class ClusterSongWriterSessionTest {
         @Volatile var closed = false
         var readable = true
         var failStream = false
+        var confirmsGone = true
         @Volatile var launches = 0
         override fun connect(): Boolean {
             connected.countDown()
@@ -41,7 +42,7 @@ class ClusterSongWriterSessionTest {
         }
         override fun shell(command: String): String {
             commands += command
-            return if (command.contains("/proc/424242")) "XCERTPLAY-process-gone"
+            return if (command.contains("/proc/424242")) { if (confirmsGone) "XCERTPLAY-process-gone" else "" }
             else if (readable) "XCERTPLAY-readable" else ""
         }
         override fun stream(command: String, onLine: (String) -> Unit) {
@@ -57,6 +58,7 @@ class ClusterSongWriterSessionTest {
                 Thread.sleep(it)
             }, { applied += it; firstApplied.countDown(); "state=0 text=0" },
                 { clears.incrementAndGet(); "state=0 text=0" }, onLine).run()
+            onLine("XCERTPLAY clusterwriter exited token=$token pid=424242")
         }
         override fun close() { closed = true; allowConnect.countDown() }
     }
@@ -129,6 +131,43 @@ class ClusterSongWriterSessionTest {
         assertTrue(kill.contains("*${BydVehicleDataTool::class.java.name}*clustersongwatch*${session.token}*"))
         assertTrue(kill.contains("kill -TERM 424242"))
         assertFalse(kill.contains("pkill"))
+    }
+
+    @Test fun anUnexpectedHelperExitGetsOneSessionGuardedRestart() {
+        val first = Shell().also { it.failStream = true; it.allowConnect.countDown() }
+        val second = Shell().also { it.allowConnect.countDown() }
+        val cleanup = Shell().also { it.allowConnect.countDown() }
+        val shells = ArrayDeque(listOf(first, cleanup, second))
+        val session = ClusterSongWriterSession(app, ClusterCard("initial", true), {},
+            { shells.removeFirst() }, ::now)
+        val originalToken = session.token
+        session.start()
+        try {
+            assertTrue(first.helperStarted.await(2, TimeUnit.SECONDS))
+            assertTrue(second.helperStarted.await(3, TimeUnit.SECONDS))
+            assertNotEquals(originalToken, session.token)
+            assertFalse(File(app.getExternalFilesDir("cluster"), "$originalToken.state").exists())
+            assertTrue(session.stop("restart test").get(3, TimeUnit.SECONDS))
+            assertEquals(1, first.launches)
+            assertEquals(1, second.launches)
+        } finally {
+            session.stop("test complete").get(3, TimeUnit.SECONDS)
+        }
+    }
+
+    @Test fun unconfirmedOldPidBlocksRestartAndCannotReportSuccessfulStop() {
+        val first = Shell().also { it.failStream = true; it.allowConnect.countDown() }
+        val cleanup = Shell().also { it.confirmsGone = false; it.allowConnect.countDown() }
+        val shells = ArrayDeque(listOf(first, cleanup))
+        val blocked = CountDownLatch(1)
+        val session = ClusterSongWriterSession(app, null, {
+            if (it.contains("restart blocked")) blocked.countDown()
+        }, { shells.removeFirst() }, ::now)
+        session.start()
+        assertTrue(blocked.await(2, TimeUnit.SECONDS))
+        assertFalse(session.stop("test").get(3, TimeUnit.SECONDS))
+        assertEquals(0, cleanup.launches)
+        assertTrue(shells.isEmpty())
     }
 
     @Test fun stoppingBeforeStartupIsTerminalAndCreatesNoAdbClient() {

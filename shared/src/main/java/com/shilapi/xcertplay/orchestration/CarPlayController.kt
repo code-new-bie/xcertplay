@@ -30,6 +30,8 @@ import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.PairingStore
 import com.shilapi.xcertplay.hud.BydClusterSong
+import com.shilapi.xcertplay.hud.BydCallWindTest
+import com.shilapi.xcertplay.airplay.CarPlayAppStates
 import com.shilapi.xcertplay.hud.BydSettingsAvailability
 import com.shilapi.xcertplay.iap2.message.Iap2HidMessages
 import com.shilapi.xcertplay.iap2.message.Iap2MediaRemoteCommand
@@ -291,6 +293,8 @@ class CarPlayController(
         override fun onSessionEnded(session: AirPlaySession) {
             synchronized(this@CarPlayController) {
                 if (activeSession === session) {
+                    BydCallWindTest.cancel("CarPlay session ended")
+                    BydCallWindTest.clearCall(this@CarPlayController)
                     activeSession = null
                     wirelessPerformanceLock.release()
                     wirelessActivityLog.stop()
@@ -331,6 +335,11 @@ class CarPlayController(
         }
 
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
+            if (bydHeadUnit && !closed && activeSession === session && type == "modesChanged") {
+                CarPlayAppStates.phoneCallActive(params["appStates"])?.let {
+                    BydCallWindTest.observeCall(appContext, this@CarPlayController, it, ::debugLog)
+                }
+            }
             debugLog(
                 "AirPlay command type=$type params=${params.keys.sorted().joinToString(",")}",
             )
@@ -541,6 +550,10 @@ class CarPlayController(
             closed = true
         }
         closeBestEffort("Wi-Fi performance lock") { wirelessPerformanceLock.release() }
+        closeBestEffort("call wind test") {
+            BydCallWindTest.cancel("controller closed")
+            BydCallWindTest.clearCall(this)
+        }
         closeBestEffort("radio activity watcher") { wirelessActivityLog.close() }
         closeBestEffort("Bluetooth handoff") { bluetoothHandoff.releaseLater() }
         closeBestEffort("Wi-Fi search") { wifiScanPause.resumeLater() }
@@ -1012,7 +1025,7 @@ class CarPlayController(
                     "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
                     "frequency=${hotspotInfo.frequencyMHz?.toString() ?: "unknown"}MHz",
             )
-            if (WifiScanPauseSettings.enabled(appContext)) wifiScanPause.pause()
+            wifiScanPause.pause()
             onStatus(
                 CarPlayStatus.HotspotReady(
                     ssid = hotspotInfo.ssid,

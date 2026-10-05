@@ -9,6 +9,16 @@ internal object CarPlayAppStates {
     private const val PHONE_CALL = 2L
     private const val TURN_BY_TURN = 3L
 
+    fun phoneCallActive(appStates: Any?): Boolean? {
+        val state = (appStates as? List<*>)?.filterIsInstance<Map<*, *>>()
+            ?.firstOrNull { (it["appStateID"] as? Number)?.toLong() == PHONE_CALL } ?: return null
+        return when ((state["entity"] as? Number)?.toLong()) {
+            0L -> false
+            1L, 2L -> true
+            else -> null
+        }
+    }
+
     fun describe(appStates: Any?): String? {
         val states = (appStates as? List<*>)?.mapNotNull { it as? Map<*, *> } ?: return null
         fun state(id: Long) = states.firstOrNull { (it["appStateID"] as? Number)?.toLong() == id }

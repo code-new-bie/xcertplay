@@ -264,15 +264,13 @@ class BluetoothHandoff private constructor(context: Context) {
                 return@withProxy
             }
             val state = runCatching { profile.getConnectionState(device) }.getOrDefault(-1)
+            // The restriction is gone once the priority reads back; reconnecting is best effort; the
+            // head unit or the phone reconnects on its own (BYD's A2DP sink rejects connects it did
+            // not start), so a rejected connect no longer keeps the restore pending.
             val reconnect = if (state == BluetoothProfile.STATE_CONNECTED || state == BluetoothProfile.STATE_CONNECTING) {
                 true
             } else {
                 call(profile, "connect", device)
-            }
-            if (reconnect != true) {
-                report("${link.label} to $address restore pending: priority $original ok, " +
-                    "reconnect ${describe(reconnect)}")
-                return@withProxy
             }
             val editor = prefs.edit().remove(key)
             if (Link.values().none { other -> other != link && prefs.contains(priorityKey(other)) }) {

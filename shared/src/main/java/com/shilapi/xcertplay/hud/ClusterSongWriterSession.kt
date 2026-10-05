@@ -35,7 +35,7 @@ private class AdbClusterWriterShell(context: Context) : ClusterWriterShell {
     override fun close() = adb.close()
 }
 
-/** Owns exactly one helper launch. Updates replace one slot, never queue shell commands. */
+/** Owns one latest-value slot and a bounded helper-restart budget. */
 internal class ClusterSongWriterSession(
     private val context: Context,
     initial: ClusterCard?,
@@ -43,7 +43,8 @@ internal class ClusterSongWriterSession(
     private val newShell: () -> ClusterWriterShell = { AdbClusterWriterShell(context) },
     private val now: () -> Long = SystemClock::elapsedRealtime,
 ) : ClusterSongSessionHandle {
-    val token: String = UUID.randomUUID().toString().replace("-", "")
+    @Volatile var token: String = UUID.randomUUID().toString().replace("-", "")
+        private set
     private val lock = Any()
     private val publisher = ScheduledThreadPoolExecutor(1) {
         Thread(it, "xcertplay-cluster-slot").apply { isDaemon = true }
@@ -60,9 +61,10 @@ internal class ClusterSongWriterSession(
     private var lastPublishedMs = -ClusterWriterFrame.HEARTBEAT_MS
     private var mailbox: ClusterWriterMailbox? = null
     @Volatile private var client: ClusterWriterShell? = null
-    @Volatile private var normalExit = false
     @Volatile private var helperPid: Int? = null
-    @Volatile private var helperLaunched = false
+    @Volatile private var helperGone = true
+    private var recovering = false
+    private var helperRestarts = 0
 
     override fun start() {
         synchronized(lock) {
@@ -124,7 +126,7 @@ internal class ClusterSongWriterSession(
 
     private fun publish() {
         try {
-            synchronized(lock) { if (!stopping) publishLocked() }
+            synchronized(lock) { if (!stopping && !recovering) publishLocked() }
         } catch (error: Exception) {
             report("mailbox update failed: ${error.javaClass.simpleName} ${error.message}")
             stop("mailbox update failed")
@@ -142,9 +144,68 @@ internal class ClusterSongWriterSession(
     }
 
     private fun readHelper() {
+        var stopAfterReader = false
+        try {
+            while (true) {
+                if (synchronized(lock) { stopping }) break
+                runHelperAttempt()
+                synchronized(lock) { recovering = true }
+                if (!helperGone) {
+                    val pid = helperPid
+                    helperGone = pid != null && runCatching { confirmOrTerminate(pid) }.getOrDefault(false)
+                }
+                if (!helperGone) {
+                    report("helper exit unconfirmed; restart blocked pid=${helperPid ?: "unknown"}")
+                    stopAfterReader = true
+                    break
+                }
+                val restart = synchronized(lock) {
+                    if (stopping || helperRestarts >= MAX_HELPER_RESTARTS) false
+                    else {
+                        helperRestarts++
+                        true
+                    }
+                }
+                if (!restart) {
+                    stopAfterReader = true
+                    report("helper restart budget exhausted restarts=$helperRestarts")
+                    break
+                }
+                report("helper ended unexpectedly; restarting attempt=$helperRestarts/$MAX_HELPER_RESTARTS")
+                try {
+                    Thread.sleep(HELPER_RESTART_BACKOFF_MS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    stopAfterReader = true
+                    break
+                }
+                synchronized(lock) {
+                    if (!stopping) {
+                        val directory = checkNotNull(mailbox).file.parentFile
+                        mailbox?.delete()
+                        token = UUID.randomUUID().toString().replace("-", "")
+                        mailbox = ClusterWriterMailbox(File(directory, "$token.state"))
+                        helperPid = null
+                        publishedSequence = -1
+                        recovering = false
+                        publishLocked()
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            report("helper recovery failed: ${error.javaClass.simpleName} ${error.message}")
+            stopAfterReader = true
+        } finally {
+            readerDone.countDown()
+            if (stopAfterReader) stop("helper ended after restart budget")
+        }
+    }
+
+    /** Runs one shell/helper attempt. Returns true when the session is already stopping. */
+    private fun runHelperAttempt(): Boolean {
         var shell: ClusterWriterShell? = null
         try {
-            synchronized(lock) { if (stopping) return }
+            synchronized(lock) { if (stopping) return true }
             shell = newShell().also { client = it }
             if (!shell.connect()) throw IOException("ADB shell unavailable (authorize ADB first)")
             val path = checkNotNull(mailbox).file.absolutePath
@@ -153,29 +214,39 @@ internal class ClusterSongWriterSession(
                 throw IOException("ADB shell cannot read the app's cluster mailbox")
             }
             synchronized(lock) {
-                if (stopping) return
-                helperLaunched = true
+                if (stopping) return true
+                helperGone = false
             }
             val encodedPath = Base64.getEncoder().encodeToString(path.toByteArray(Charsets.UTF_8))
             val helper = BydSdkStream.helper(context, "clustersongwatch", token, encodedPath)
             // The shell reports the child PID before Java/SDK startup, so cancellation can target it immediately.
             val launch = "$helper & xcertplay_cluster_pid=\$!; " +
                 "echo XCERTPLAY clusterwriter starting token=$token pid=\$xcertplay_cluster_pid; " +
-                "wait \$xcertplay_cluster_pid"
+                "wait \$xcertplay_cluster_pid; " +
+                "echo XCERTPLAY clusterwriter exited token=$token pid=\$xcertplay_cluster_pid"
             shell.stream(launch) { line ->
                 if (line.startsWith("XCERTPLAY clusterwriter starting token=$token pid=")) {
-                    helperPid = line.substringAfter("pid=").substringBefore(' ').toIntOrNull()?.takeIf { it > 0 }
+                    line.substringAfter("pid=").substringBefore(' ').toIntOrNull()?.takeIf { it > 0 }?.let {
+                        helperPid = it
+                    }
                 }
+                if (line == "XCERTPLAY clusterwriter exited token=$token pid=$helperPid") helperGone = true
                 if (!line.startsWith("XCERTPLAY clusterwriter heartbeat")) report(line.removePrefix("XCERTPLAY "))
             }
-            normalExit = true
+            if (synchronized(lock) { stopping }) {
+                return true
+            }
+            report("helper stream ended unexpectedly pid=${helperPid ?: "none"} processGone=$helperGone")
+            return false
         } catch (error: Exception) {
-            if (!synchronized(lock) { stopping }) report("helper unavailable: ${error.javaClass.simpleName} ${error.message}")
+            val stoppingNow = synchronized(lock) { stopping }
+            if (!stoppingNow) {
+                report("helper unavailable: ${error.javaClass.simpleName} ${error.message}")
+            }
+            return stoppingNow
         } finally {
             shell?.close()
-            client = null
-            readerDone.countDown()
-            stop(if (normalExit) "helper ended" else "ADB link ended")
+            if (client === shell) client = null
         }
     }
 
@@ -183,18 +254,11 @@ internal class ClusterSongWriterSession(
         var confirmed = false
         try {
             // Healthy helpers acknowledge STOP and close the ADB shell before this deadline.
-            readerDone.await(1_500, TimeUnit.MILLISECONDS)
-            if (normalExit || !helperLaunched) {
+            if (!readerDone.await(1_500, TimeUnit.MILLISECONDS)) {
                 client?.close()
-                confirmed = readerDone.await(500, TimeUnit.MILLISECONDS)
-            } else {
-                client?.close()
-                mailbox?.delete()
-                // The helper's independent watchdog kills a stuck SDK call after its lease expires.
-                val pid = helperPid
-                if (pid != null) confirmed = confirmOrTerminate(pid)
-                else report("stop awaiting watchdog: helper PID unavailable")
             }
+            // Only the reader owns PID cleanup. Closing an ADB stream is not process-exit evidence.
+            confirmed = readerDone.await(4_000, TimeUnit.MILLISECONDS) && helperGone
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         } catch (error: Exception) {
@@ -222,5 +286,10 @@ internal class ClusterSongWriterSession(
 
     private fun report(message: String) {
         runCatching { diagnostic("Cluster song: token=$token $message") }
+    }
+
+    private companion object {
+        const val MAX_HELPER_RESTARTS = 2
+        const val HELPER_RESTART_BACKOFF_MS = 250L
     }
 }

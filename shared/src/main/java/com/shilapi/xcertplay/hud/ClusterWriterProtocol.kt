@@ -34,6 +34,7 @@ internal data class ClusterWriterFrame(
         const val POLL_MS = 100L
         const val HEARTBEAT_MS = 1_000L
         const val LEASE_TIMEOUT_MS = 3_000L
+        const val MAILBOX_FAILURE_GRACE_MS = 1_000L
         const val FORCE_STOP_GRACE_MS = 1_000L
         const val MAX_FRAME_BYTES = 2_048L
         private val TOKEN = Regex("[a-f0-9]{32}")
@@ -119,13 +120,38 @@ internal class ClusterWriterLoop(
         var sequence = -1L
         var lastHeartbeat = now()
         var reason = "helper failed"
+        var mailboxUnavailableSince: Long? = null
+        var mailboxUnavailableReported = false
         try {
             while (true) {
                 val frame = read()
                 val timestamp = now()
-                val stop = frame?.stopReason(token, timestamp) ?: if (frame == null) "mailbox unavailable" else null
+                if (frame == null) {
+                    if (mailboxUnavailableSince == null) {
+                        mailboxUnavailableSince = timestamp
+                        if (!mailboxUnavailableReported) {
+                            emit("XCERTPLAY clusterwriter mailbox unavailable token=$token " +
+                                "graceMs=${ClusterWriterFrame.MAILBOX_FAILURE_GRACE_MS}")
+                            mailboxUnavailableReported = true
+                        }
+                    }
+                    if (timestamp - checkNotNull(mailboxUnavailableSince) >=
+                        ClusterWriterFrame.MAILBOX_FAILURE_GRACE_MS
+                    ) {
+                        reason = "mailbox unavailable"
+                        break
+                    }
+                    sleep(ClusterWriterFrame.POLL_MS)
+                    continue
+                }
+                if (mailboxUnavailableSince != null) {
+                    emit("XCERTPLAY clusterwriter mailbox recovered token=$token " +
+                        "downtimeMs=${timestamp - checkNotNull(mailboxUnavailableSince)}")
+                    mailboxUnavailableSince = null
+                    mailboxUnavailableReported = false
+                }
+                val stop = frame.stopReason(token, timestamp)
                 if (stop != null) { reason = stop; break }
-                checkNotNull(frame)
                 if (frame.sequence > sequence) {
                     val result = apply(frame)
                     emit("XCERTPLAY clusterwriter applied token=$token seq=${frame.sequence} " +
@@ -145,15 +171,40 @@ internal class ClusterWriterLoop(
     }
 }
 
-/** Once stopping starts it is terminal, even if an obsolete publisher refreshes the old lease. */
+/**
+ * Watches the mailbox independently of SDK calls. A short read gap is recoverable, while an
+ * explicit stop or replaced session remains terminal even if an obsolete publisher refreshes the
+ * old lease.
+ */
 internal class ClusterWriterWatchdog(private val token: String) {
     private var stopSince: Long? = null
+    private var reason: String? = null
+    private var terminal = false
+
     fun shouldTryClear(nowMs: Long): Boolean = stopSince?.let {
-        nowMs - it >= ClusterWriterFrame.FORCE_STOP_GRACE_MS / 2
+        // Missing/partially replaced files are allowed to recover before the card is cleared.
+        // Lease expiry and explicit stop are already sustained conditions by this point.
+        reason != "mailbox unavailable" &&
+            nowMs - it >= ClusterWriterFrame.FORCE_STOP_GRACE_MS / 2
     } ?: false
+
+    fun stopReason(): String? = reason
+
     fun shouldTerminate(frame: ClusterWriterFrame?, nowMs: Long): Boolean {
-        if (frame == null || frame.stopReason(token, nowMs) != null) {
+        val currentReason = if (frame == null) "mailbox unavailable" else frame.stopReason(token, nowMs)
+        if (frame?.stop == true || currentReason == "session replaced") {
+            terminal = true
+        }
+        if (terminal) {
             if (stopSince == null) stopSince = nowMs
+            reason = currentReason
+        } else if (currentReason == "mailbox unavailable" || currentReason == "owner heartbeat expired") {
+            if (stopSince == null) stopSince = nowMs
+            reason = currentReason
+        } else {
+            // A transient read gap or lease observation recovered before the grace period.
+            stopSince = null
+            reason = null
         }
         return stopSince?.let { nowMs - it >= ClusterWriterFrame.FORCE_STOP_GRACE_MS } ?: false
     }

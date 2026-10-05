@@ -35,8 +35,8 @@ object BydVehicleDataTool {
 
     /**
      * Sends the instrument cluster what BYD's phone app sends during a Bluetooth call: the caller
-     * name (UTF-16LE) and a running call time. Shows whether the shell may write these and whether
-     * the car reacts (cluster call card, lowered fan).
+     * name (UTF-16LE) and a running call time. Tests instrument display writes only; the MCU call
+     * state used for fan reduction is tested separately by BydCallWindTestTool.
      */
     private fun callInfoTest(context: Context) {
         val instrument = Device("instrument.BYDAutoInstrumentDevice", context)
@@ -143,6 +143,8 @@ object BydVehicleDataTool {
             while (!finished.get()) {
                 val now = SystemClock.elapsedRealtime()
                 if (watchdog.shouldTerminate(mailbox.read(), now)) {
+                    emit("XCERTPLAY clusterwriter watchdog stopping token=$token " +
+                        "reason=${watchdog.stopReason() ?: "unknown"}")
                     mailbox.delete()
                     android.os.Process.killProcess(android.os.Process.myPid())
                     return@thread
@@ -205,6 +207,10 @@ object BydVehicleDataTool {
     @SuppressLint("PrivateApi")
     fun main(args: Array<String>) {
         try {
+            if (args.firstOrNull() == "callwindtest") {
+                BydCallWindTestTool.run(args.drop(1), ::systemContext)
+                return
+            }
             if (args.firstOrNull() == "clustersongwatch") {
                 clusterSongWatch(args.drop(1))
                 return
