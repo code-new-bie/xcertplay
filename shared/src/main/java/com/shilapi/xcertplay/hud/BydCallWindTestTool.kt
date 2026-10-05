@@ -135,7 +135,9 @@ internal object BydCallWindTestTool {
             callAttempted = true
             setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_IN_CALL, callback)
             mcuCallAttempted = true
-            emit("mcu call-state active result=${mcuCallState.set(active = true)}")
+            val mcuResult = mcuCallState.set(active = true)
+            emit("mcu call-state active result=$mcuResult success=${mcuResult == MCU_SUCCESS}")
+            check(mcuResult == MCU_SUCCESS) { "mcu call-state active failed result=$mcuResult" }
             muteAttempted = true
             muteSetter.invoke(audio, CALL_CLIENT_BT, true)
             modeAttempted = true
@@ -154,7 +156,9 @@ internal object BydCallWindTestTool {
             if (muteAttempted) attempt { muteSetter.invoke(audio, CALL_CLIENT_BT, false) }
             if (callAttempted) attempt { setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_NORMAL, callback) }
             if (mcuCallAttempted) attempt {
-                emit("mcu call-state release result=${mcuCallState.set(active = false)}")
+                val mcuResult = mcuCallState.set(active = false)
+                emit("mcu call-state release result=$mcuResult success=${mcuResult == MCU_SUCCESS}")
+                check(mcuResult == MCU_SUCCESS) { "mcu call-state release failed result=$mcuResult" }
             }
             if (modeAttempted) attempt { modeSetter.invoke(audio, AudioManager.MODE_NORMAL, callback, packageName) }
             if (modeAttempted) attempt {
@@ -196,6 +200,7 @@ internal object BydCallWindTestTool {
     private const val MCU_CALL_STATE_EVENT = -0x55fffead
     private const val MCU_CALL_ACTIVE = 0
     private const val MCU_CALL_RELEASED = 1
+    private const val MCU_SUCCESS = 0
     private const val MODIFY_PHONE_STATE = "android.permission.MODIFY_PHONE_STATE"
     private const val MODIFY_AUDIO_SETTINGS = "android.permission.MODIFY_AUDIO_SETTINGS"
 }
