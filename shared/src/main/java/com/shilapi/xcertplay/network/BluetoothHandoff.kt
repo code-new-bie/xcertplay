@@ -93,11 +93,58 @@ class BluetoothHandoff private constructor(context: Context) {
     init {
         // Repair priorities left off by a process that died while holding.
         handler.post {
+            if (!prefs.getBoolean(KEY_STUCK_OFF_REPAIRED, false)) repairStuckPhones()
             val address = prefs.getString(KEY_HELD_ADDRESS, null) ?: return@post
             if (target != null) return@post
             report("Bluetooth handoff: restoring links left off by an earlier run for $address")
             for (link in Link.values()) restoreLink(link, address)
         }
+    }
+
+    /**
+     * Earlier builds could restore a phone's HFP/A2DP to off (they saved their own off as the
+     * original), which stops the head unit from ever reconnecting it. Once, turn those links on again
+     * for paired phones and reconnect them.
+     */
+    private fun repairStuckPhones() {
+        val phones = runCatching { adapter?.bondedDevices.orEmpty() }.getOrDefault(emptySet())
+            .filter { it.bluetoothClass?.majorDeviceClass == android.bluetooth.BluetoothClass.Device.Major.PHONE }
+        var pending = Link.values().size
+        for (link in Link.values()) {
+            withProxy(link) { profile ->
+                for (phone in phones) {
+                    val priority = call(profile, "getPriority", phone) as? Int ?: continue
+                    if (priority != PRIORITY_OFF) continue
+                    val set = describe(call(profile, "setPriority", phone, PRIORITY_ON))
+                    val reconnect = describe(call(profile, "connect", phone))
+                    report("${link.label} to ${phone.address} was left off; turned on $set, reconnect $reconnect")
+                }
+                if (--pending == 0) prefs.edit().putBoolean(KEY_STUCK_OFF_REPAIRED, true).apply()
+            }
+        }
+    }
+
+    /**
+     * The app is exiting: restore the links now instead of after [RELEASE_DELAY_MS], and wait up to
+     * [timeoutMillis] for it. Call from a background thread.
+     */
+    fun releaseNowBlocking(timeoutMillis: Long): Boolean {
+        handler.post {
+            handler.removeCallbacks(delayedRelease)
+            if (target != null) {
+                releaseNow("app exit")
+            } else {
+                prefs.getString(KEY_HELD_ADDRESS, null)?.let { address ->
+                    for (link in Link.values()) restoreLink(link, address)
+                }
+            }
+        }
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (Link.values().none { prefs.contains(priorityKey(it)) }) return true
+            Thread.sleep(50)
+        }
+        return false
     }
 
     /**
@@ -161,7 +208,10 @@ class BluetoothHandoff private constructor(context: Context) {
         val device = remoteDevice(address) ?: return
         val savedKey = priorityKey(link)
         if (!prefs.contains(savedKey)) {
-            val original = (call(profile, "getPriority", device) as? Int) ?: PRIORITY_ON
+            // Off is what this class sets; reading it means an earlier run never restored, so it is
+            // not the user's choice and must not be saved as the original.
+            val read = call(profile, "getPriority", device) as? Int
+            val original = read?.takeIf { it > PRIORITY_OFF } ?: PRIORITY_ON
             prefs.edit().putString(KEY_HELD_ADDRESS, address).putInt(savedKey, original).commit()
         }
         val off = describe(call(profile, "setPriority", device, PRIORITY_OFF))
@@ -182,7 +232,7 @@ class BluetoothHandoff private constructor(context: Context) {
     private fun restoreLink(link: Link, address: String) {
         val key = priorityKey(link)
         if (!prefs.contains(key)) return
-        val original = prefs.getInt(key, PRIORITY_ON).takeIf { it >= 0 } ?: PRIORITY_ON
+        val original = prefs.getInt(key, PRIORITY_ON).takeIf { it > PRIORITY_OFF } ?: PRIORITY_ON
         withProxy(link) { profile ->
             if (link in held) return@withProxy
             val device = remoteDevice(address) ?: return@withProxy
@@ -279,6 +329,7 @@ class BluetoothHandoff private constructor(context: Context) {
         private const val PRIORITY_OFF = 0
         private const val PRIORITY_ON = 100
         private const val KEY_HELD_ADDRESS = "held_address"
+        private const val KEY_STUCK_OFF_REPAIRED = "stuck_off_repaired"
 
         @Volatile
         private var instance: BluetoothHandoff? = null

@@ -80,8 +80,10 @@ import com.shilapi.xcertplay.hud.BydCallUiSettings
 import com.shilapi.xcertplay.hud.BydVehicleAccess
 import com.shilapi.xcertplay.hud.BydVehicleSettings
 import com.shilapi.xcertplay.hud.BydWheelSpeedSource
+import com.shilapi.xcertplay.network.BluetoothHandoff
 import com.shilapi.xcertplay.network.BluetoothHandoffSettings
 import com.shilapi.xcertplay.network.P2pChannelPreference
+import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WifiScanPauseSettings
 import com.shilapi.xcertplay.transport.EvChargingConnectors
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
@@ -4430,10 +4432,21 @@ class CarPlayHostActivity : ComponentActivity() {
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
         teardownExecutor.execute {
             oldController?.close()
-            val clean = oldController?.awaitClosed(CONTROLLER_CLOSE_TIMEOUT_MILLIS) ?: true
+            // Exiting gives the wireless teardown (P2P group removal) longer before the process ends.
+            val closeTimeout = if (terminateProcess) EXIT_CLOSE_TIMEOUT_MILLIS else CONTROLLER_CLOSE_TIMEOUT_MILLIS
+            val clean = oldController?.awaitClosed(closeTimeout) ?: true
             oldSink?.close()
             airPlayCommandExecutor.shutdown()
             if (terminateProcess) {
+                // The delayed restores would never run once the process is killed: do them now.
+                val bluetooth = BluetoothHandoff.shared(applicationContext).releaseNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS)
+                val wifiSearch = WifiScanPause.shared(applicationContext).resumeNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS)
+                Log.i(TAG, "exit cleanup wireless=$clean bluetoothRestored=$bluetooth wifiSearchResumed=$wifiSearch")
+                appendFileLog(
+                    "Exit cleanup: wireless stack closed=$clean, Bluetooth restored=$bluetooth, " +
+                        "Wi-Fi search resumed=$wifiSearch",
+                    System.currentTimeMillis(),
+                )
                 applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
             }
             Log.i(TAG, "shutdown complete clean=$clean")
@@ -4903,6 +4916,8 @@ class CarPlayHostActivity : ComponentActivity() {
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
+        const val EXIT_CLOSE_TIMEOUT_MILLIS = 8_000L
+        const val EXIT_RESTORE_TIMEOUT_MILLIS = 5_000L
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
         const val PROTOCOL_TRACE_PREFIX = "TRACE "
         const val THREE_FINGER_COUNT = 3

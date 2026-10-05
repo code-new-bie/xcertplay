@@ -72,6 +72,19 @@ class WifiScanPause private constructor(context: Context) {
         }
     }
 
+    /**
+     * The app is exiting: resume the search now instead of after [RESUME_DELAY_MS], waiting up to
+     * [timeoutMillis]. Call from a background thread.
+     */
+    fun resumeNowBlocking(timeoutMillis: Long): Boolean = runCatching {
+        worker.submit<Boolean> {
+            pendingResume?.cancel(false)
+            pendingResume = null
+            if (prefs.getBoolean(KEY_PAUSED, false)) setSearch(enabled = true)
+            !prefs.getBoolean(KEY_PAUSED, false)
+        }.get(timeoutMillis, TimeUnit.MILLISECONDS)
+    }.getOrDefault(false)
+
     // Worker thread.
     private fun setSearch(enabled: Boolean) {
         val output = runCatching {
