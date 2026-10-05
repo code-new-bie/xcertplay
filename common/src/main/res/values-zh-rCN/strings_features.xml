@@ -70,7 +70,5 @@
     <string name="wifi_scan_pause_note">比亚迪车机在 Wi-Fi 未连接时每 10 秒搜索一次网络，每次都会把无线网卡拉离 CarPlay 信道。开启后通过已授权的 ADB 在无线 CarPlay 期间暂停搜索，CarPlay 结束 15 秒后恢复；期间车机不会自动连接已保存的 Wi-Fi。需要先授权 ADB（比亚迪分组），未授权时不生效。</string>
     <string name="cluster_song_label">仪表显示歌曲/歌词</string>
     <string name="cluster_song_desc">在仪表的音乐卡片中显示 CarPlay 歌曲</string>
-    <string name="cluster_song_on_change_label">仅在换歌时显示</string>
-    <string name="cluster_song_on_change_desc">新歌显示 5 秒后清空卡片</string>
     <string name="cluster_song_note">显示“歌名 — 歌手”及播放/暂停；想显示歌词，请在音乐 App（QQ 音乐、网易云音乐等）中打开“车载/蓝牙歌词”，它会把当前歌词放进歌名。通过已授权的 ADB 写入，卡片显示为“其他”音源。</string>
 </resources>

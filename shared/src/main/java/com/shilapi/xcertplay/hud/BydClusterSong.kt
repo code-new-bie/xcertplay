@@ -13,20 +13,11 @@ import java.util.concurrent.TimeUnit
 object BydClusterSongSettings {
     private const val PREFS = "xcertplay_byd_cluster_song"
     private const val KEY_ENABLED = "enabled"
-    private const val KEY_ON_CHANGE = "only_on_change"
 
     fun enabled(context: Context): Boolean = prefs(context).getBoolean(KEY_ENABLED, false)
 
     fun setEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
-        BydClusterSong.settingChanged()
-    }
-
-    /** Show a new song for a few seconds only, then empty the card. */
-    fun onlyOnChange(context: Context): Boolean = prefs(context).getBoolean(KEY_ON_CHANGE, false)
-
-    fun setOnlyOnChange(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_ON_CHANGE, enabled).apply()
         BydClusterSong.settingChanged()
     }
 
@@ -75,7 +66,6 @@ internal object BydClusterSong {
     private const val STATE_PLAYING = 1
     private const val STATE_PAUSED = 2
     private const val STATE_STOPPED = 3
-    private const val ON_CHANGE_MILLIS = 5_000L
 
     private val writer = Executors.newSingleThreadScheduledExecutor { Thread(it, "xcertplay-cluster-song").apply { isDaemon = true } }
     private val lock = Any()
@@ -83,8 +73,6 @@ internal object BydClusterSong {
     @Volatile private var log: (String) -> Unit = {}
     private var current: ClusterCard? = null // the song now playing, followed even while the option is off
     private var wanted: ClusterCard? = null // what the dashboard should show; null = no card
-    private var announced: String? = null // the last song shown in the "only on change" mode
-    private var changeToken: Any? = null
     private var shown: ClusterCard? = null // writer thread
     private var adb: LocalAdb? = null // writer thread
 
@@ -96,23 +84,15 @@ internal object BydClusterSong {
             if (card == current) return
             current = card
         }
-        apply(newSong = true)
+        apply()
     }
 
-    fun settingChanged() {
-        synchronized(lock) {
-            announced = null
-            changeToken = null
-        }
-        apply(newSong = true)
-    }
+    fun settingChanged() = apply()
 
     /** The CarPlay session ended: stop the card and drop the adb link. */
     fun end() {
         synchronized(lock) {
             current = null
-            announced = null
-            changeToken = null
             wanted = null
         }
         writer.execute {
@@ -122,35 +102,11 @@ internal object BydClusterSong {
         }
     }
 
-    private fun apply(newSong: Boolean) {
+    private fun apply() {
         val context = app ?: return
         val enabled = BydClusterSongSettings.enabled(context)
-        val onChange = BydClusterSongSettings.onlyOnChange(context)
-        synchronized(lock) {
-            val song = current?.takeIf { enabled }
-            wanted = when {
-                song == null -> null
-                !onChange -> song
-                announced != song.text && newSong -> {
-                    announced = song.text
-                    val token = Any().also { changeToken = it }
-                    writer.schedule({ endChange(token) }, ON_CHANGE_MILLIS, TimeUnit.MILLISECONDS)
-                    song
-                }
-                changeToken != null -> song
-                else -> ClusterCard.EMPTY
-            }
-        }
+        synchronized(lock) { wanted = current?.takeIf { enabled } }
         writer.execute { sync() }
-    }
-
-    private fun endChange(token: Any) {
-        synchronized(lock) {
-            if (changeToken !== token) return
-            changeToken = null
-            if (wanted != null) wanted = ClusterCard.EMPTY
-        }
-        sync()
     }
 
     // Writer thread: brings the dashboard to the newest wanted card.

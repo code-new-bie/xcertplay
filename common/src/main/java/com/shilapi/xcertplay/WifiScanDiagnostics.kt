@@ -10,10 +10,14 @@ import com.shilapi.xcertplay.adb.LocalAdb
  * take the radio off the CarPlay channel.
  */
 internal object WifiScanDiagnostics {
+    // History sections list the oldest records first, so keep the tail: the most recent scans and
+    // who asked for them (WorkSource), plus whether the 10-second connectivity scan is paused.
     private val COMMANDS = listOf(
         "settings get global wifi_scan_always_enabled",
-        "dumpsys wifi | grep -iE 'scan|pno|periodic|request' | head -n 200",
-        "dumpsys wifiscanner | head -n 120",
+        "settings get secure location_mode",
+        "dumpsys wifi | grep -iE 'WifiConnectivityManager|periodicScan|enableWifiConnectivityManager' | tail -n 30",
+        "dumpsys wifiscanner | grep -E 'addSingleScanRequest|addBackgroundScanRequest|startScan' | tail -n 60",
+        "dumpsys wifi | grep -iE 'scan request from|Foreground scan app|Background scan app' | tail -n 30",
     )
 
     fun collect(context: Context): Pair<LocalAdb.Access, List<String>> =

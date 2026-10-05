@@ -1273,15 +1273,6 @@ class CarPlayHostActivity : ComponentActivity() {
                     checked = BydClusterSongSettings.enabled(this),
                     description = getString(R.string.cluster_song_desc),
                 ) { checked -> BydClusterSongSettings.setEnabled(this, checked) },
-                topMarginDp = 12,
-            )
-            addSetting(
-                page,
-                settingsSwitchRow(
-                    label = getString(R.string.cluster_song_on_change_label),
-                    checked = BydClusterSongSettings.onlyOnChange(this),
-                    description = getString(R.string.cluster_song_on_change_desc),
-                ) { checked -> BydClusterSongSettings.setOnlyOnChange(this, checked) },
                 getString(R.string.cluster_song_note),
                 topMarginDp = 12,
             )
