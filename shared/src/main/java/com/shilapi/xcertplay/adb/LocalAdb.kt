@@ -26,7 +26,7 @@ class LocalAdb(
 ) : Closeable {
     enum class Access { READY, NOT_APPROVED, UNREACHABLE, UNSUPPORTED }
 
-    private var socket: Socket? = null
+    @Volatile private var socket: Socket? = null
     private var input: InputStream? = null
     private var output: OutputStream? = null
     private var nextStreamId = 1
@@ -38,12 +38,14 @@ class LocalAdb(
         if (socket?.isClosed == false) return Access.READY
         return try {
             val address = InetSocketAddress(host, port)
-            val opened = Socket().apply {
+            val opened = Socket()
+            socket = opened
+            if (closed) throw IOException("ADB client closed")
+            opened.apply {
                 connect(address, CONNECT_TIMEOUT_MS)
                 soTimeout = READ_TIMEOUT_MS
                 tcpNoDelay = true
             }
-            socket = opened
             input = opened.getInputStream()
             output = opened.getOutputStream()
             send(AdbPacket(AdbPacket.CNXN, AdbPacket.VERSION, AdbPacket.MAX_PAYLOAD, "host::\u0000".toByteArray()))
@@ -93,6 +95,8 @@ class LocalAdb(
 
     override fun close() {
         closed = true
+        // Wake a blocked handshake/read before waiting for connect()/shell()'s monitor.
+        runCatching { socket?.close() }
         synchronized(this) { closeQuietly() }
     }
 

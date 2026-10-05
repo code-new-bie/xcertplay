@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.util.Log
+import android.os.SystemClock
 import com.shilapi.xcertplay.airplay.AudioCodecKind
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import com.shilapi.xcertplay.airplay.MicrophoneCounters
@@ -32,6 +33,7 @@ internal class MicrophoneUplink(
     private val running = AtomicBoolean(false)
     private val firstPacketLogged = AtomicBoolean(false)
     val sentPackets = java.util.concurrent.atomic.AtomicLong()
+    val lastSentMs = java.util.concurrent.atomic.AtomicLong(-1)
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var socket: DatagramSocket? = null
     @Volatile private var opusEncoder: OpusEncoder? = null
@@ -44,6 +46,8 @@ internal class MicrophoneUplink(
             true
         } catch (error: Exception) {
             Log.e(TAG, "microphone start failed", error)
+            report("Microphone start failed audioType=${config.audioType} elapsedMs=${SystemClock.elapsedRealtime()} " +
+                "reason=${error.javaClass.simpleName} ${error.message?.take(160)}")
             release()
             false
         }
@@ -106,7 +110,8 @@ internal class MicrophoneUplink(
                     AudioRecord.READ_BLOCKING,
                 )
                 if (count < 0) {
-                    if (running.get()) Log.e(TAG, "microphone read failed code=$count")
+                    if (running.get()) report("Microphone read failed audioType=${config.audioType} code=$count " +
+                        "elapsedMs=${SystemClock.elapsedRealtime()}")
                     return
                 }
                 if (count == 0) continue
@@ -127,7 +132,11 @@ internal class MicrophoneUplink(
                 }
             }
         } catch (error: Exception) {
-            if (running.get()) Log.e(TAG, "microphone capture failed", error)
+            if (running.get()) {
+                Log.e(TAG, "microphone capture failed", error)
+                report("Microphone capture failed audioType=${config.audioType} elapsedMs=${SystemClock.elapsedRealtime()} " +
+                    "reason=${error.javaClass.simpleName} ${error.message?.take(160)}")
+            }
         } finally {
             running.set(false)
             try {
@@ -160,7 +169,10 @@ internal class MicrophoneUplink(
             try {
                 activeSocket.send(DatagramPacket(packet, packet.size, config.host, config.port))
                 sentPackets.incrementAndGet()
+                lastSentMs.set(SystemClock.elapsedRealtime())
                 if (firstPacketLogged.compareAndSet(false, true)) {
+                    report("Microphone first sent audioType=${config.audioType} payloadType=${config.payloadType} " +
+                        "elapsedMs=${SystemClock.elapsedRealtime()} bytes=${packet.size}")
                     Log.i(
                         TAG,
                         "microphone first packet bytes=${packet.size} body=${body.size} " +
@@ -198,6 +210,11 @@ internal class MicrophoneUplink(
             if (worker.isAlive) worker.interrupt()
         }
         release()
+    }
+
+    private fun report(message: String) {
+        Log.i(TAG, message)
+        runCatching { diagnostic(message) }
     }
 
     @Synchronized

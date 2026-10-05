@@ -10,6 +10,7 @@ import android.media.MediaCodecList
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import com.shilapi.xcertplay.airplay.AudioCodecKind
@@ -23,6 +24,10 @@ import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Android rendering backend for the CarPlay media engine. Video frames are
@@ -59,10 +64,16 @@ class AndroidMediaSink(
     private val activeScreenTypes = mutableSetOf<Int>()
     private val videoGaps = ConcurrentHashMap<Int, ArrivalGapDetector>()
     private val callStreams = ConcurrentHashMap<AudioStreamId, CallStreamStats>()
+    private val callLogLock = Any()
+    private val callLogger = ScheduledThreadPoolExecutor(1) {
+        Thread(it, "xcertplay-call-diagnostics").apply { isDaemon = true }
+    }.apply { removeOnCancelPolicy = true }
+    private var callLogTask: ScheduledFuture<*>? = null
 
     /** Packets of a call or Siri stream, logged when it ends to show whether audio really flowed. */
     private class CallStreamStats(val startedMs: Long) {
-        val received = java.util.concurrent.atomic.AtomicLong()
+        val received = AtomicLong()
+        val lastReceivedMs = AtomicLong(-1)
     }
     @Volatile private var mediaMetricsMonitor = mediaMetricsMonitor
 
@@ -138,7 +149,12 @@ class AndroidMediaSink(
             else -> Unit
         }
         if (channelOf(id) == AudioChannel.PHONE || channelOf(id) == AudioChannel.ASSISTANT) {
-            callStreams[id] = CallStreamStats(System.nanoTime() / 1_000_000L)
+            callStreams[id] = CallStreamStats(SystemClock.elapsedRealtime())
+            synchronized(callLogLock) {
+                if (callLogTask == null && !callLogger.isShutdown) {
+                    callLogTask = callLogger.scheduleWithFixedDelay(::logCallTraffic, 5, 5, TimeUnit.SECONDS)
+                }
+            }
         }
         audioRenderer(id, format).start()
     }
@@ -151,37 +167,55 @@ class AndroidMediaSink(
     ).channel
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
-        callStreams[id]?.received?.incrementAndGet()
+        callStreams[id]?.let {
+            val now = SystemClock.elapsedRealtime()
+            it.lastReceivedMs.set(now)
+            if (it.received.incrementAndGet() == 1L) {
+                report("Call audio first packet type=${id.type} audioType=${id.audioType} elapsedMs=$now")
+            }
+        }
         audioRenderer(id, format).submit(rtp, sample)
     }
 
     override fun onAudioStopped(id: AudioStreamId) {
         if (channelOf(id) == AudioChannel.PHONE) CarPlayAudioFocus.onCallStopped()
         callStreams.remove(id)?.let { stats ->
-            val seconds = (System.nanoTime() / 1_000_000L - stats.startedMs) / 1000.0
+            val now = SystemClock.elapsedRealtime()
+            val seconds = (now - stats.startedMs) / 1000.0
             report(
                 "Call audio stream ended type=${id.type} audioType=${id.audioType} after " +
-                    "${"%.1f".format(seconds)}s: received ${stats.received.get()} packets",
+                    "${"%.1f".format(seconds)}s: received ${stats.received.get()} packets " +
+                    "elapsedMs=$now lastDownGapMs=${stats.lastReceivedMs.get().takeIf { it >= 0 }?.let { now - it } ?: "none"}",
             )
         }
         audioRenderers.remove(id)?.close()
+        synchronized(callLogLock) {
+            if (callStreams.isEmpty()) { callLogTask?.cancel(false); callLogTask = null }
+        }
     }
 
     override fun onMicrophoneStarted(id: AudioStreamId, config: MicrophoneConfig) {
         val uplink = microphoneUplinks.computeIfAbsent(id) {
             MicrophoneUplink(context, config, microphoneGainPercent, diagnostic)
         }
-        if (!uplink.start()) microphoneUplinks.remove(id, uplink)
+        val started = uplink.start()
+        if (!started) microphoneUplinks.remove(id, uplink)
+        report("Microphone uplink start type=${id.type} audioType=${id.audioType} started=$started " +
+            "elapsedMs=${SystemClock.elapsedRealtime()} codec=${config.codec} rate=${config.sampleRate}")
     }
 
     override fun onMicrophoneStopped(id: AudioStreamId) {
         microphoneUplinks.remove(id)?.let { uplink ->
             uplink.close()
-            report("Microphone uplink ended type=${id.type} audioType=${id.audioType}: sent ${uplink.sentPackets.get()} packets")
+            val now = SystemClock.elapsedRealtime()
+            report("Microphone uplink ended type=${id.type} audioType=${id.audioType}: sent ${uplink.sentPackets.get()} packets " +
+                "elapsedMs=$now lastUpGapMs=${uplink.lastSentMs.get().takeIf { it >= 0 }?.let { now - it } ?: "none"}")
         }
     }
 
     fun close() {
+        callLogger.shutdownNow()
+        callStreams.keys.toList().forEach(::onAudioStopped)
         videoDecoders.values.forEach(VideoDecoder::close)
         videoDecoders.clear()
         videoRecoveryHandlers.clear()
@@ -210,9 +244,22 @@ class AndroidMediaSink(
         runCatching { diagnostic(message) }
     }
 
+    private fun logCallTraffic() {
+        val now = SystemClock.elapsedRealtime()
+        callStreams.forEach { (id, stats) ->
+            val uplink = microphoneUplinks[id]
+            report("Call audio traffic type=${id.type} audioType=${id.audioType} elapsedMs=$now " +
+                "ageMs=${now - stats.startedMs} downPackets=${stats.received.get()} " +
+                "upPackets=${uplink?.sentPackets?.get() ?: 0} microphoneActive=${uplink != null} " +
+                "lastDownGapMs=${stats.lastReceivedMs.get().takeIf { it >= 0 }?.let { now - it } ?: "none"} " +
+                "lastUpGapMs=${uplink?.lastSentMs?.get()?.takeIf { it >= 0 }?.let { now - it } ?: "none"}")
+        }
+    }
+
     /** The log line's time is when packets resumed; the stall began [gapMs] earlier. */
     private fun reportStall(stream: String, gapMs: Long) {
-        val message = "Media stall $stream: no packets for ${gapMs}ms"
+        val now = SystemClock.elapsedRealtime()
+        val message = "Media stall $stream: no packets for ${gapMs}ms elapsedMs=$now gapStartMs=${now - gapMs}"
         Log.w("xcertplay-usb", message)
         runCatching { diagnostic(message) }
     }

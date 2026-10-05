@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Which of the iPhone's classic Bluetooth links wireless CarPlay turns off. */
 object BluetoothHandoffSettings {
@@ -129,22 +131,38 @@ class BluetoothHandoff private constructor(context: Context) {
      * [timeoutMillis] for it. Call from a background thread.
      */
     fun releaseNowBlocking(timeoutMillis: Long): Boolean {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "Bluetooth restore must not block the main thread" }
+        require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        val releaseApplied = CountDownLatch(1)
         handler.post {
-            handler.removeCallbacks(delayedRelease)
-            if (target != null) {
-                releaseNow("app exit")
-            } else {
-                prefs.getString(KEY_HELD_ADDRESS, null)?.let { address ->
-                    for (link in Link.values()) restoreLink(link, address)
+            try {
+                handler.removeCallbacks(delayedRelease)
+                if (target != null) {
+                    releaseNow("app exit")
+                } else {
+                    prefs.getString(KEY_HELD_ADDRESS, null)?.let { address ->
+                        for (link in Link.values()) restoreLink(link, address)
+                    }
                 }
+            } finally {
+                releaseApplied.countDown()
             }
         }
-        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
-        while (SystemClock.elapsedRealtime() < deadline) {
-            if (Link.values().none { prefs.contains(priorityKey(it)) }) return true
-            Thread.sleep(50)
+        return try {
+            if (!releaseApplied.await(timeoutMillis, TimeUnit.MILLISECONDS)) return false
+            var restored = Link.values().none { prefs.contains(priorityKey(it)) }
+            while (!restored) {
+                val remaining = deadline - SystemClock.elapsedRealtime()
+                if (remaining <= 0) break
+                Thread.sleep(minOf(50L, remaining))
+                restored = Link.values().none { prefs.contains(priorityKey(it)) }
+            }
+            restored
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
         }
-        return false
     }
 
     /**
@@ -234,16 +252,35 @@ class BluetoothHandoff private constructor(context: Context) {
         if (!prefs.contains(key)) return
         val original = prefs.getInt(key, PRIORITY_ON).takeIf { it > PRIORITY_OFF } ?: PRIORITY_ON
         withProxy(link) { profile ->
-            if (link in held) return@withProxy
+            if (link in held || !prefs.contains(key) || prefs.getString(KEY_HELD_ADDRESS, null) != address) {
+                return@withProxy
+            }
             val device = remoteDevice(address) ?: return@withProxy
-            val priority = describe(call(profile, "setPriority", device, original))
-            val reconnect = if (original > PRIORITY_OFF) describe(call(profile, "connect", device)) else "skipped"
+            val priority = call(profile, "setPriority", device, original)
+            val readBack = call(profile, "getPriority", device)
+            if (priority != true || readBack != original) {
+                report("${link.label} to $address restore pending: priority $original ${describe(priority)}, " +
+                    "read back ${describe(readBack)}")
+                return@withProxy
+            }
+            val state = runCatching { profile.getConnectionState(device) }.getOrDefault(-1)
+            val reconnect = if (state == BluetoothProfile.STATE_CONNECTED || state == BluetoothProfile.STATE_CONNECTING) {
+                true
+            } else {
+                call(profile, "connect", device)
+            }
+            if (reconnect != true) {
+                report("${link.label} to $address restore pending: priority $original ok, " +
+                    "reconnect ${describe(reconnect)}")
+                return@withProxy
+            }
             val editor = prefs.edit().remove(key)
             if (Link.values().none { other -> other != link && prefs.contains(priorityKey(other)) }) {
                 editor.remove(KEY_HELD_ADDRESS)
             }
-            editor.commit()
-            report("${link.label} to $address restored: priority $original $priority, reconnect $reconnect")
+            val saved = editor.commit()
+            report("${link.label} to $address restored: priority $original ok, " +
+                "reconnect ${describe(reconnect)}, connection state=$state, saved=$saved")
         }
     }
 

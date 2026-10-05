@@ -14,6 +14,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class AirPlayDeviceInfo(
@@ -61,6 +62,7 @@ class AirPlaySession(
     private val listener: AirPlaySessionListener,
     private val media: AirPlayMediaHandler,
 ) : Closeable {
+    internal val diagnosticId = UUID.randomUUID().toString().take(8)
     internal val pairSetup = PairSetup(identity, pairings)
     internal val pairVerify = PairVerify(identity, pairings)
     internal var cipher: ControlCipher? = null

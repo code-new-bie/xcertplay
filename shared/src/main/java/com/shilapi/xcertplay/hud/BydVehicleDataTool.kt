@@ -3,9 +3,16 @@ package com.shilapi.xcertplay.hud
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
+import java.io.File
+import java.io.RandomAccessFile
 import java.lang.reflect.InvocationTargetException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
-/** Read-only SDK bridge running as adb shell. Uses this firmware's SDK instead of another ROM's IDs. */
+/** SDK bridge running as adb shell. Uses this firmware's SDK instead of another ROM's IDs. */
 object BydVehicleDataTool {
     private class Device(private val name: String, context: Context) {
         private val type = Class.forName("android.hardware.bydauto.$name")
@@ -19,7 +26,7 @@ object BydVehicleDataTool {
         /** Calls a setter; the result code, or the failure, is returned as text for the test log. */
         fun write(method: String, vararg args: Any): String = try {
             val types = args.map { if (it is ByteArray) ByteArray::class.java else Int::class.javaPrimitiveType!! }
-            type.getMethod(method, *types.toTypedArray()).invoke(instance, *args).toString()
+            checkNotNull(type).getMethod(method, *types.toTypedArray()).invoke(instance, *args).toString()
         } catch (error: InvocationTargetException) {
             val cause = error.targetException
             "failed ${cause.javaClass.simpleName} ${cause.message?.take(80).orEmpty()}"
@@ -77,6 +84,106 @@ object BydVehicleDataTool {
         println("XCERTPLAY clustersong ${results.joinToString(" ")}")
     }
 
+    /** Reuses the SDK instance and feature IDs for every update in this shell process. */
+    private class ClusterInstrument(context: Context) {
+        private val ids = Class.forName("android.hardware.bydauto.BYDAutoFeatureIds")
+        private val sourceId = ids.getField("INSTRUMENT_MUSIC_SOURCE_SET").getInt(null)
+        private val stateId = ids.getField("INSTRUMENT_MUSIC_STATE_SET").getInt(null)
+        private val infoId = ids.getField("INSTRUMENT_MUSIC_INFO_SET").getInt(null)
+        private val device = Device("instrument.BYDAutoInstrumentDevice", context)
+
+        fun apply(frame: ClusterWriterFrame): String {
+            val source = if (frame.state != 3) {
+                device.write("setMediaState", INSTRUMENT_DEVICE, sourceId, 11)
+            } else "0"
+            val state = device.write("setMediaState", INSTRUMENT_DEVICE, stateId, frame.state)
+            val text = device.write("setMediaInfo", INSTRUMENT_DEVICE, infoId, frame.text.toByteArray(Charsets.UTF_16LE))
+            return "source=$source state=$state text=$text"
+        }
+
+        fun clear(): String = apply(ClusterWriterFrame("", 0, 0, 0, 3, true, " "))
+    }
+
+    private fun systemContext(): Context {
+        runCatching { android.os.Looper.prepareMainLooper() }
+        val type = Class.forName("android.app.ActivityThread")
+        val main = type.getMethod("systemMain").invoke(null)
+        return type.getMethod("getSystemContext").invoke(main) as Context
+    }
+
+    private fun clusterSongWatch(args: List<String>) {
+        val token = args.getOrNull(0) ?: error("missing cluster session token")
+        require(token.matches(Regex("[a-f0-9]{32}")))
+        val path = String(java.util.Base64.getDecoder().decode(args.getOrNull(1)), Charsets.UTF_8)
+        val file = File(path)
+        require(file.isAbsolute && file.name == "$token.state")
+        val mailbox = ClusterWriterMailbox(file)
+        val finished = AtomicBoolean(false)
+        val cleared = AtomicBoolean(false)
+        val clearDone = CountDownLatch(1)
+        val clearResult = AtomicReference("state=pending text=pending")
+        val instrument = AtomicReference<ClusterInstrument?>()
+        fun emit(line: String) { println(line); System.out.flush() }
+        fun clearOnce(): String {
+            if (cleared.compareAndSet(false, true)) {
+                try {
+                    clearResult.set(runCatching { instrument.get()?.clear() ?: "state=unavailable text=unavailable" }
+                        .getOrElse { "state=failed text=failed reason=${it.javaClass.simpleName}" })
+                } finally { clearDone.countDown() }
+            } else {
+                clearDone.await(ClusterWriterFrame.FORCE_STOP_GRACE_MS, TimeUnit.MILLISECONDS)
+            }
+            return clearResult.get()
+        }
+        emit("XCERTPLAY clusterwriter starting token=$token pid=${android.os.Process.myPid()}")
+        // Independent of SDK calls: even a hung binder cannot leave an orphan shell process.
+        thread(name = "xcertplay-cluster-watchdog", isDaemon = true) {
+            val watchdog = ClusterWriterWatchdog(token)
+            val fallbackClearStarted = AtomicBoolean(false)
+            while (!finished.get()) {
+                val now = SystemClock.elapsedRealtime()
+                if (watchdog.shouldTerminate(mailbox.read(), now)) {
+                    mailbox.delete()
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                    return@thread
+                }
+                if (watchdog.shouldTryClear(now) && !cleared.get() && fallbackClearStarted.compareAndSet(false, true)) {
+                    thread(name = "xcertplay-cluster-forced-clear", isDaemon = true) {
+                        emit("XCERTPLAY clusterwriter forced-clear token=$token ${clearOnce()}")
+                    }
+                }
+                Thread.sleep(ClusterWriterFrame.POLL_MS)
+            }
+        }
+        val shutdownHook = Thread({ runCatching { clearOnce() } }, "xcertplay-cluster-clear")
+        Runtime.getRuntime().addShutdownHook(shutdownHook)
+        try {
+            RandomAccessFile(File(file.parentFile, "writer.lock"), "rw").channel.use { channel ->
+                val deadline = SystemClock.elapsedRealtime() + 4_500L
+                var ownership = channel.tryLock()
+                while (ownership == null && SystemClock.elapsedRealtime() < deadline) {
+                    Thread.sleep(ClusterWriterFrame.POLL_MS)
+                    ownership = channel.tryLock()
+                }
+                checkNotNull(ownership) { "another cluster writer is still active" }.use {
+                    val frame = mailbox.read()
+                    if (frame == null || frame.stopReason(token, SystemClock.elapsedRealtime()) != null) return@use
+                    val device = ClusterInstrument(systemContext())
+                    instrument.set(device)
+                    emit("XCERTPLAY clusterwriter ready token=$token pollMs=${ClusterWriterFrame.POLL_MS}")
+                    ClusterWriterLoop(token, mailbox::read, SystemClock::elapsedRealtime, Thread::sleep,
+                        device::apply, ::clearOnce, ::emit).run()
+                }
+            }
+        } finally {
+            try { clearOnce() } finally {
+                finished.set(true)
+                mailbox.delete()
+                Runtime.getRuntime().removeShutdownHook(shutdownHook)
+            }
+        }
+    }
+
     /**
      * Turns the head unit's automatic Wi-Fi network search on or off. BYD scans every 10 s while its
      * Wi-Fi client is not joined, pulling the radio off the CarPlay channel; the shell holds
@@ -98,14 +205,15 @@ object BydVehicleDataTool {
     @SuppressLint("PrivateApi")
     fun main(args: Array<String>) {
         try {
+            if (args.firstOrNull() == "clustersongwatch") {
+                clusterSongWatch(args.drop(1))
+                return
+            }
             if (args.firstOrNull() == "wifiscan") {
                 wifiScan(args.getOrNull(1) == "on")
                 return
             }
-            runCatching { android.os.Looper.prepareMainLooper() }
-            val thread = Class.forName("android.app.ActivityThread")
-            val main = thread.getMethod("systemMain").invoke(null)
-            val context = thread.getMethod("getSystemContext").invoke(main) as Context
+            val context = systemContext()
             val mode = args.firstOrNull() ?: return
             if (mode == "calltest") {
                 callInfoTest(context)

@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.airplay
 
 import android.util.Log
+import android.os.SystemClock
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import java.io.Closeable
 import java.io.File
@@ -9,6 +10,7 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.math.BigInteger
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /** Rendering seam for the decrypted CarPlay media streams. */
 interface MediaSink {
@@ -50,6 +52,8 @@ class CarPlayMediaEngine(
         val playoutLatencyMs: Int,
         @Volatile var firstSample: Int? = null,
         @Volatile var originNs: Long? = null,
+        val setupMs: Long = SystemClock.elapsedRealtime(),
+        val received: AtomicLong = AtomicLong(),
     )
 
     private data class PendingIapTunnel(
@@ -110,13 +114,18 @@ class CarPlayMediaEngine(
         // type 100); only the same (type, audioType) pair replaces a previous stream.
         val streamKey = StreamKey(session, type, audioType)
         val streamId = streamKey.audioStreamId
+        logAudioEnd(streamKey, "replacement SETUP")
         streams.remove(streamKey)?.close()
         audioMeta.remove(streamKey)
         audioCaptures.remove(streamKey)?.close()
         stopMicrophone(streamKey)
         sink.onAudioStopped(streamId)
 
-        val key = outputKey(session, stream) ?: return null
+        val key = outputKey(session, stream) ?: run {
+            session.logDebug("Audio SETUP rejected: session=${session.diagnosticId} type=$type audioType=$audioType " +
+                "reason=missing output key elapsedMs=${SystemClock.elapsedRealtime()}")
+            return null
+        }
         val format = AudioStreamCodec.fromFormatBits(
             (stream["audioFormat"] as? Number)?.toLong() ?: 0L,
             type,
@@ -132,6 +141,10 @@ class CarPlayMediaEngine(
         val latencyMs = (stream["audioLatencyMs"] as? Number)?.toInt() ?: 0
         val meta = AudioMeta(type, format, connectionId, latencyMs)
         val microphone = microphoneConfig(session, type, stream, format)
+        session.logDebug("Audio SETUP: session=${session.diagnosticId} elapsedMs=${meta.setupMs} " +
+            "type=$type audioType=$audioType codec=${format.codec} rate=${format.sampleRate} channels=${format.channels} " +
+            "micEnabled=$microphoneEnabled micPort=${(stream["dataPort"] as? Number)?.toInt() ?: 0} " +
+            "micPrepared=${microphone != null} latencyMs=$latencyMs")
         if (microphone != null) pendingMicrophone[streamKey] = microphone
 
         val capture = audioCaptureDirectory?.let { AudioPacketCapture(it, type) }
@@ -142,11 +155,15 @@ class CarPlayMediaEngine(
                 override fun onStarted(firstSample: Int) {
                     meta.firstSample = firstSample
                     meta.originNs = System.nanoTime()
+                    session.logDebug("Audio first RTP: session=${session.diagnosticId} type=$type audioType=$audioType " +
+                        "elapsedMs=${SystemClock.elapsedRealtime()} setupWaitMs=${SystemClock.elapsedRealtime() - meta.setupMs}")
                     sink.onAudioStarted(streamId, format, firstSample)
                 }
 
-                override fun onRtp(rtp: ByteArray, sample: Int) =
+                override fun onRtp(rtp: ByteArray, sample: Int) {
+                    meta.received.incrementAndGet()
                     sink.onAudioRtp(streamId, format, rtp, sample)
+                }
 
                 override fun onPacket(
                     wire: ByteArray,
@@ -287,6 +304,7 @@ class CarPlayMediaEngine(
 
     override fun onTeardown(session: AirPlaySession, type: Int) {
         if (type == STREAM_TYPE_DATA) clearPendingIapTunnel(session)
+        streams.keys.filter { it.session === session && it.type == type }.forEach { logAudioEnd(it, "iPhone TEARDOWN") }
         // TEARDOWN carries only the stream type; release every audioType variant of it.
         (pendingMicrophone.keys + startedMicrophone)
             .filter { it.session === session && it.type == type }
@@ -308,6 +326,7 @@ class CarPlayMediaEngine(
 
     override fun onSessionClosed(session: AirPlaySession) {
         clearPendingIapTunnel(session)
+        streams.keys.filter { it.session === session }.forEach { logAudioEnd(it, "CarPlay session closed") }
         (pendingMicrophone.keys + startedMicrophone)
             .filter { it.session === session }
             .forEach(::stopMicrophone)
@@ -329,6 +348,14 @@ class CarPlayMediaEngine(
     private fun replacePendingIapTunnel(session: AirPlaySession, next: PendingIapTunnel) {
         val previous = pendingIapTunnels.put(session, next)
         previous?.bridge?.close()
+    }
+
+    private fun logAudioEnd(key: StreamKey, reason: String) {
+        val meta = audioMeta[key] ?: return
+        key.session.logDebug("Audio stream removed: session=${key.session.diagnosticId} type=${key.type} " +
+            "audioType=${key.audioType} reason=$reason elapsedMs=${SystemClock.elapsedRealtime()} " +
+            "ageMs=${SystemClock.elapsedRealtime() - meta.setupMs} downPackets=${meta.received.get()} " +
+            "firstRtpSeen=${meta.firstSample != null} microphoneStarted=${key in startedMicrophone}")
     }
 
     private fun clearPendingIapTunnel(session: AirPlaySession? = null) {

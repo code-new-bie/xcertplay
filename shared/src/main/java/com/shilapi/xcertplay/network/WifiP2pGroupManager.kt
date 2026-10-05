@@ -160,7 +160,11 @@ class WifiP2pGroupManager(
             }
             return usableGroup
         } catch (failure: Exception) {
-            cleanupFailedStart(attempt)
+            try {
+                cleanupFailedStart(attempt)
+            } catch (cleanupFailure: Exception) {
+                failure.addSuppressed(cleanupFailure)
+            }
             throw failure
         }
     }
@@ -169,7 +173,6 @@ class WifiP2pGroupManager(
         val attempt: StartAttempt?
         val activeChannel: WifiP2pManager.Channel?
         val activeThread: HandlerThread?
-        val removeGroup: Boolean
         synchronized(stateLock) {
             if (closed) return
             closed = true
@@ -178,16 +181,18 @@ class WifiP2pGroupManager(
             stateLock.notifyAll()
             activeChannel = channel ?: attempt?.channel
             activeThread = callbackThread ?: attempt?.thread
-            removeGroup = created || attempt?.createSucceeded == true
+            if (activeChannel != null) attempt?.cleanupClaimed = true
             channel = null
             callbackThread = null
             startAttempt = null
         }
 
-        if (removeGroup && activeChannel != null) {
-            removeGroupBlocking(activeChannel)
+        try {
+            // Also remove during bring-up: createGroup may already have reached the driver.
+            if (activeChannel != null) removeStoppedGroup(activeChannel, attempt)
+        } finally {
+            activeThread?.quitSafely()
         }
-        activeThread?.quitSafely()
     }
 
     private fun createChannelListener(
@@ -203,18 +208,18 @@ class WifiP2pGroupManager(
     ): WifiP2pManager.ActionListener = object : WifiP2pManager.ActionListener {
         override fun onSuccess() {
             val activeChannel = attempt.channel
-            val removeDetachedGroup = synchronized(stateLock) {
+            val shouldRemoveDetachedGroup = synchronized(stateLock) {
                 attempt.createSucceeded = true
                 created = true
                 if (startAttempt === attempt && !attempt.stopped && !closed) {
                     stateLock.notifyAll()
                     false
                 } else {
-                    true
+                    !attempt.cleanupClaimed
                 }
             }
-            if (removeDetachedGroup && activeChannel != null) {
-                removeGroup(activeChannel, waitForCallback = false)
+            if (shouldRemoveDetachedGroup && activeChannel != null) {
+                removeDetachedGroup(activeChannel)
             }
         }
 
@@ -439,21 +444,23 @@ class WifiP2pGroupManager(
     private fun cleanupFailedStart(attempt: StartAttempt) {
         val failedChannel: WifiP2pManager.Channel?
         val failedThread: HandlerThread?
-        val removeGroup: Boolean
         synchronized(stateLock) {
+            // close() owns the same callback thread once it has captured the channel.
+            if (attempt.cleanupClaimed) return
+            attempt.cleanupClaimed = true
             if (startAttempt === attempt) startAttempt = null
             attempt.stopped = true
             stateLock.notifyAll()
             failedChannel = attempt.channel
             failedThread = attempt.thread
-            removeGroup = attempt.createSucceeded
             if (channel === failedChannel) channel = null
             if (callbackThread === failedThread) callbackThread = null
         }
-        if (removeGroup && failedChannel != null) {
-            removeGroupBlocking(failedChannel)
+        try {
+            if (failedChannel != null) removeStoppedGroup(failedChannel, attempt)
+        } finally {
+            failedThread?.quitSafely()
         }
-        failedThread?.quitSafely()
     }
 
     /** One createGroup request for [frequency] (null = the framework's own 5 GHz choice), retried while busy. */
@@ -483,9 +490,26 @@ class WifiP2pGroupManager(
                 config.groupOwnerIntent = WifiP2pConfig.GROUP_OWNER_INTENT_MAX
             }
 
-            ensureStartActive(attempt)
             Log.i(TAG, "Wi-Fi P2P create ${describe(frequency)}")
-            p2pManager.createGroup(p2pChannel, config, createActionListener(attempt))
+            synchronized(stateLock) {
+                ensureStartActiveLocked(attempt)
+                attempt.createCompletion = CountDownLatch(1)
+                val completion = attempt.createCompletion
+                val listener = createActionListener(attempt)
+                try {
+                    p2pManager.createGroup(p2pChannel, config, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() {
+                            try { listener.onSuccess() } finally { completion.countDown() }
+                        }
+                        override fun onFailure(reason: Int) {
+                            try { listener.onFailure(reason) } finally { completion.countDown() }
+                        }
+                    })
+                } catch (error: RuntimeException) {
+                    completion.countDown()
+                    throw error
+                }
+            }
             try {
                 awaitGroupCreated(attempt, deadlineNanos, timeoutMillis)
                 return
@@ -526,34 +550,44 @@ class WifiP2pGroupManager(
     }
 
     private fun removeGroupBlocking(channel: WifiP2pManager.Channel) {
-        removeGroup(channel, waitForCallback = true)
+        try {
+            awaitP2pGroupRemoval(
+                REMOVE_GROUP_TIMEOUT_MILLIS,
+                remove = { listener -> p2pManager.removeGroup(channel, listener) },
+                query = { listener -> p2pManager.requestGroupInfo(channel, listener) },
+            )
+            report("Wi-Fi P2P group removed; absence confirmed")
+        } catch (failure: IOException) {
+            report("Wi-Fi P2P group removal failed: ${failure.message}")
+            throw failure
+        }
     }
 
-    private fun removeGroup(channel: WifiP2pManager.Channel, waitForCallback: Boolean) {
-        val latch = CountDownLatch(1)
+    private fun removeStoppedGroup(channel: WifiP2pManager.Channel, attempt: StartAttempt?) {
+        // Keep callbacks alive until an in-flight create request has returned, then remove it.
+        val creationCompleted = attempt?.createCompletion?.let {
+            await(it, TimeUnit.MILLISECONDS.toNanos(REMOVE_GROUP_TIMEOUT_MILLIS))
+        } ?: true
+        removeGroupBlocking(channel)
+        if (!creationCompleted) {
+            throw IOException("Wi-Fi P2P createGroup callback is still pending during removal")
+        }
+    }
+
+    private fun removeDetachedGroup(channel: WifiP2pManager.Channel) {
         try {
             p2pManager.removeGroup(
                 channel,
                 object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() {
-                        latch.countDown()
-                    }
+                    override fun onSuccess() = Unit
 
                     override fun onFailure(reason: Int) {
                         Log.w(TAG, "Wi-Fi P2P removeGroup failed: ${failureReason(reason)}")
-                        latch.countDown()
                     }
                 },
             )
         } catch (failure: RuntimeException) {
             Log.w(TAG, "Wi-Fi P2P removeGroup could not be issued", failure)
-            latch.countDown()
-        }
-        if (!waitForCallback) return
-        try {
-            latch.await(REMOVE_GROUP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-        } catch (interrupted: InterruptedException) {
-            Thread.currentThread().interrupt()
         }
     }
 
@@ -598,6 +632,8 @@ class WifiP2pGroupManager(
         var createSucceeded = false
         var failure: IOException? = null
         var stopped = false
+        var cleanupClaimed = false
+        var createCompletion = CountDownLatch(0)
     }
 
     private companion object {

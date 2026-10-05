@@ -1,12 +1,12 @@
 package com.shilapi.xcertplay.hud
 
 import android.content.Context
-import android.util.Base64
-import com.shilapi.xcertplay.adb.AdbKeys
-import com.shilapi.xcertplay.adb.LocalAdb
 import com.shilapi.xcertplay.iap2.message.Iap2NowPlayingState
 import com.shilapi.xcertplay.iap2.message.Iap2PlaybackStatus
-import java.util.concurrent.Executors
+import java.io.IOException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /** BYD-group options for the CarPlay song in the dashboard's music card. */
@@ -62,93 +62,85 @@ internal data class ClusterCard(val text: String, val playing: Boolean) {
  * goes off. Without adb approval nothing happens.
  */
 internal object BydClusterSong {
-    private const val SOURCE_OTHERS = 11
-    private const val STATE_PLAYING = 1
-    private const val STATE_PAUSED = 2
-    private const val STATE_STOPPED = 3
+    private val worker = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue(32),
+        { Thread(it, "xcertplay-cluster-control").apply { isDaemon = true } })
+    private val coordinator = ClusterSongCoordinator(BydClusterSongSettings::enabled,
+        { context, card, log -> ClusterSongWriterSession(context, card, log) }, { worker.execute(it) })
 
-    private val writer = Executors.newSingleThreadScheduledExecutor { Thread(it, "xcertplay-cluster-song").apply { isDaemon = true } }
+    fun begin(context: Context, owner: Any, session: Any, initial: Iap2NowPlayingState, log: (String) -> Unit) =
+        coordinator.begin(context.applicationContext, owner, session, initial, log)
+    fun onNowPlaying(owner: Any, state: Iap2NowPlayingState) = coordinator.onNowPlaying(owner, state)
+    fun settingChanged() = coordinator.settingChanged()
+    fun end(owner: Any, session: Any? = null, reason: String): CompletableFuture<Boolean>? =
+        coordinator.end(owner, session, reason)
+}
+
+/** Ownership guards prevent a late callback from an old controller from stopping a new session. */
+internal class ClusterSongCoordinator(
+    private val enabled: (Context) -> Boolean,
+    private val create: (Context, ClusterCard?, (String) -> Unit) -> ClusterSongSessionHandle,
+    private val execute: (Runnable) -> Unit,
+) {
+    private class Active(
+        val context: Context, val owner: Any, val session: Any, var card: ClusterCard?, val log: (String) -> Unit,
+        var writer: ClusterSongSessionHandle? = null,
+    )
     private val lock = Any()
-    @Volatile private var app: Context? = null
-    @Volatile private var log: (String) -> Unit = {}
-    private var current: ClusterCard? = null // the song now playing, followed even while the option is off
-    private var wanted: ClusterCard? = null // what the dashboard should show; null = no card
-    private var shown: ClusterCard? = null // writer thread
-    private var adb: LocalAdb? = null // writer thread
+    private var active: Active? = null
+    private var previousClosed = CompletableFuture.completedFuture(true)
 
-    fun onNowPlaying(context: Context, state: Iap2NowPlayingState, diagnostic: (String) -> Unit) {
-        app = context.applicationContext
-        log = diagnostic
-        val card = ClusterCard.of(state)
+    fun begin(context: Context, owner: Any, session: Any, initial: Iap2NowPlayingState, log: (String) -> Unit) {
         synchronized(lock) {
-            if (card == current) return
-            current = card
-        }
-        apply()
-    }
-
-    fun settingChanged() = apply()
-
-    /** The CarPlay session ended: stop the card and drop the adb link. */
-    fun end() {
-        synchronized(lock) {
-            current = null
-            wanted = null
-        }
-        writer.execute {
-            clear()
-            adb?.close()
-            adb = null
+            if (active?.owner === owner && active?.session === session) return
+            active?.writer?.let { previousClosed = it.stop("session replaced") }
+            active = Active(context, owner, session, ClusterCard.of(initial), log)
+            reconcile(checkNotNull(active))
         }
     }
 
-    private fun apply() {
-        val context = app ?: return
-        val enabled = BydClusterSongSettings.enabled(context)
-        synchronized(lock) { wanted = current?.takeIf { enabled } }
-        writer.execute { sync() }
+    fun onNowPlaying(owner: Any, state: Iap2NowPlayingState) = synchronized(lock) {
+        val session = active?.takeIf { it.owner === owner } ?: return@synchronized
+        session.card = ClusterCard.of(state)
+        session.writer?.update(session.card)
     }
 
-    // Writer thread: brings the dashboard to the newest wanted card.
-    private fun sync() {
-        val card = synchronized(lock) { wanted }
-        if (card == null) {
-            clear()
+    fun settingChanged() = synchronized(lock) { active?.let(::reconcile) }
+
+    fun end(owner: Any, session: Any?, reason: String): CompletableFuture<Boolean>? = synchronized(lock) {
+        val current = active?.takeIf { it.owner === owner && (session == null || it.session === session) }
+            ?: return@synchronized null
+        previousClosed = current.writer?.stop(reason) ?: previousClosed
+        active = null
+        previousClosed
+    }
+
+    private fun reconcile(session: Active) {
+        if (!enabled(session.context)) {
+            session.writer?.let { previousClosed = it.stop("setting disabled") }
+            session.writer = null
             return
         }
-        if (card == shown) return
-        val text = Base64.encodeToString(card.text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val state = when {
-            card == ClusterCard.EMPTY -> STATE_STOPPED
-            card.playing -> STATE_PLAYING
-            else -> STATE_PAUSED
+        if (session.writer != null) return
+        val writer = create(session.context, session.card, session.log)
+        session.writer = writer
+        val predecessor = previousClosed
+        try {
+            execute(Runnable {
+                try {
+                    if (!predecessor.get(5_000, TimeUnit.MILLISECONDS)) throw IOException("previous writer exit unconfirmed")
+                    synchronized(lock) {
+                        if (active !== session || session.writer !== writer) { writer.stop("startup cancelled"); return@Runnable }
+                        writer.start()
+                    }
+                } catch (error: Exception) {
+                    if (error is InterruptedException) Thread.currentThread().interrupt()
+                    writer.stop("startup cancelled")
+                    session.log("Cluster song: startup cancelled: ${error.javaClass.simpleName} ${error.message}")
+                }
+            })
+        } catch (error: RuntimeException) {
+            writer.stop("startup queue unavailable")
+            session.log("Cluster song: startup queue unavailable: ${error.message}")
         }
-        if (run("$SOURCE_OTHERS", "$state", text)) shown = card
-    }
-
-    private fun clear() {
-        if (shown == null) return
-        if (run("-", "$STATE_STOPPED", "-")) shown = null
-    }
-
-    private fun run(vararg args: String): Boolean {
-        val context = app ?: return false
-        val link = adb ?: LocalAdb(AdbKeys.load(context)).also { adb = it }
-        val output = runCatching {
-            if (link.connect(mayAsk = false) != LocalAdb.Access.READY) null
-            else link.shell(BydSdkStream.helper(context, "clustersong", *args))
-        }.getOrNull()
-        if (output == null) {
-            link.close()
-            adb = null
-            log("Cluster song: adb shell unavailable")
-            return false
-        }
-        val line = output.lineSequence().firstOrNull { it.startsWith("XCERTPLAY") }?.removePrefix("XCERTPLAY ")
-            ?: output.trim().take(160)
-        val results = line.split(' ').filter { it.contains('=') }
-        val ok = results.isNotEmpty() && results.all { it.substringAfter('=').toIntOrNull() == 0 }
-        log("Cluster song: $line")
-        return ok
     }
 }

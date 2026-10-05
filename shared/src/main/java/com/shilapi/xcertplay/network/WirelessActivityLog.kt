@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.wifi.WifiManager
+import android.net.wifi.SupplicantState
 import android.net.wifi.p2p.WifiP2pManager
+import android.os.SystemClock
 import java.io.Closeable
 
 /**
@@ -19,18 +21,35 @@ internal class WirelessActivityLog(
 ) : Closeable {
     private val app = context.applicationContext
     private var registered = false
+    private var startedMs = 0L
+    private var lastScanMs: Long? = null
+    private var scanCount = 0
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 WifiManager.SCAN_RESULTS_AVAILABLE_ACTION -> {
                     val updated = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
-                    report("Radio activity: Wi-Fi scan finished updated=$updated")
+                    val now = SystemClock.elapsedRealtime()
+                    val interval = lastScanMs?.let { now - it }
+                    lastScanMs = now
+                    scanCount++
+                    @Suppress("DEPRECATION")
+                    val frequency = runCatching {
+                        app.getSystemService(WifiManager::class.java)?.connectionInfo?.takeIf {
+                            it.supplicantState == SupplicantState.COMPLETED
+                        }?.frequency
+                    }.getOrNull()
+                    report("Radio activity: Wi-Fi scan finished updated=$updated elapsedMs=$now " +
+                        "sinceSessionMs=${now - startedMs} count=$scanCount intervalMs=${interval ?: "first"} " +
+                        "searchPaused=${WifiScanPause.shared(app).isPaused()} " +
+                        "stationFrequencyMHz=${frequency ?: "unknown"}")
                 }
                 WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION -> {
                     val started = intent.getIntExtra(WifiP2pManager.EXTRA_DISCOVERY_STATE, 0) ==
                         WifiP2pManager.WIFI_P2P_DISCOVERY_STARTED
-                    report("Radio activity: Wi-Fi P2P peer discovery ${if (started) "started" else "stopped"}")
+                    report("Radio activity: Wi-Fi P2P peer discovery ${if (started) "started" else "stopped"} " +
+                        "elapsedMs=${SystemClock.elapsedRealtime()}")
                 }
             }
         }
@@ -39,6 +58,9 @@ internal class WirelessActivityLog(
     @Synchronized
     fun start() {
         if (registered) return
+        startedMs = SystemClock.elapsedRealtime()
+        lastScanMs = null
+        scanCount = 0
         val filter = IntentFilter().apply {
             addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
             addAction(WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION)

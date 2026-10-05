@@ -156,14 +156,19 @@ class CarPlayVpnService : VpnService() {
     /** Releases the active AirPlay listener and whichever VPN/NCM transport resources are active. */
     @Synchronized
     fun detach() {
-        releaseLocked()
+        releaseLocked()?.let { throw it }
     }
 
     fun isAttached(): Boolean = active.get() && attachment != null
 
     override fun onDestroy() {
-        detach()
-        super.onDestroy()
+        try {
+            detach()
+        } catch (error: Exception) {
+            Log.w(TAG, "CarPlay service cleanup failed", error)
+        } finally {
+            super.onDestroy()
+        }
     }
 
     private fun startAirPlayServer(
@@ -275,17 +280,27 @@ class CarPlayVpnService : VpnService() {
     }
 
     /** Caller must hold this service's monitor. Closes only resources active for this attachment. */
-    private fun releaseLocked() {
+    private fun releaseLocked(): Exception? {
         attachGeneration += 1
         active.set(false)
         attachment = null
-        serverSocket?.close()
+        var failure: Exception? = null
+        fun attempt(name: String, close: () -> Unit) {
+            try {
+                close()
+            } catch (error: Exception) {
+                if (failure == null) failure = error else failure?.addSuppressed(error)
+                Log.w(TAG, "$name teardown failed", error)
+            }
+        }
+        attempt("AirPlay listener") { serverSocket?.close() }
         serverSocket = null
-        closeSessionsLocked()
-        bridge?.close()
+        attempt("AirPlay sessions") { closeSessionsLocked() }
+        attempt("NCM bridge") { bridge?.close() }
         bridge = null
-        tun?.close()
+        attempt("VPN tunnel") { tun?.close() }
         tun = null
+        return failure
     }
 
     companion object {

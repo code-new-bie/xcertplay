@@ -4412,7 +4412,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun exitApplication() {
         if (shuttingDown.get()) return
         restoreSettingsBaseline()
-        finishAndRemoveTask()
         shutdown(terminateProcess = true, reason = "settings exit application")
     }
 
@@ -4431,27 +4430,54 @@ class CarPlayHostActivity : ComponentActivity() {
         sink = null
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
         teardownExecutor.execute {
-            oldController?.close()
-            // Exiting gives the wireless teardown (P2P group removal) longer before the process ends.
-            val closeTimeout = if (terminateProcess) EXIT_CLOSE_TIMEOUT_MILLIS else CONTROLLER_CLOSE_TIMEOUT_MILLIS
-            val clean = oldController?.awaitClosed(closeTimeout) ?: true
-            oldSink?.close()
-            airPlayCommandExecutor.shutdown()
+            val cleanup = runCarPlayShutdown(
+                disconnect = {
+                    oldController?.close()
+                    val timeout = if (terminateProcess) EXIT_CLOSE_TIMEOUT_MILLIS else CONTROLLER_CLOSE_TIMEOUT_MILLIS
+                    oldController?.awaitClosed(timeout) ?: true
+                },
+                closeMedia = {
+                    try {
+                        oldSink?.close()
+                    } finally {
+                        airPlayCommandExecutor.shutdown()
+                    }
+                },
+                restoreBluetooth = {
+                    !terminateProcess || BluetoothHandoff.shared(applicationContext)
+                        .releaseNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS)
+                },
+                resumeWifiSearch = {
+                    !terminateProcess || WifiScanPause.shared(applicationContext)
+                        .resumeNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS)
+                },
+                onFailure = { step, error -> Log.w(TAG, "$step shutdown failed", error) },
+            )
+            val clean = cleanup.connectionClosed
             if (terminateProcess) {
-                // The delayed restores would never run once the process is killed: do them now.
-                val bluetooth = BluetoothHandoff.shared(applicationContext).releaseNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS)
-                val wifiSearch = WifiScanPause.shared(applicationContext).resumeNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS)
+                val bluetooth = cleanup.bluetoothRestored
+                val wifiSearch = cleanup.wifiSearchResumed
                 Log.i(TAG, "exit cleanup wireless=$clean bluetoothRestored=$bluetooth wifiSearchResumed=$wifiSearch")
                 appendFileLog(
                     "Exit cleanup: wireless stack closed=$clean, Bluetooth restored=$bluetooth, " +
                         "Wi-Fi search resumed=$wifiSearch",
                     System.currentTimeMillis(),
                 )
-                applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
+                try {
+                    applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
+                } catch (error: Exception) {
+                    Log.w(TAG, "Could not stop CarPlay service on exit", error)
+                }
             }
             Log.i(TAG, "shutdown complete clean=$clean")
             teardownExecutor.shutdown()
-            if (terminateProcess) Process.killProcess(Process.myPid())
+            if (terminateProcess) {
+                // Keep the activity alive for cleanup; finish it only after CarPlay has been closed.
+                runOnUiThread {
+                    finishAndRemoveTask()
+                    Process.killProcess(Process.myPid())
+                }
+            }
         }
     }
 

@@ -60,6 +60,9 @@ class WifiScanPause private constructor(context: Context) {
         }
     }
 
+    /** Whether the head unit's Wi-Fi network search is currently paused by this app. */
+    fun isPaused(): Boolean = prefs.getBoolean(KEY_PAUSED, false)
+
     fun resumeLater() {
         worker.execute {
             if (!prefs.getBoolean(KEY_PAUSED, false)) return@execute
@@ -76,14 +79,22 @@ class WifiScanPause private constructor(context: Context) {
      * The app is exiting: resume the search now instead of after [RESUME_DELAY_MS], waiting up to
      * [timeoutMillis]. Call from a background thread.
      */
-    fun resumeNowBlocking(timeoutMillis: Long): Boolean = runCatching {
-        worker.submit<Boolean> {
-            pendingResume?.cancel(false)
-            pendingResume = null
-            if (prefs.getBoolean(KEY_PAUSED, false)) setSearch(enabled = true)
-            !prefs.getBoolean(KEY_PAUSED, false)
-        }.get(timeoutMillis, TimeUnit.MILLISECONDS)
-    }.getOrDefault(false)
+    fun resumeNowBlocking(timeoutMillis: Long): Boolean {
+        require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
+        return try {
+            worker.submit<Boolean> {
+                pendingResume?.cancel(false)
+                pendingResume = null
+                if (prefs.getBoolean(KEY_PAUSED, false)) setSearch(enabled = true)
+                !prefs.getBoolean(KEY_PAUSED, false)
+            }.get(timeoutMillis, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     // Worker thread.
     private fun setSearch(enabled: Boolean) {
