@@ -131,7 +131,9 @@ internal object BydCallWindTestTool {
                 "modifyPhoneState=${hasPermission(MODIFY_PHONE_STATE)} " +
                 "modifyAudioSettings=${hasPermission(MODIFY_AUDIO_SETTINGS)}")
             callAttempted = true
+            emit("audio call state requested=${AudioManager.MODE_IN_CALL} client=$CALL_CLIENT_BT")
             setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_IN_CALL, callback)
+            emit("audio call state dispatched=${AudioManager.MODE_IN_CALL} client=$CALL_CLIENT_BT")
             muteAttempted = true
             muteSetter.invoke(audio, CALL_CLIENT_BT, true)
             modeAttempted = true
@@ -144,16 +146,34 @@ internal object BydCallWindTestTool {
         /** Undo attempted operations, including ambiguous Binder failures, but never untouched state. */
         override fun release() {
             var failure: Exception? = null
-            fun attempt(action: () -> Unit) {
-                try { action() } catch (error: Exception) { if (failure == null) failure = error }
+            fun attempt(name: String, action: () -> Unit) {
+                try {
+                    action()
+                } catch (error: Exception) {
+                    emit("$name failed: ${describe(error)}")
+                    if (failure == null) failure = error
+                }
             }
-            if (muteAttempted) attempt { muteSetter.invoke(audio, CALL_CLIENT_BT, false) }
-            if (callAttempted) attempt { setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_NORMAL, callback) }
-            if (modeAttempted) attempt { modeSetter.invoke(audio, AudioManager.MODE_NORMAL, callback, packageName) }
-            if (modeAttempted) attempt {
+            if (muteAttempted) attempt("audio mute release") {
+                muteSetter.invoke(audio, CALL_CLIENT_BT, false)
+            }
+            if (callAttempted) attempt("audio call state release") {
+                emit("audio call state release requested=${AudioManager.MODE_NORMAL} client=$CALL_CLIENT_BT")
+                setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_NORMAL, callback)
+                emit("audio call state release dispatched=${AudioManager.MODE_NORMAL} client=$CALL_CLIENT_BT")
+            }
+            if (modeAttempted) attempt("audio mode release") {
+                modeSetter.invoke(audio, AudioManager.MODE_NORMAL, callback, packageName)
+            }
+            if (modeAttempted) attempt("audio mode release readback") {
                 emit("audio mode release actual=${(mode.invoke(audio) as Number).toInt()}")
             }
             failure?.let { throw it }
+        }
+
+        private fun describe(error: Exception): String {
+            val cause = error.cause ?: error
+            return "${cause.javaClass.simpleName} ${cause.message.orEmpty().take(160)}".trim()
         }
 
         private fun hasPermission(permission: String): Boolean = runCatching {

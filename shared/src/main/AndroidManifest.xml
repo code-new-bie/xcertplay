@@ -4,8 +4,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- The app process sends the BYD call-state MCU event; adb shell cannot hold this permission. -->
-    <uses-permission android:name="android.permission.BYDAUTO_SETTING_COMMON" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
