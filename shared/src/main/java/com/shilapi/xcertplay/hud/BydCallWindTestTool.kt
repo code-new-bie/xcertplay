@@ -1,12 +1,6 @@
 package com.shilapi.xcertplay.hud
 
-import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
 import android.content.Context
-import android.media.AudioManager
-import android.os.Binder
-import android.os.IBinder
-import android.os.Process
 import android.os.SystemClock
 import java.io.File
 import java.io.RandomAccessFile
@@ -15,7 +9,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
-/** Shell-side call-state bridge. Its Binder token lives until this process exits. */
+/**
+ * Shell-side fan reduction. Runs as adb shell because the head unit's autoservice accepts AC
+ * writes from UIDs below 10000 only; app UIDs would need a BYDAUTO_AC_SET no app can hold.
+ */
 internal object BydCallWindTestTool {
     fun run(args: List<String>, context: () -> Context) {
         val token = args.getOrNull(0) ?: error("missing call wind token")
@@ -27,6 +24,8 @@ internal object BydCallWindTestTool {
             "auto" -> true
             else -> error("unknown call wind mode")
         }
+        val target = args.getOrNull(3)?.toIntOrNull() ?: error("missing call wind target level")
+        require(target in BydCallWindSettings.MIN_LEVEL..BydCallWindSettings.MAX_LEVEL)
         fun emit(message: String) {
             println("XCERTPLAY callwind token=$token $message")
             System.out.flush()
@@ -48,8 +47,8 @@ internal object BydCallWindTestTool {
                             emit(probe.get()?.releaseOnce() ?: "not requested")
                         }
                     }
-                    if (now - stopSince >= 1_000) {
-                        // A stuck Binder cannot keep the client token alive indefinitely.
+                    if (now - stopSince >= RELEASE_GRACE_MS) {
+                        // A stuck Binder cannot keep the helper alive indefinitely.
                         android.os.Process.killProcess(android.os.Process.myPid())
                     }
                 }
@@ -59,13 +58,16 @@ internal object BydCallWindTestTool {
         val hook = Thread({ runCatching { probe.get()?.releaseOnce() } }, "xcertplay-call-wind-shutdown")
         Runtime.getRuntime().addShutdownHook(hook)
         try {
-            emit("starting pid=${android.os.Process.myPid()} mode=${if (automatic) "automatic" else "manual"}")
+            emit("starting pid=${android.os.Process.myPid()} mode=${if (automatic) "automatic" else "manual"} " +
+                "target=$target")
             RandomAccessFile(File(file.parentFile, "test.lock"), "rw").channel.use { channel ->
                 val ownership = channel.tryLock()
                 if (ownership == null) { emit("blocked: another probe is running"); return }
                 ownership.use {
                     if (!file.isFile) { emit("cancelled before request"); return }
-                    val current = CallWindProbe(NativeBridge(context(), ::emit),
+                    val bridge = AcWindReduction(VehicleAcFan(context()), target, ::nativeCall,
+                        SystemClock::elapsedRealtime, Thread::sleep, ::emit)
+                    val current = CallWindProbe(bridge,
                         {
                             leaseAlive() && SystemClock.elapsedRealtime() < expires
                         },
@@ -88,103 +90,42 @@ internal object BydCallWindTestTool {
         }
     }
 
-    private class NativeBridge(private val context: Context, private val emit: (String) -> Unit) : CallWindBridge {
-        private val binder = Class.forName("android.os.ServiceManager")
-            .getMethod("getService", String::class.java).invoke(null, "audio") as IBinder
-        private val audio = Class.forName("android.media.IAudioService\$Stub")
-            .getMethod("asInterface", IBinder::class.java).invoke(null, binder)
-        private val audioType = Class.forName("android.media.IAudioService")
-        // The firmware's AudioManager wrapper swallows RemoteException. Call the same service
-        // directly so a failed request/release is reported instead of looking successful.
-        private val setter = audioType.getMethod("setCallState", Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType, IBinder::class.java)
-        private val mode = audioType.getMethod("getMode")
-        private val callback = Binder()
-        private val muteSetter = audioType.getMethod("setMuteState",
-            Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
-        private val modeSetter = audioType.getMethod("setMode", Int::class.javaPrimitiveType,
-            IBinder::class.java, String::class.java)
-        private val packageName = context.opPackageName
-        private val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
-        private val property = Class.forName("android.os.SystemProperties")
+    /** A stock Bluetooth, HiCar or emergency call already lowers the fan through the car itself. */
+    private fun nativeCall(): String? {
+        val property = Class.forName("android.os.SystemProperties")
             .getMethod("get", String::class.java, String::class.java)
-        private var callAttempted = false
-        private var muteAttempted = false
-        private var modeAttempted = false
+        if (property.invoke(null, "sys.isInEcall", "0") != "0") return "emergency call is active"
+        if (property.invoke(null, "bluetooth.call", "false") != "false") return "Bluetooth call is active"
+        if (property.invoke(null, "sys.hicar.callstate", "0") != "0") return "HiCar call is active"
+        return null
+    }
 
-        override fun unavailableReason(): String? {
-            if (property.invoke(null, "sys.isInEcall", "0") != "0") return "emergency call is active"
-            if (mode.invoke(audio) != AudioManager.MODE_NORMAL) return "system call/audio mode is busy"
-            if (property.invoke(null, "bluetooth.call", "false") != "false") return "Bluetooth call is active"
-            if (property.invoke(null, "sys.hicar.callstate", "0") != "0") return "HiCar call is active"
-            val adapter = adapter ?: return "HFP status unavailable"
-            if (adapter.getProfileConnectionState(HEADSET_CLIENT) != BluetoothProfile.STATE_DISCONNECTED) {
-                return "disconnect the stock Bluetooth phone connection before starting"
-            }
-            return null
-        }
+    private class VehicleAcFan(context: Context) : AcFan {
+        private val acType = Class.forName("android.hardware.bydauto.ac.BYDAutoAcDevice")
+        private val ac = BydVehicleDataTool.sdkDevice(acType, context)
+        private val settingType = runCatching {
+            Class.forName("android.hardware.bydauto.setting.BYDAutoSettingDevice")
+        }.getOrNull()
+        private val setting = settingType?.let { runCatching { BydVehicleDataTool.sdkDevice(it, context) }.getOrNull() }
+        private val int = Int::class.javaPrimitiveType!!
 
-        /** Same order as the stock HiCar service: call state, mute, then audio mode. */
-        override fun request() {
-            check(unavailableReason() == null) { "native call became active before entry" }
-            emit("audio uid=${Process.myUid()} package=$packageName " +
-                "modifyPhoneState=${hasPermission(MODIFY_PHONE_STATE)} " +
-                "modifyAudioSettings=${hasPermission(MODIFY_AUDIO_SETTINGS)}")
-            callAttempted = true
-            emit("audio call state requested=${AudioManager.MODE_IN_CALL} client=$CALL_CLIENT_BT")
-            setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_IN_CALL, callback)
-            emit("audio call state dispatched=${AudioManager.MODE_IN_CALL} client=$CALL_CLIENT_BT")
-            muteAttempted = true
-            muteSetter.invoke(audio, CALL_CLIENT_BT, true)
-            modeAttempted = true
-            modeSetter.invoke(audio, AudioManager.MODE_IN_CALL, callback, packageName)
-            val actualMode = (mode.invoke(audio) as Number).toInt()
-            emit("audio mode requested=${AudioManager.MODE_IN_CALL} actual=$actualMode " +
-                "accepted=${actualMode == AudioManager.MODE_IN_CALL}")
-        }
+        override fun powerState() = read("getAcStartState")
+        override fun controlMode() = read("getAcControlMode")
+        override fun windLevel() = read("getAcWindLevel")
+        override fun stockCallWind(): Int? = runCatching {
+            (settingType!!.getMethod("getACBTWind").invoke(setting!!) as Number).toInt()
+        }.getOrNull()
 
-        /** Undo attempted operations, including ambiguous Binder failures, but never untouched state. */
-        override fun release() {
-            var failure: Exception? = null
-            fun attempt(name: String, action: () -> Unit) {
-                try {
-                    action()
-                } catch (error: Exception) {
-                    emit("$name failed: ${describe(error)}")
-                    if (failure == null) failure = error
-                }
-            }
-            if (muteAttempted) attempt("audio mute release") {
-                muteSetter.invoke(audio, CALL_CLIENT_BT, false)
-            }
-            if (callAttempted) attempt("audio call state release") {
-                emit("audio call state release requested=${AudioManager.MODE_NORMAL} client=$CALL_CLIENT_BT")
-                setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_NORMAL, callback)
-                emit("audio call state release dispatched=${AudioManager.MODE_NORMAL} client=$CALL_CLIENT_BT")
-            }
-            if (modeAttempted) attempt("audio mode release") {
-                modeSetter.invoke(audio, AudioManager.MODE_NORMAL, callback, packageName)
-            }
-            if (modeAttempted) attempt("audio mode release readback") {
-                emit("audio mode release actual=${(mode.invoke(audio) as Number).toInt()}")
-            }
-            failure?.let { throw it }
-        }
+        override fun setWindLevel(level: Int) = (acType.getMethod("setAcWindLevel", int, int)
+            .invoke(ac, AcWindReduction.AC_CTRL_SOURCE_UI_KEY, level) as Number).toInt()
 
-        private fun describe(error: Exception): String {
-            val cause = error.cause ?: error
-            return "${cause.javaClass.simpleName} ${cause.message.orEmpty().take(160)}".trim()
-        }
+        override fun setAutoMode() = (acType.getMethod("setAcControlMode", int, int)
+            .invoke(ac, AcWindReduction.AC_CTRL_SOURCE_UI_KEY, AcWindReduction.AC_CTRLMODE_AUTO) as Number).toInt()
 
-        private fun hasPermission(permission: String): Boolean = runCatching {
-            context.checkPermission(permission, -1, Process.myUid()) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        }.getOrDefault(false)
+        private fun read(method: String) = (acType.getMethod(method).invoke(ac) as Number).toInt()
     }
 
     private const val AUTO_MAX_MS = 30 * 60_000L
-    private const val HEADSET_CLIENT = 16
-    private const val CALL_CLIENT_BT = 1
-    private const val MODIFY_PHONE_STATE = "android.permission.MODIFY_PHONE_STATE"
-    private const val MODIFY_AUDIO_SETTINGS = "android.permission.MODIFY_AUDIO_SETTINGS"
+    /** BYD AC commands wait for the vehicle's acknowledgement, so release gets several seconds. */
+    const val RELEASE_GRACE_MS = 5_000L
 }

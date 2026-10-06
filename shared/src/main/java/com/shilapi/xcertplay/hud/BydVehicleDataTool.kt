@@ -14,13 +14,19 @@ import kotlin.concurrent.thread
 
 /** SDK bridge running as adb shell. Uses this firmware's SDK instead of another ROM's IDs. */
 object BydVehicleDataTool {
+    /**
+     * An SDK device instance. getInstance() checks the device's BYDAUTO_*_COMMON permission on the
+     * Java side, which the shell lacks; the constructor skips it and autoservice accepts shell UIDs.
+     */
+    internal fun sdkDevice(type: Class<*>, context: Context): Any = try {
+        type.getMethod("getInstance", Context::class.java).invoke(null, context)
+    } catch (_: InvocationTargetException) {
+        type.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }.newInstance(context)
+    }
+
     private class Device(private val name: String, context: Context) {
         private val type = Class.forName("android.hardware.bydauto.$name")
-        private val instance = try {
-            type.getMethod("getInstance", Context::class.java).invoke(null, context)
-        } catch (_: InvocationTargetException) {
-            type.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }.newInstance(context)
-        }
+        private val instance = sdkDevice(type, context)
         fun read(method: String): Number = type.getMethod(method).invoke(instance) as Number
 
         /** Calls a setter; the result code, or the failure, is returned as text for the test log. */
@@ -35,8 +41,8 @@ object BydVehicleDataTool {
 
     /**
      * Sends the instrument cluster what BYD's phone app sends during a Bluetooth call: the caller
-     * name (UTF-16LE) and a running call time. Tests instrument display writes only; the MCU call
-     * state used for fan reduction is tested separately by BydCallWindTestTool.
+     * name (UTF-16LE) and a running call time. Tests instrument display writes only; fan reduction
+     * during calls is handled separately by BydCallWindTestTool.
      */
     private fun callInfoTest(context: Context) {
         val instrument = Device("instrument.BYDAutoInstrumentDevice", context)

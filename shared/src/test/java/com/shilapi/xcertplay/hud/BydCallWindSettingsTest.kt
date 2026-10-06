@@ -21,6 +21,17 @@ class BydCallWindSettingsTest {
         assertFalse(BydCallWindSettings.enabled(context))
     }
 
+    @Test fun targetLevelDefaultsToTwoAndStaysWithinOneToThree() {
+        val context = RuntimeEnvironment.getApplication()
+        assertEquals(2, BydCallWindSettings.targetLevel(context))
+        BydCallWindSettings.setTargetLevel(context, 1)
+        assertEquals(1, BydCallWindSettings.targetLevel(context))
+        BydCallWindSettings.setTargetLevel(context, 7)
+        assertEquals(3, BydCallWindSettings.targetLevel(context))
+        BydCallWindSettings.setTargetLevel(context, 0)
+        assertEquals(1, BydCallWindSettings.targetLevel(context))
+    }
+
     @Test fun activeCarPlayCallBlocksManualTesting() {
         val owner = Any()
         BydCallWindTest.observeCall(owner, true)

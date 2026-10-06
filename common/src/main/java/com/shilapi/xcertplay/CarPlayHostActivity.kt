@@ -1298,6 +1298,18 @@ class CarPlayHostActivity : ComponentActivity() {
                 getString(R.string.call_wind_note),
                 topMarginDp = 12,
             )
+            addSetting(
+                page,
+                settingsChoiceRow(
+                    getString(R.string.call_wind_target_label),
+                    (BydCallWindSettings.MIN_LEVEL..BydCallWindSettings.MAX_LEVEL).map { level ->
+                        level to getString(R.string.call_wind_target_value, level)
+                    },
+                    BydCallWindSettings.targetLevel(this),
+                ) { level -> BydCallWindSettings.setTargetLevel(this, level) },
+                getString(R.string.call_wind_target_note),
+                topMarginDp = 12,
+            )
             addButton(page, buildCallWindTestButton(), getString(R.string.call_wind_test_note))
         }
         addButton(
@@ -1331,6 +1343,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     text = getString(R.string.call_wind_test)
                     if (!isFinishing && !isDestroyed && !shuttingDown.get()) {
                         val message = when {
+                            result.blocked != null -> getString(R.string.call_wind_test_skipped)
                             result.released -> getString(R.string.call_wind_test_released)
                             result.cancelled && !result.requested -> getString(R.string.call_wind_test_cancelled)
                             else -> getString(R.string.call_wind_test_unavailable)
