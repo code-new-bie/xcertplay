@@ -175,6 +175,10 @@ object BydCallWindTest {
             var processGone = true
             var pid: Int? = null
             var untouched = false
+            var mcuReleased = true
+            var mcu: BydCallWindMcu? = null
+            var mcuActivated = false
+            var mcuActivationFailed = false
             try {
                 val path = prepareFile() ?: return Result(false, false, true, "cancelled before startup")
                 startAutomaticLease(path)
@@ -187,6 +191,11 @@ object BydCallWindTest {
                 if (adb.shell("if [ -r $quoted ]; then echo readable; fi")?.trim() != "readable") {
                     throw IOException("ADB cannot read the test request")
                 }
+                mcu = BydCallWindMcu(context) { message ->
+                    lines += message
+                    report(message)
+                }
+                if (stopping) return Result(false, false, true, "cancelled before launch")
                 synchronized(stateLock) {
                     if (stopping) return Result(false, false, true, "cancelled before launch")
                     launched = true
@@ -202,7 +211,22 @@ object BydCallWindTest {
                 adb.stream(launch) { line ->
                     if (line.startsWith("XCERTPLAY callwind token=$token ")) {
                         val message = line.substringAfter("token=$token ")
-                        if (message.startsWith("requested ")) requested = true
+                        if (message.startsWith("requested ")) {
+                            requested = true
+                            val state = mcu
+                            if (!stopping && !mcuActivated && !mcuActivationFailed && state != null) {
+                                try {
+                                    state.activate()
+                                    mcuActivated = true
+                                } catch (error: Exception) {
+                                    mcuActivationFailed = true
+                                    lines += "mcu activation failed: ${error.javaClass.simpleName}"
+                                    report("mcu activation failed: ${error.javaClass.simpleName} " +
+                                        error.message.orEmpty().take(160))
+                                    path.delete()
+                                }
+                            }
+                        }
                         if (message.startsWith("starting pid=")) {
                             message.substringAfter("pid=").substringBefore(' ').toIntOrNull()
                                 ?.takeIf { it > 0 }?.let { pid = it }
@@ -230,8 +254,21 @@ object BydCallWindTest {
                 if (!processGone) {
                     processGone = pid?.let { runCatching { confirmOrTerminate(it) }.getOrDefault(false) } == true
                 }
-                report("stop complete processGone=$processGone released=$released")
-                done.complete(processGone && (released || untouched || !launched))
+                mcu?.let { state ->
+                    mcuReleased = runCatching {
+                        val result = state.release()
+                        lines += "mcu cleanup=$result"
+                        report("mcu cleanup=$result")
+                        true
+                    }.getOrElse { error ->
+                        lines += "mcu cleanup failed: ${error.javaClass.simpleName}"
+                        report("mcu cleanup failed: ${error.javaClass.simpleName} " +
+                            error.message.orEmpty().take(160))
+                        false
+                    }
+                }
+                report("stop complete processGone=$processGone released=$released mcuReleased=$mcuReleased")
+                done.complete(processGone && (released || untouched || !launched) && mcuReleased)
             }
             return Result(requested, released, stopping, lines.joinToString("\n"), processGone)
         }

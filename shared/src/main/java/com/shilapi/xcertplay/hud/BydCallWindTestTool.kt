@@ -105,14 +105,12 @@ internal object BydCallWindTestTool {
         private val modeSetter = audioType.getMethod("setMode", Int::class.javaPrimitiveType,
             IBinder::class.java, String::class.java)
         private val packageName = context.opPackageName
-        private val mcuCallState = McuCallState(context)
         private val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         private val property = Class.forName("android.os.SystemProperties")
             .getMethod("get", String::class.java, String::class.java)
         private var callAttempted = false
         private var muteAttempted = false
         private var modeAttempted = false
-        private var mcuCallAttempted = false
 
         override fun unavailableReason(): String? {
             if (property.invoke(null, "sys.isInEcall", "0") != "0") return "emergency call is active"
@@ -134,10 +132,6 @@ internal object BydCallWindTestTool {
                 "modifyAudioSettings=${hasPermission(MODIFY_AUDIO_SETTINGS)}")
             callAttempted = true
             setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_IN_CALL, callback)
-            mcuCallAttempted = true
-            val mcuResult = mcuCallState.set(active = true)
-            emit("mcu call-state active result=$mcuResult success=${mcuResult == MCU_SUCCESS}")
-            check(mcuResult == MCU_SUCCESS) { "mcu call-state active failed result=$mcuResult" }
             muteAttempted = true
             muteSetter.invoke(audio, CALL_CLIENT_BT, true)
             modeAttempted = true
@@ -155,11 +149,6 @@ internal object BydCallWindTestTool {
             }
             if (muteAttempted) attempt { muteSetter.invoke(audio, CALL_CLIENT_BT, false) }
             if (callAttempted) attempt { setter.invoke(audio, CALL_CLIENT_BT, AudioManager.MODE_NORMAL, callback) }
-            if (mcuCallAttempted) attempt {
-                val mcuResult = mcuCallState.set(active = false)
-                emit("mcu call-state release result=$mcuResult success=${mcuResult == MCU_SUCCESS}")
-                check(mcuResult == MCU_SUCCESS) { "mcu call-state release failed result=$mcuResult" }
-            }
             if (modeAttempted) attempt { modeSetter.invoke(audio, AudioManager.MODE_NORMAL, callback, packageName) }
             if (modeAttempted) attempt {
                 emit("audio mode release actual=${(mode.invoke(audio) as Number).toInt()}")
@@ -173,34 +162,9 @@ internal object BydCallWindTestTool {
         }.getOrDefault(false)
     }
 
-    /**
-     * The BYD audio service writes this event from DenoiseFocusControl after setCallState().
-     * Repeating the same event from the shell helper keeps the HVAC signal independent from
-     * AudioService.setMode(), which can be silently rejected by MODIFY_PHONE_STATE or Audio HAL.
-     */
-    private class McuCallState(context: Context) {
-        private val valueType = Class.forName("android.hardware.bydauto.BYDAutoEventValue")
-        private val value = valueType.getDeclaredConstructor()
-        private val intValue = valueType.getField("intValue")
-        private val deviceType = Class.forName("android.hardware.bydauto.setting.BYDAutoSettingDevice")
-        private val device = deviceType.getMethod("getInstance", Context::class.java)
-            .invoke(null, context)
-        private val setter = deviceType.getMethod("set", IntArray::class.java, valueType)
-
-        fun set(active: Boolean): Int {
-            val eventValue = value.newInstance()
-            intValue.setInt(eventValue, if (active) MCU_CALL_ACTIVE else MCU_CALL_RELEASED)
-            return (setter.invoke(device, intArrayOf(MCU_CALL_STATE_EVENT), eventValue) as Number).toInt()
-        }
-    }
-
     private const val AUTO_MAX_MS = 30 * 60_000L
     private const val HEADSET_CLIENT = 16
     private const val CALL_CLIENT_BT = 1
-    private const val MCU_CALL_STATE_EVENT = -0x55fffead
-    private const val MCU_CALL_ACTIVE = 0
-    private const val MCU_CALL_RELEASED = 1
-    private const val MCU_SUCCESS = 0
     private const val MODIFY_PHONE_STATE = "android.permission.MODIFY_PHONE_STATE"
     private const val MODIFY_AUDIO_SETTINGS = "android.permission.MODIFY_AUDIO_SETTINGS"
 }
