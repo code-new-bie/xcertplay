@@ -39,58 +39,15 @@ object BydVehicleDataTool {
         }
     }
 
-    /**
-     * Sends the instrument cluster what BYD's phone app sends during a Bluetooth call: the caller
-     * name (UTF-16LE) and a running call time. Tests instrument display writes only; fan reduction
-     * during calls is handled separately by BydCallWindTestTool.
-     */
-    private fun callInfoTest(context: Context) {
-        val instrument = Device("instrument.BYDAutoInstrumentDevice", context)
-        val name = "CarPlay test".toByteArray(Charsets.UTF_16LE)
-        println("XCERTPLAY calltest sendCallInfo=${instrument.write("sendCallInfo", name)}")
-        for (second in 0..CALL_TEST_SECONDS) {
-            val result = instrument.write("sendCallTime", 0, 0, second)
-            // One line a second also keeps adb's 5-second read deadline alive.
-            println("XCERTPLAY calltest sendCallTime(0,0,$second)=$result")
-            System.out.flush()
-            Thread.sleep(1_000L)
-        }
-        println("XCERTPLAY calltest done")
-    }
-
-    private const val CALL_TEST_SECONDS = 10
-
     /** BYD's instrument device type; setMediaState/setMediaInfo take it explicitly. */
     private const val INSTRUMENT_DEVICE = 1007
 
     /**
-     * Writes the dashboard music card: source, play state and text ("-" skips one), the way BYD's
-     * media center does underneath its focus-owner check. The signal IDs differ between firmware
-     * builds (Song PLUS 2021 and Tang 2024 use different values), so they are read from this
-     * firmware's BYDAutoFeatureIds; when they cannot be read nothing is written.
+     * Writes the dashboard music card the way BYD's media center does underneath its focus-owner
+     * check, reusing the SDK instance and feature IDs for every update in this shell process. The
+     * signal IDs differ between firmware builds (Song PLUS 2021 and Tang 2024 use different
+     * values), so they are read from this firmware's BYDAutoFeatureIds.
      */
-    private fun clusterSong(context: Context, args: List<String>) {
-        val ids = Class.forName("android.hardware.bydauto.BYDAutoFeatureIds")
-        fun id(name: String): Int = ids.getField(name).getInt(null)
-        val sourceId = id("INSTRUMENT_MUSIC_SOURCE_SET")
-        val stateId = id("INSTRUMENT_MUSIC_STATE_SET")
-        val infoId = id("INSTRUMENT_MUSIC_INFO_SET")
-        val instrument = Device("instrument.BYDAutoInstrumentDevice", context)
-        val results = mutableListOf<String>()
-        args.getOrNull(0)?.takeIf { it != "-" }?.let {
-            results += "source=${instrument.write("setMediaState", INSTRUMENT_DEVICE, sourceId, it.toInt())}"
-        }
-        args.getOrNull(1)?.takeIf { it != "-" }?.let {
-            results += "state=${instrument.write("setMediaState", INSTRUMENT_DEVICE, stateId, it.toInt())}"
-        }
-        args.getOrNull(2)?.takeIf { it != "-" }?.let { encoded ->
-            val text = String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8).toByteArray(Charsets.UTF_16LE)
-            results += "text=${if (text.size > 255) "too long" else instrument.write("setMediaInfo", INSTRUMENT_DEVICE, infoId, text)}"
-        }
-        println("XCERTPLAY clustersong ${results.joinToString(" ")}")
-    }
-
-    /** Reuses the SDK instance and feature IDs for every update in this shell process. */
     private class ClusterInstrument(context: Context) {
         private val ids = Class.forName("android.hardware.bydauto.BYDAutoFeatureIds")
         private val sourceId = ids.getField("INSTRUMENT_MUSIC_SOURCE_SET").getInt(null)
@@ -227,14 +184,6 @@ object BydVehicleDataTool {
             }
             val context = systemContext()
             val mode = args.firstOrNull() ?: return
-            if (mode == "calltest") {
-                callInfoTest(context)
-                return
-            }
-            if (mode == "clustersong") {
-                clusterSong(context, args.drop(1))
-                return
-            }
             val once = args.getOrNull(1) == "once"
             val speed = if (mode == "speed") Device("speed.BYDAutoSpeedDevice", context) else null
             val gearbox = if (speed != null) Device("gearbox.BYDAutoGearboxDevice", context) else null

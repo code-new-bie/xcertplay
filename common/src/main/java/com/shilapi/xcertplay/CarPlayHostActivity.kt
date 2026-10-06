@@ -767,7 +767,6 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        BydCallWindTest.cancelManual("test screen destroyed")
         bydCallUiSuppressor.close()
         channelPreview.close()
         appearanceMonitor?.stop()
@@ -1104,11 +1103,11 @@ class CarPlayHostActivity : ComponentActivity() {
         setPadding(dp(24), 0, dp(24), 0)
     }
 
-    private fun addButton(page: LinearLayout, button: Button, hint: String?) {
+    private fun addButton(page: LinearLayout, button: Button, hint: String?, topMarginDp: Int = 28) {
         page.addView(
             styleSecondaryButton(button),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { topMargin = dp(28) },
+                .apply { topMargin = dp(topMarginDp) },
         )
         if (hint != null) addHint(page, hint)
     }
@@ -1244,6 +1243,57 @@ class CarPlayHostActivity : ComponentActivity() {
         } else {
             microphoneTestButton?.isEnabled = !handshakeResetInProgress
         }
+
+        addGroupHeader(page, getString(R.string.group_audio_routing))
+        addSetting(
+            page,
+            buildVehicleAudioChannelRow(
+                getString(R.string.media_audio_channel_label),
+                { mediaAudioChannel },
+                { mediaAudioChannel = it },
+                AudioAttributes.USAGE_MEDIA,
+            ),
+            topMarginDp = 12,
+        )
+        addSetting(
+            page,
+            buildVehicleAudioChannelRow(
+                getString(R.string.navigation_audio_channel_label),
+                { navigationAudioChannel },
+                { navigationAudioChannel = it },
+                AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
+            ),
+            topMarginDp = 10,
+        )
+        addSetting(
+            page,
+            buildVehicleAudioChannelRow(
+                getString(R.string.phone_audio_channel_label),
+                { phoneAudioChannel },
+                { phoneAudioChannel = it },
+                AudioAttributes.USAGE_VOICE_COMMUNICATION,
+            ),
+            getString(R.string.audio_channel_note, VehicleAudioChannel.MAX) + "\n" +
+                getString(R.string.phone_audio_channel_note),
+            topMarginDp = 10,
+        )
+        if (advancedAudioChannelMappingSupported) {
+            addSetting(
+                page,
+                settingsSwitchRow(
+                    label = getString(R.string.advanced_mapping_label),
+                    checked = advancedAudioChannelMapping,
+                    description = getString(R.string.advanced_mapping_desc),
+                ) { checked ->
+                    advancedAudioChannelMapping = checked
+                    appendLog(
+                        "Advanced audio channel mapping ${if (checked) "enabled" else "disabled"}; " +
+                            "applies when settings close",
+                    )
+                    updateResolutionMenu()
+                },
+            )
+        }
     }
 
     private fun buildVehiclePage(page: LinearLayout) {
@@ -1263,55 +1313,6 @@ class CarPlayHostActivity : ComponentActivity() {
             topMarginDp = 8,
         )
         addSetting(page, buildLocationReportingSection())
-        if (BydSettingsAvailability.available(this)) {
-            addGroupHeader(page, getString(R.string.byd_settings_header))
-            addSetting(
-                page,
-                settingsSwitchRow(
-                    label = getString(R.string.byd_hide_call_label),
-                    checked = BydCallUiSettings.enabled(this),
-                    description = getString(R.string.byd_hide_call_desc),
-                ) { checked -> BydCallUiSettings.setEnabled(this, checked) },
-                getString(R.string.byd_hide_call_note),
-                topMarginDp = 12,
-            )
-            addSetting(page, buildBydVehicleDataSection())
-            buildHeadUnitBluetoothSection(page)
-            addSetting(
-                page,
-                settingsSwitchRow(
-                    label = getString(R.string.cluster_song_label),
-                    checked = BydClusterSongSettings.enabled(this),
-                    description = getString(R.string.cluster_song_desc),
-                ) { checked -> BydClusterSongSettings.setEnabled(this, checked) },
-                getString(R.string.cluster_song_note),
-                topMarginDp = 12,
-            )
-            addButton(page, buildClusterCallTestButton(), getString(R.string.cluster_call_test_note))
-            addSetting(
-                page,
-                settingsSwitchRow(
-                    label = getString(R.string.call_wind_label),
-                    checked = BydCallWindSettings.enabled(this),
-                    description = getString(R.string.call_wind_desc),
-                ) { checked -> BydCallWindSettings.setEnabled(this, checked) },
-                getString(R.string.call_wind_note),
-                topMarginDp = 12,
-            )
-            addSetting(
-                page,
-                settingsChoiceRow(
-                    getString(R.string.call_wind_target_label),
-                    (BydCallWindSettings.MIN_LEVEL..BydCallWindSettings.MAX_LEVEL).map { level ->
-                        level to getString(R.string.call_wind_target_value, level)
-                    },
-                    BydCallWindSettings.targetLevel(this),
-                ) { level -> BydCallWindSettings.setTargetLevel(this, level) },
-                getString(R.string.call_wind_target_note),
-                topMarginDp = 12,
-            )
-            addButton(page, buildCallWindTestButton(), getString(R.string.call_wind_test_note))
-        }
         addButton(
             page,
             Button(this).apply {
@@ -1320,82 +1321,70 @@ class CarPlayHostActivity : ComponentActivity() {
             },
             getString(R.string.hint_bt_settings),
         )
+        if (!BydSettingsAvailability.available(this)) return
+        // BYD group: ADB authorization first, since most of the features below depend on it.
+        addGroupHeader(page, getString(R.string.byd_settings_header))
+        addSubHeader(page, getString(R.string.byd_sub_adb), topMarginDp = 12)
+        addSetting(page, buildBydAdbCheckButton(), getString(R.string.byd_adb_note), topMarginDp = 10)
+        buildHeadUnitBluetoothSection(page)
+
+        addSubHeader(page, getString(R.string.byd_sub_call))
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.byd_hide_call_label),
+                checked = BydCallUiSettings.enabled(this),
+                description = getString(R.string.byd_hide_call_desc),
+            ) { checked -> BydCallUiSettings.setEnabled(this, checked) },
+            getString(R.string.byd_hide_call_note),
+            topMarginDp = 10,
+        )
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.call_wind_label),
+                checked = BydCallWindSettings.enabled(this),
+                description = getString(R.string.call_wind_desc),
+            ) { checked -> BydCallWindSettings.setEnabled(this, checked) },
+            getString(R.string.call_wind_note),
+            topMarginDp = 12,
+        )
+        addSetting(
+            page,
+            settingsChoiceRow(
+                getString(R.string.call_wind_target_label),
+                (BydCallWindSettings.MIN_LEVEL..BydCallWindSettings.MAX_LEVEL).map { level ->
+                    level to getString(R.string.call_wind_target_value, level)
+                },
+                BydCallWindSettings.targetLevel(this),
+            ) { level -> BydCallWindSettings.setTargetLevel(this, level) },
+            getString(R.string.call_wind_target_note),
+            topMarginDp = 12,
+        )
+
+        addSubHeader(page, getString(R.string.byd_sub_cluster))
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.cluster_song_label),
+                checked = BydClusterSongSettings.enabled(this),
+                description = getString(R.string.cluster_song_desc),
+            ) { checked -> BydClusterSongSettings.setEnabled(this, checked) },
+            getString(R.string.cluster_song_note),
+            topMarginDp = 10,
+        )
+
+        addSubHeader(page, getString(R.string.byd_vehicle_data_title))
+        addSetting(page, buildBydVehicleDataSection(), getString(R.string.byd_vehicle_data_note), topMarginDp = 0)
     }
 
-    private fun buildCallWindTestButton(): Button = Button(this).apply {
-        var running = false
-        text = getString(R.string.call_wind_test)
-        setOnClickListener {
-            if (shuttingDown.get()) return@setOnClickListener
-            if (running) {
-                isEnabled = false
-                text = getString(R.string.call_wind_test_stopping)
-                BydCallWindTest.cancelManual("manual stop")
-                return@setOnClickListener
-            }
-            running = true
-            text = getString(R.string.call_wind_test_stop)
-            val started = BydCallWindTest.start(applicationContext,
-                { line -> runOnUiThread { if (!isDestroyed) appendLog(line) } },
-                { result -> runOnUiThread {
-                    running = false
-                    isEnabled = true
-                    text = getString(R.string.call_wind_test)
-                    if (!isFinishing && !isDestroyed && !shuttingDown.get()) {
-                        val message = when {
-                            result.blocked != null -> getString(R.string.call_wind_test_skipped)
-                            result.released -> getString(R.string.call_wind_test_released)
-                            result.cancelled && !result.requested -> getString(R.string.call_wind_test_cancelled)
-                            else -> getString(R.string.call_wind_test_unavailable)
-                        }
-                        AlertDialog.Builder(this@CarPlayHostActivity).setTitle(R.string.call_wind_test)
-                            .setMessage("$message\n\n${result.details}")
-                            .setPositiveButton(android.R.string.ok, null).show()
-                    }
-                } },
-            )
-            if (!started) {
-                running = false
-                text = getString(R.string.call_wind_test)
-                Toast.makeText(this@CarPlayHostActivity, R.string.call_wind_test_busy, Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    /** BYD group: sends the cluster a test call (name and timer) the way BYD's phone app does. */
-    private fun buildClusterCallTestButton(): Button = Button(this).apply {
-        text = getString(R.string.cluster_call_test)
-        setOnClickListener {
-            isEnabled = false
-            text = getString(R.string.cluster_call_test_running)
-            appendLog("Cluster call-info test started")
-            kotlin.concurrent.thread(name = "xcertplay-cluster-call-test", isDaemon = true) {
-                val result = runCatching { BydVehicleAccess.callInfoTest(applicationContext) }
-                runOnUiThread {
-                    isEnabled = true
-                    text = getString(R.string.cluster_call_test)
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    val message = result.fold({ (access, lines) ->
-                        when (access) {
-                            LocalAdb.Access.READY -> {
-                                lines.forEach { appendLog("Cluster call-info test: $it") }
-                                getString(R.string.cluster_call_test_done, lines.joinToString("\n"))
-                            }
-                            LocalAdb.Access.NOT_APPROVED -> getString(R.string.byd_adb_not_approved)
-                            LocalAdb.Access.UNREACHABLE -> getString(R.string.byd_adb_unreachable)
-                            LocalAdb.Access.UNSUPPORTED -> getString(R.string.byd_adb_unsupported)
-                        }
-                    }, { getString(R.string.byd_adb_failed, it.javaClass.simpleName) })
-                    AlertDialog.Builder(this@CarPlayHostActivity).setTitle(R.string.cluster_call_test)
-                        .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
-                }
-            }
-        }
-    }
+    /** A titled sub-section inside a group, such as the BYD group's ADB, calls and cluster parts. */
+    private fun addSubHeader(page: LinearLayout, title: String, topMarginDp: Int = 28) =
+        addSetting(page, menuText(title, 18f, Color.WHITE), topMarginDp = topMarginDp)
 
     /** BYD group: reads the head unit's real Bluetooth address through ADB so the iPhone receives it. */
     private fun buildHeadUnitBluetoothSection(page: LinearLayout) {
-        addSetting(page, menuText(getString(R.string.head_unit_bt_header), 18f, Color.WHITE))
+        addSubHeader(page, getString(R.string.head_unit_bt_header))
         val status = menuText("", 16f, Color.WHITE)
         fun refreshStatus() {
             val ids = AccessoryIds.of(this, airPlayIdentity)
@@ -1542,57 +1531,6 @@ class CarPlayHostActivity : ComponentActivity() {
         addGroupHeader(page, getString(R.string.group_display_area))
         addSetting(page, buildSafeAreaSection(), topMarginDp = 12)
 
-        addGroupHeader(page, getString(R.string.group_audio_routing))
-        addSetting(
-            page,
-            buildVehicleAudioChannelRow(
-                getString(R.string.media_audio_channel_label),
-                { mediaAudioChannel },
-                { mediaAudioChannel = it },
-                AudioAttributes.USAGE_MEDIA,
-            ),
-            topMarginDp = 12,
-        )
-        addSetting(
-            page,
-            buildVehicleAudioChannelRow(
-                getString(R.string.navigation_audio_channel_label),
-                { navigationAudioChannel },
-                { navigationAudioChannel = it },
-                AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
-            ),
-            topMarginDp = 10,
-        )
-        addSetting(
-            page,
-            buildVehicleAudioChannelRow(
-                getString(R.string.phone_audio_channel_label),
-                { phoneAudioChannel },
-                { phoneAudioChannel = it },
-                AudioAttributes.USAGE_VOICE_COMMUNICATION,
-            ),
-            getString(R.string.audio_channel_note, VehicleAudioChannel.MAX) + "\n" +
-                getString(R.string.phone_audio_channel_note),
-            topMarginDp = 10,
-        )
-        if (advancedAudioChannelMappingSupported) {
-            addSetting(
-                page,
-                settingsSwitchRow(
-                    label = getString(R.string.advanced_mapping_label),
-                    checked = advancedAudioChannelMapping,
-                    description = getString(R.string.advanced_mapping_desc),
-                ) { checked ->
-                    advancedAudioChannelMapping = checked
-                    appendLog(
-                        "Advanced audio channel mapping ${if (checked) "enabled" else "disabled"}; " +
-                            "applies when settings close",
-                    )
-                    updateResolutionMenu()
-                },
-            )
-        }
-
         addGroupHeader(page, getString(R.string.group_identity))
         addSetting(
             page,
@@ -1634,11 +1572,11 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun buildDiagnosticsPage(page: LinearLayout) {
-        addSetting(page, buildDebugLogsSection(), topMarginDp = 8)
+        addButton(page, buildExportLogsButton(), getString(R.string.export_logs_note), topMarginDp = 8)
+        addButton(page, buildWifiScanDiagnosticsButton(), getString(R.string.wifi_scan_diag_note))
+        addSetting(page, buildDebugLogsSection())
         addSetting(page, buildMediaMetricsSection(), topMarginDp = 20)
         addSetting(page, buildAudioPacketCaptureSection(), topMarginDp = 20)
-        addButton(page, buildExportLogsButton(), getString(R.string.export_logs_note))
-        addButton(page, buildWifiScanDiagnosticsButton(), getString(R.string.wifi_scan_diag_note))
         addGroupHeader(page, getString(R.string.technical_params))
         val preview = menuText("", 15f, MENU_SECONDARY).apply { setLineSpacing(0f, 1.2f) }
         addSetting(page, preview, topMarginDp = 12)
@@ -2379,9 +2317,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ).apply { topMargin = dp(10) },
             )
-            section.addView(menuText(note, 14f, MENU_SECONDARY))
         }
-        section.addView(menuText(getString(R.string.byd_vehicle_data_title), 20f, MENU_SECONDARY))
         addSwitch(
             getString(R.string.byd_vehicle_speed_label),
             BydVehicleSettings.speedEnabled(this),
@@ -2416,6 +2352,11 @@ class CarPlayHostActivity : ComponentActivity() {
         section.addView(
             menuText(getString(R.string.byd_vehicle_capacity_note), 14f, MENU_SECONDARY),
         )
+        return section
+    }
+
+    /** Asks for ADB approval and reports whether speed and battery can be read. */
+    private fun buildBydAdbCheckButton(): Button {
         val checkButton = Button(this).apply {
             text = getString(R.string.byd_adb_check)
             isAllCaps = false
@@ -2454,17 +2395,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 }
             }
         }
-        section.addView(
-            checkButton,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(10) },
-        )
-        section.addView(
-            menuText(getString(R.string.byd_adb_note), 14f, MENU_SECONDARY),
-        )
-        return section
+        return checkButton
     }
 
     /** [usage] is what CarPlay plays on this channel; the test tone uses it when the channel is automatic. */

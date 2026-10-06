@@ -21,13 +21,4 @@ object BydVehicleAccess {
             battery.lineSequence().any { BydVehicleData.battery(it, BydVehicleSettings.capacityKwh(context)) != null },
             listOf(speed, battery).filter { it.isNotBlank() }.joinToString("\n").take(800))
     }
-
-    /** Runs the cluster call-info test through adb shell; may ask for adb approval. */
-    fun callInfoTest(context: Context): Pair<LocalAdb.Access, List<String>> = LocalAdb(AdbKeys.load(context)).use { adb ->
-        val access = adb.connect(mayAsk = true)
-        if (access != LocalAdb.Access.READY) return@use access to emptyList()
-        val lines = mutableListOf<String>()
-        adb.stream(BydSdkStream.command(context, "calltest")) { line -> lines += line.removePrefix("XCERTPLAY ") }
-        access to lines
-    }
 }

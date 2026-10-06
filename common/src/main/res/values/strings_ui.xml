@@ -235,7 +235,7 @@
     <string name="cat_advanced">Advanced</string>
     <string name="cat_connection_sub">Wireless mode, hotspot and authentication</string>
     <string name="cat_display_sub">Icon size, sharpness and driving side</string>
-    <string name="cat_audio_sub">Mute, buffering and microphone</string>
+    <string name="cat_audio_sub">Buffering, microphone and audio channels</string>
     <string name="cat_vehicle_sub">Vehicle name, location and BYD features</string>
     <string name="cat_advanced_sub">Rarely needed; for troubleshooting or unusual head units</string>
     <string name="cat_diagnostics_sub">Logs and technical parameters for troubleshooting</string>

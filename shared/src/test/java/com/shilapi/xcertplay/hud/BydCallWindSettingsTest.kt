@@ -32,20 +32,6 @@ class BydCallWindSettingsTest {
         assertEquals(1, BydCallWindSettings.targetLevel(context))
     }
 
-    @Test fun activeCarPlayCallBlocksManualTesting() {
-        val owner = Any()
-        BydCallWindTest.observeCall(owner, true)
-        try {
-            assertFalse(BydCallWindTest.start(RuntimeEnvironment.getApplication(), {}, {
-                fail("A test must not start during a CarPlay call")
-            }))
-            BydCallWindTest.clearCall(Any()) // An old controller must not clear this call.
-            assertFalse(BydCallWindTest.start(RuntimeEnvironment.getApplication(), {}, {}))
-        } finally {
-            BydCallWindTest.clearCall(owner)
-        }
-    }
-
     @Test fun phoneCallStateIncludesWechatButDoesNotTreatSiriAsACall() {
         assertTrue(CarPlayAppStates.phoneCallActive(listOf(mapOf("appStateID" to 2, "entity" to 1)))!!)
         assertFalse(CarPlayAppStates.phoneCallActive(listOf(mapOf("appStateID" to 2, "entity" to 0)))!!)

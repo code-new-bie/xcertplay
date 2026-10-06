@@ -235,7 +235,7 @@
     <string name="cat_advanced">高级</string>
     <string name="cat_connection_sub">无线方式、热点和认证</string>
     <string name="cat_display_sub">图标大小、清晰度和驾驶位</string>
-    <string name="cat_audio_sub">静音、缓冲和麦克风</string>
+    <string name="cat_audio_sub">缓冲、麦克风和音频通道</string>
     <string name="cat_vehicle_sub">车辆名称、位置和比亚迪功能</string>
     <string name="cat_advanced_sub">一般无需修改，用于排查问题或特殊车机</string>
     <string name="cat_diagnostics_sub">日志和技术参数，排查问题时使用</string>

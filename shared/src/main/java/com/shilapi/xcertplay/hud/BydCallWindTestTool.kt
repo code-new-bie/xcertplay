@@ -19,12 +19,7 @@ internal object BydCallWindTestTool {
         require(token.matches(Regex("[a-f0-9]{32}")))
         val file = File(String(Base64.getDecoder().decode(args.getOrNull(1)), Charsets.UTF_8))
         require(file.isAbsolute && file.name == "$token.request")
-        val automatic = when (args.getOrNull(2) ?: "manual") {
-            "manual" -> false
-            "auto" -> true
-            else -> error("unknown call wind mode")
-        }
-        val target = args.getOrNull(3)?.toIntOrNull() ?: error("missing call wind target level")
+        val target = args.getOrNull(2)?.toIntOrNull() ?: error("missing call wind target level")
         require(target in BydCallWindSettings.MIN_LEVEL..BydCallWindSettings.MAX_LEVEL)
         fun emit(message: String) {
             println("XCERTPLAY callwind token=$token $message")
@@ -33,9 +28,8 @@ internal object BydCallWindTestTool {
         val finished = AtomicBoolean(false)
         val probe = AtomicReference<CallWindProbe?>()
         val lease = CallWindLease(SystemClock::elapsedRealtime)
-        fun leaseAlive() = if (automatic) lease.alive(file.isFile, file.lastModified()) else file.isFile
-        val expires = SystemClock.elapsedRealtime() +
-            if (automatic) AUTO_MAX_MS else CallWindProbe.DURATION_MS + 5_000L
+        fun leaseAlive() = lease.alive(file.isFile, file.lastModified())
+        val expires = SystemClock.elapsedRealtime() + MAX_CALL_MS
         val watchdog = thread(name = "xcertplay-call-wind-watchdog", isDaemon = true) {
             var stopSince: Long? = null
             while (!finished.get()) {
@@ -58,8 +52,7 @@ internal object BydCallWindTestTool {
         val hook = Thread({ runCatching { probe.get()?.releaseOnce() } }, "xcertplay-call-wind-shutdown")
         Runtime.getRuntime().addShutdownHook(hook)
         try {
-            emit("starting pid=${android.os.Process.myPid()} mode=${if (automatic) "automatic" else "manual"} " +
-                "target=$target")
+            emit("starting pid=${android.os.Process.myPid()} target=$target")
             RandomAccessFile(File(file.parentFile, "test.lock"), "rw").channel.use { channel ->
                 val ownership = channel.tryLock()
                 if (ownership == null) { emit("blocked: another probe is running"); return }
@@ -73,7 +66,7 @@ internal object BydCallWindTestTool {
                         },
                         SystemClock::elapsedRealtime, Thread::sleep, ::emit)
                     probe.set(current)
-                    emit(current.run(if (automatic) 0L else CallWindProbe.DURATION_MS))
+                    emit(current.run(0L))
                 }
             }
         } catch (error: Exception) {
@@ -125,7 +118,8 @@ internal object BydCallWindTestTool {
         private fun read(method: String) = (acType.getMethod(method).invoke(ac) as Number).toInt()
     }
 
-    private const val AUTO_MAX_MS = 30 * 60_000L
+    /** Safety cap: the fan is restored even if the call-end signal never arrives. */
+    private const val MAX_CALL_MS = 30 * 60_000L
     /** BYD AC commands wait for the vehicle's acknowledgement, so release gets several seconds. */
     const val RELEASE_GRACE_MS = 5_000L
 }

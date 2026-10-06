@@ -11,26 +11,16 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-/** Coordinates the diagnostic fan test and the opt-in fan reduction during CarPlay calls. */
+/** Coordinates the opt-in fan reduction during CarPlay calls. */
 object BydCallWindTest {
-    /** [blocked] is why the helper left the fan alone (AC off, fan already low, stock call active). */
-    data class Result(val requested: Boolean, val released: Boolean, val cancelled: Boolean, val details: String,
-        val processGone: Boolean = true, val blocked: String? = null)
+    private data class Result(val requested: Boolean, val released: Boolean, val cancelled: Boolean,
+        val processGone: Boolean = true)
     private val lock = Any()
-    private var manual: Run? = null
     private var automatic: Run? = null
     private var callOwner: Any? = null
     private var phoneCallActive = false
     private var generation = 0L
     private var cleanupUnconfirmed = false
-
-    fun observeCall(owner: Any, active: Boolean) = synchronized(lock) {
-        if (callOwner !== owner || phoneCallActive != active) generation++
-        callOwner = owner
-        phoneCallActive = active
-        if (active) manual?.stop("CarPlay call started")
-        else automatic?.stop("CarPlay call ended")
-    }
 
     /** Updates call state and starts the opt-in fan reduction off the callback thread. */
     fun observeCall(context: Context, owner: Any, active: Boolean, log: (String) -> Unit) {
@@ -39,20 +29,16 @@ object BydCallWindTest {
             generation++
             callOwner = owner
             phoneCallActive = active
-            if (active) {
-                manual?.stop("CarPlay call started")
-            } else {
-                automatic?.stop("CarPlay call ended")
-            }
+            if (!active) automatic?.stop("CarPlay call ended")
             generation
         }
         if (!active || !BydCallWindSettings.enabled(context)) return
         thread(name = "xcertplay-call-wind-auto-wait", isDaemon = true) {
-            // Also wait for an earlier automatic call that is still releasing after a quick redial.
+            // Also wait for an earlier call that is still releasing after a quick redial.
             repeat(80) {
                 val waiting = synchronized(lock) {
                     if (generation != expectedGeneration || cleanupUnconfirmed) return@thread
-                    manual != null || automatic != null
+                    automatic != null
                 }
                 if (!waiting) {
                     startAutomatic(context, owner, expectedGeneration, log)
@@ -76,50 +62,25 @@ object BydCallWindTest {
         }
     }
 
-    fun start(context: Context, log: (String) -> Unit, completed: (Result) -> Unit): Boolean = synchronized(lock) {
-        if (manual != null || automatic != null || phoneCallActive || cleanupUnconfirmed) return@synchronized false
-        val run = Run(context.applicationContext, log, automatic = false)
-        manual = run
-        thread(name = "xcertplay-call-wind-test", isDaemon = true) {
-            val result = run.execute()
-            synchronized(lock) {
-                if (!result.processGone) cleanupUnconfirmed = true
-                if (manual === run) manual = null
-            }
-            completed(result)
-        }
-        true
-    }
-
     fun cancel(reason: String): CompletableFuture<Boolean> {
-        val futures = synchronized(lock) {
-            generation++ // Revoke queued starts before waiting for existing helpers.
-            listOfNotNull(manual?.stop(reason), automatic?.stop(reason))
-        }
-        if (futures.isEmpty()) return CompletableFuture.completedFuture(synchronized(lock) { !cleanupUnconfirmed })
+        val future = synchronized(lock) {
+            generation++ // Revoke queued starts before waiting for the existing helper.
+            automatic?.stop(reason)
+        } ?: return CompletableFuture.completedFuture(synchronized(lock) { !cleanupUnconfirmed })
         val result = CompletableFuture<Boolean>()
         thread(name = "xcertplay-call-wind-cancel", isDaemon = true) {
-            var confirmed = true
-            futures.forEach { future ->
-                confirmed = runCatching { future.get(8_000, TimeUnit.MILLISECONDS) && confirmed }
-                    .getOrDefault(false)
-            }
-            result.complete(confirmed)
+            result.complete(runCatching { future.get(8_000, TimeUnit.MILLISECONDS) }.getOrDefault(false))
         }
         return result
-    }
-
-    fun cancelManual(reason: String): CompletableFuture<Boolean> = synchronized(lock) {
-        manual?.stop(reason) ?: CompletableFuture.completedFuture(true)
     }
 
     private fun startAutomatic(context: Context, owner: Any, expectedGeneration: Long,
         log: (String) -> Unit) = synchronized(lock) {
         if (generation != expectedGeneration || cleanupUnconfirmed ||
-            !phoneCallActive || callOwner !== owner || manual != null || automatic != null ||
+            !phoneCallActive || callOwner !== owner || automatic != null ||
             !BydCallWindSettings.enabled(context)
         ) return@synchronized
-        val run = Run(context.applicationContext, log, automatic = true)
+        val run = Run(context.applicationContext, log)
         automatic = run
         thread(name = "xcertplay-call-wind-auto", isDaemon = true) {
             val result = run.execute()
@@ -137,7 +98,6 @@ object BydCallWindTest {
     private class Run(
         private val context: Context,
         private val log: (String) -> Unit,
-        private val automatic: Boolean,
     ) {
         private val stateLock = Any()
         private val token = UUID.randomUUID().toString().replace("-", "")
@@ -172,34 +132,31 @@ object BydCallWindTest {
         }
 
         fun execute(): Result {
-            val lines = mutableListOf<String>()
             var requested = false
             var released = false
             var processGone = true
             var pid: Int? = null
             var untouched = false
-            var blocked: String? = null
             try {
-                val path = prepareFile() ?: return Result(false, false, true, "cancelled before startup")
-                startAutomaticLease(path)
+                val path = prepareFile() ?: return Result(false, false, true)
+                startLease(path)
                 val adb = LocalAdb(AdbKeys.load(context)).also { client = it }
-                if (stopping) return Result(false, false, true, "cancelled before authentication")
-                val access = adb.connect(mayAsk = !automatic)
+                if (stopping) return Result(false, false, true)
+                val access = adb.connect(mayAsk = false)
                 if (access != LocalAdb.Access.READY) throw IOException("ADB access=$access")
-                if (stopping) return Result(false, false, true, "cancelled before launch")
+                if (stopping) return Result(false, false, true)
                 val quoted = "'${path.absolutePath.replace("'", "'\\''")}'"
                 if (adb.shell("if [ -r $quoted ]; then echo readable; fi")?.trim() != "readable") {
-                    throw IOException("ADB cannot read the test request")
+                    throw IOException("ADB cannot read the request file")
                 }
-                if (stopping) return Result(false, false, true, "cancelled before launch")
+                if (stopping) return Result(false, false, true)
                 synchronized(stateLock) {
-                    if (stopping) return Result(false, false, true, "cancelled before launch")
+                    if (stopping) return Result(false, false, true)
                     launched = true
                     processGone = false
                 }
                 val encoded = Base64.getEncoder().encodeToString(path.absolutePath.toByteArray(Charsets.UTF_8))
-                val mode = if (automatic) "auto" else "manual"
-                val helper = BydSdkStream.helper(context, "callwindtest", token, encoded, mode, target.toString())
+                val helper = BydSdkStream.helper(context, "callwindtest", token, encoded, target.toString())
                 val launch = "$helper & xcertplay_wind_pid=\$!; " +
                     "echo XCERTPLAY callwind token=$token starting pid=\$xcertplay_wind_pid; " +
                     "wait \$xcertplay_wind_pid; " +
@@ -213,20 +170,13 @@ object BydCallWindTest {
                                 ?.takeIf { it > 0 }?.let { pid = it }
                         }
                         if (message == "exited pid=$pid") processGone = true
-                        if (message.startsWith("blocked:")) blocked = message.removePrefix("blocked:").trim()
                         if (message.startsWith("blocked:") || message == "cancelled before request") untouched = true
                         if (message == "released") released = true
-                        if (!message.startsWith("heartbeat ")) {
-                            if (lines.size == 32) lines.removeAt(0)
-                            lines += message
-                            report(message)
-                        }
+                        if (!message.startsWith("heartbeat ")) report(message)
                     }
                 }
             } catch (error: Exception) {
-                val message = "failed: ${error.javaClass.simpleName} ${error.message.orEmpty().take(160)}"
-                lines += message
-                report(message)
+                report("failed: ${error.javaClass.simpleName} ${error.message.orEmpty().take(160)}")
             } finally {
                 heartbeat?.interrupt()
                 heartbeat = null
@@ -239,7 +189,7 @@ object BydCallWindTest {
                 report("stop complete processGone=$processGone released=$released")
                 done.complete(processGone && (released || untouched || !launched))
             }
-            return Result(requested, released, stopping, lines.joinToString("\n"), processGone, blocked)
+            return Result(requested, released, stopping, processGone)
         }
 
         private fun confirmOrTerminate(pid: Int): Boolean = LocalAdb(AdbKeys.load(context)).use { adb ->
@@ -256,13 +206,13 @@ object BydCallWindTest {
         private fun prepareFile(): File? = synchronized(stateLock) {
             if (stopping) return@synchronized null
             val directory = context.getExternalFilesDir("call-wind-test")
-                ?: throw IOException("test directory unavailable")
-            if (!directory.isDirectory && !directory.mkdirs()) throw IOException("cannot create test directory")
+                ?: throw IOException("request directory unavailable")
+            if (!directory.isDirectory && !directory.mkdirs()) throw IOException("cannot create request directory")
             File(directory, "$token.request").also { file = it; it.writeText("$token\n") }
         }
 
-        private fun startAutomaticLease(path: File) {
-            if (!automatic) return
+        /** The helper releases the fan by itself once this file stops being refreshed. */
+        private fun startLease(path: File) {
             heartbeat = thread(name = "xcertplay-call-wind-lease", isDaemon = true) {
                 while (!stopping && path.isFile) {
                     path.setLastModified(System.currentTimeMillis())
@@ -274,9 +224,7 @@ object BydCallWindTest {
         }
 
         private fun report(message: String) {
-            runCatching {
-                log("Call wind ${if (automatic) "automatic" else "test"}: token=$token $message")
-            }
+            runCatching { log("Call wind automatic: token=$token $message") }
         }
     }
 }
