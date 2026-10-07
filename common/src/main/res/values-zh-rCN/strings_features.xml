@@ -39,7 +39,7 @@
     <string name="byd_adb_unreachable">无法连接 127.0.0.1:5555。请在车机上开启网络 ADB；仅有 USB ADB 连接不会开放该端口。</string>
     <string name="byd_adb_unsupported">该调试服务需要 xcertplay 不支持的协议。请使用 Android 10 的网络 ADB 服务。</string>
     <string name="byd_adb_failed">ADB 检查失败：%1$s</string>
-    <string name="byd_adb_note">仪表歌词、通话降风量、暂停车机 Wi-Fi 搜索、车机蓝牙地址和车辆数据都需要先授权。点击后车机可能弹出调试授权对话框，请选择允许；检查结果会显示车速和电量能否读取。后台使用时不会再请求授权。</string>
+    <string name="byd_adb_note">仪表歌词、通话降风量、暂停车机 Wi-Fi 搜索、熄火时自动退出 CarPlay、车机蓝牙地址和车辆数据都需要先授权。点击后车机可能弹出调试授权对话框，请选择允许；检查结果会显示车速和电量能否读取。后台使用时不会再请求授权。</string>
     <string name="byd_sub_adb">车机 ADB</string>
     <string name="byd_sub_call">通话</string>
     <string name="byd_sub_cluster">仪表</string>
@@ -58,7 +58,7 @@
     <string name="bluetooth_handoff_calls_desc">通话走 CarPlay，原车电话不再弹窗</string>
     <string name="bluetooth_handoff_audio_label">CarPlay 期间断开 iPhone 蓝牙音乐</string>
     <string name="bluetooth_handoff_audio_desc">音乐走 CarPlay，不走蓝牙</string>
-    <string name="bluetooth_handoff_note">这是 CarPlay 要求车机断开的蓝牙连接。若经 Wi-Fi 播放的音乐卡顿，可在“音频”中调大音乐缓冲，或关闭“断开蓝牙音乐”让音乐继续走蓝牙（iPhone 的播放输出会显示为蓝牙）。CarPlay 结束 15 秒后自动恢复两项连接。开关改动立即生效：连接中关闭某项会马上恢复该连接。车辆熄火时系统会直接关闭应用，来不及恢复：下次上电后在后台恢复；开了“开机自动启动”时，等 60 秒没连上 CarPlay 再恢复。</string>
+    <string name="bluetooth_handoff_note">这是 CarPlay 要求车机断开的蓝牙连接。若经 Wi-Fi 播放的音乐卡顿，可在“音频”中调大音乐缓冲，或关闭“断开蓝牙音乐”让音乐继续走蓝牙（iPhone 的播放输出会显示为蓝牙）。CarPlay 结束 15 秒后自动恢复两项连接。开关改动立即生效：连接中关闭某项会马上恢复该连接。熄火时 CarPlay 会退出并立即恢复两项连接（需授权车机 ADB）；没来得及恢复的，下次上电后在后台恢复，开了“开机自动启动”时等 60 秒没连上 CarPlay 再恢复。</string>
     <string name="wifi_scan_diag">Wi-Fi 扫描诊断</string>
     <string name="wifi_scan_diag_running">正在读取…</string>
     <string name="wifi_scan_diag_note">通过 ADB 读取哪些应用和系统服务在扫描 Wi-Fi，并写入日志。频繁扫描会让 Wi-Fi P2P 卡顿。读取后请导出日志。</string>
@@ -73,7 +73,7 @@
     <string name="call_wind_target_note">仅在当前风量高于此档时调整。默认 2 档，下一通电话起生效。</string>
     <string name="wifi_scan_pause_label">CarPlay 期间暂停车机 Wi-Fi 搜索（推荐）</string>
     <string name="wifi_scan_pause_desc">减少 Wi-Fi 扫描干扰；安装了高德车机版时也会停止其导航</string>
-    <string name="wifi_scan_pause_note">通过已授权的 ADB，在无线 CarPlay 期间暂停车机自动搜索。若安装了高德车机版，会尝试限制其 Wi-Fi 扫描，并在每次连接时强制停止一次，原车高德导航会结束。同时限制系统百度网络定位的 Wi-Fi 扫描（不停止它，期间网络定位可能变粗）。断开 15 秒后恢复搜索与原权限，关闭此开关或退出应用时立即恢复，不会重新启动高德。熄火后来不及恢复的，下次上电后在后台恢复；开了“开机自动启动”时，等 60 秒没连上 CarPlay 再恢复。暂停期间车机不会自动连接已保存的 Wi-Fi。需要先授权 ADB（比亚迪分组）。</string>
+    <string name="wifi_scan_pause_note">通过已授权的 ADB，在无线 CarPlay 期间暂停车机自动搜索。若安装了高德车机版，会尝试限制其 Wi-Fi 扫描，并在每次连接时强制停止一次，原车高德导航会结束。同时限制系统百度网络定位的 Wi-Fi 扫描（不停止它，期间网络定位可能变粗）。断开 15 秒后恢复搜索与原权限，关闭此开关或退出应用时立即恢复，不会重新启动高德。熄火时 CarPlay 会退出并立即恢复；没来得及恢复的，下次上电后在后台恢复，开了“开机自动启动”时等 60 秒没连上 CarPlay 再恢复。暂停期间车机不会自动连接已保存的 Wi-Fi。需要先授权 ADB（比亚迪分组）。</string>
     <string name="cluster_song_label">仪表显示歌曲/歌词</string>
     <string name="cluster_song_desc">在仪表的音乐卡片中显示 CarPlay 歌曲</string>
     <string name="cluster_song_note">显示“歌名 — 歌手”及播放/暂停；想显示歌词，请在音乐 App（QQ 音乐、网易云音乐等）中打开“车载/蓝牙歌词”，它会把当前歌词放进歌名。通过已授权的 ADB 写入，卡片显示为“其他”音源。</string>

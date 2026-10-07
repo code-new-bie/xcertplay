@@ -3,12 +3,18 @@ package com.shilapi.xcertplay.hud
 import android.content.Context
 import android.os.SystemClock
 
-/** One sample of the reversing/panorama camera, as the shell helper prints it. */
-internal data class BydCameraReading(val workState: Int?, val displayMode: Int?, val gear: Int?) {
+/** One sample of the reversing/panorama camera and the vehicle power level, as the shell helper prints it. */
+internal data class BydCameraReading(
+    val workState: Int?,
+    val displayMode: Int?,
+    val gear: Int?,
+    val powerLevel: Int? = null,
+) {
     /** BYD shows a camera picture: the panorama unit is working, or the car is in reverse. */
     val shown: Boolean get() = workState == PANORAMA_WORK_ON || gear == GEAR_REVERSE
 
-    fun describe(): String = "panorama=${workState ?: "-"} displayMode=${displayMode ?: "-"} gear=${gear ?: "-"}"
+    fun describe(): String = "panorama=${workState ?: "-"} displayMode=${displayMode ?: "-"} gear=${gear ?: "-"} " +
+        "power=${powerLevel ?: "-"}"
 
     companion object {
         const val LINE_PREFIX = "XCERTPLAY camera"
@@ -19,9 +25,48 @@ internal data class BydCameraReading(val workState: Int?, val displayMode: Int?,
         fun parse(line: String): BydCameraReading? {
             if (!line.startsWith("$LINE_PREFIX ")) return null
             val fields = line.removePrefix("$LINE_PREFIX ").trim().split(' ')
-            if (fields.size != 3) return null
-            return BydCameraReading(fields[0].toIntOrNull(), fields[1].toIntOrNull(), fields[2].toIntOrNull())
+            if (fields.size !in 3..4) return null
+            return BydCameraReading(
+                fields[0].toIntOrNull(), fields[1].toIntOrNull(), fields[2].toIntOrNull(), fields.getOrNull(3)?.toIntOrNull(),
+            )
         }
+    }
+}
+
+/**
+ * Tells when the car was switched off: the power level drops to OFF from a level the car was on
+ * at, and is still OFF [confirmMs] later, outside a driving gear. A head unit started while the car
+ * is already off never fires, and it fires once per switch-off.
+ */
+internal class BydPowerOffDetector(private val confirmMs: Long = CONFIRM_MS) {
+    private var wasOn = false
+    private var offSinceMs: Long? = null
+    private var fired = false
+
+    /** Feeds one reading; returns true once the switch-off is confirmed. */
+    @Synchronized
+    fun update(reading: BydCameraReading, nowMs: Long): Boolean {
+        val level = reading.powerLevel?.takeIf { it in POWER_LEVEL_OFF..POWER_LEVEL_FAKE_OK } ?: return false
+        if (level != POWER_LEVEL_OFF) {
+            wasOn = true
+            offSinceMs = null
+            fired = false
+            return false
+        }
+        if (!wasOn || fired) return false
+        val since = offSinceMs ?: nowMs.also { offSinceMs = it }
+        if (nowMs - since < confirmMs || reading.gear in DRIVING_GEARS) return false
+        fired = true
+        return true
+    }
+
+    companion object {
+        const val CONFIRM_MS = 1_000L
+        // BYDAutoBodyworkDevice.BODYWORK_POWER_LEVEL_OFF .. BODYWORK_POWER_LEVEL_FAKE_OK (255 is invalid).
+        private const val POWER_LEVEL_OFF = 0
+        private const val POWER_LEVEL_FAKE_OK = 4
+        // BYDAutoGearboxDevice.GEARBOX_AUTO_MODE_R, N, D, M, S; P is 1.
+        private val DRIVING_GEARS = 2..6
     }
 }
 
@@ -71,6 +116,7 @@ internal class BydCameraState(private val holdMs: Long = HOLD_MS) {
  */
 object BydCameraMonitor {
     private val state = BydCameraState()
+    private val powerOff = BydPowerOffDetector()
     private var stream: BydSdkStream? = null
 
     /** Where readings are logged; the current host screen sets it, so a recreated screen takes over. */
@@ -81,15 +127,27 @@ object BydCameraMonitor {
     @Volatile
     var onChanged: (Boolean) -> Unit = {}
 
+    /**
+     * Called once on the reader thread when the car is switched off; the head unit sleeps about ten
+     * seconds later and kills the app.
+     */
+    @Volatile
+    var onPowerOff: () -> Unit = {}
+
     @Synchronized
     fun start(context: Context) {
         if (stream != null) return
         state.clear()
         stream = BydSdkStream(context.applicationContext, "panorama", { line ->
             val reading = BydCameraReading.parse(line) ?: return@BydSdkStream
-            if (state.update(reading, SystemClock.elapsedRealtime())) {
+            val now = SystemClock.elapsedRealtime()
+            if (state.update(reading, now)) {
                 runCatching { log("BYD camera: shown=${reading.shown} ${reading.describe()}") }
                 runCatching { onChanged(reading.shown) }
+            }
+            if (powerOff.update(reading, now)) {
+                runCatching { log("BYD vehicle switched off: ${reading.describe()}") }
+                runCatching { onPowerOff() }
             }
         }, { state.clear() }, { message -> runCatching { log(message) } }).also { it.start() }
     }

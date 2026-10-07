@@ -8,8 +8,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * What happened to CarPlay's leftover restrictions at boot. Kept apart from the session log, which
- * every host start overwrites, and exported with it.
+ * What happened to CarPlay's restrictions when the car was switched off and at the next boot. Kept
+ * apart from the session log, which every host start overwrites, and exported with it.
  */
 internal class BootRestoreLog(context: Context) {
     private val file = file(context)

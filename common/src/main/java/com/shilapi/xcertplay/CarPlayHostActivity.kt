@@ -122,6 +122,7 @@ import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * Full-screen CarPlay host. It renders decoded video through a [TextureView], forwards touch to
@@ -376,6 +377,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private val bydHeadUnit by lazy { BydSettingsAvailability.available(this) }
     private val cameraLog: (String) -> Unit = { appendLog(it) }
     private val cameraChanged: (Boolean) -> Unit = { shown -> if (!shown) runOnUiThread { recordNormalWindow() } }
+    private val vehiclePoweredOff: () -> Unit = { runOnUiThread { exitForVehiclePowerOff() } }
     private var displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
     private var hevcEnabled = true
     private var hevcSoftwareDecoderEnabled = false
@@ -580,6 +582,7 @@ class CarPlayHostActivity : ComponentActivity() {
             // Started before CarPlay so a session that begins in reverse can be sized correctly.
             BydCameraMonitor.log = cameraLog
             BydCameraMonitor.onChanged = cameraChanged
+            BydCameraMonitor.onPowerOff = vehiclePoweredOff
             BydCameraMonitor.start(applicationContext)
         }
         val reusedBackgroundSession = adoptBackgroundSession()
@@ -801,6 +804,7 @@ class CarPlayHostActivity : ComponentActivity() {
         // The reader keeps running for the next screen; it must not call back into this one.
         if (BydCameraMonitor.log === cameraLog) BydCameraMonitor.log = {}
         if (BydCameraMonitor.onChanged === cameraChanged) BydCameraMonitor.onChanged = {}
+        if (BydCameraMonitor.onPowerOff === vehiclePoweredOff) BydCameraMonitor.onPowerOff = {}
         mainHandler.removeCallbacks(expireOldLogLines)
         mainHandler.removeCallbacks(renderLogLines)
         mainHandler.removeCallbacks(drainScreenLogs)
@@ -4582,10 +4586,30 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
-    private fun exitApplication() {
+    /**
+     * The car was switched off: the head unit sleeps about ten seconds later and kills the app
+     * before any delayed restore, so exit as from settings. The restores start alongside the
+     * disconnect rather than after it; anything unfinished is repaired at the next power-on.
+     */
+    private fun exitForVehiclePowerOff() {
+        if (shuttingDown.get()) return
+        val message = "Vehicle switched off: exiting CarPlay and restoring Bluetooth, Wi-Fi search and scan permissions"
+        appendLog(message)
+        BootRestoreLog(applicationContext).append(message)
+        val app = applicationContext
+        thread(name = "xcertplay-power-off-bluetooth") {
+            runCatching { BluetoothHandoff.shared(app).releaseNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS, REASON_VEHICLE_OFF) }
+        }
+        thread(name = "xcertplay-power-off-wifi") {
+            runCatching { WifiScanPause.shared(app).resumeNowBlocking(EXIT_RESTORE_TIMEOUT_MILLIS) }
+        }
+        exitApplication(REASON_VEHICLE_OFF)
+    }
+
+    private fun exitApplication(reason: String = "settings exit application") {
         if (shuttingDown.get()) return
         restoreSettingsBaseline()
-        shutdown(terminateProcess = true, reason = "settings exit application")
+        shutdown(terminateProcess = true, reason = reason)
         // Show the head-unit home at once; the cleanup finishes in the background and then the
         // activity and process end.
         moveTaskToBack(true)
@@ -4642,11 +4666,11 @@ class CarPlayHostActivity : ComponentActivity() {
                 val bluetooth = cleanup.bluetoothRestored
                 val wifiSearch = cleanup.wifiSearchResumed
                 Log.i(TAG, "exit cleanup wireless=$clean bluetoothRestored=$bluetooth wifiSearchResumed=$wifiSearch")
-                appendFileLog(
-                    "Exit cleanup: wireless stack closed=$clean, Bluetooth restored=$bluetooth, " +
-                        "Wi-Fi search resumed=$wifiSearch, took ${SystemClock.elapsedRealtime() - shutdownStartedMs}ms",
-                    System.currentTimeMillis(),
-                )
+                val summary = "Exit cleanup: wireless stack closed=$clean, Bluetooth restored=$bluetooth, " +
+                    "Wi-Fi search resumed=$wifiSearch, took ${SystemClock.elapsedRealtime() - shutdownStartedMs}ms"
+                appendFileLog(summary, System.currentTimeMillis())
+                // The session log is overwritten at the next start; keep what the switch-off did.
+                if (reason == REASON_VEHICLE_OFF) BootRestoreLog(applicationContext).append(summary)
                 try {
                     applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
                 } catch (error: Exception) {
@@ -5131,6 +5155,7 @@ class CarPlayHostActivity : ComponentActivity() {
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
         const val EXIT_CLOSE_TIMEOUT_MILLIS = 8_000L
         const val EXIT_RESTORE_TIMEOUT_MILLIS = 5_000L
+        const val REASON_VEHICLE_OFF = "vehicle switched off"
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
         const val PROTOCOL_TRACE_PREFIX = "TRACE "
         const val THREE_FINGER_COUNT = 3

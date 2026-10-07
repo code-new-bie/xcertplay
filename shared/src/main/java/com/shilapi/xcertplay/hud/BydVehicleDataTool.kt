@@ -41,12 +41,15 @@ object BydVehicleDataTool {
 
     /**
      * Prints the camera state ([BydCameraReading.LINE_PREFIX]: panorama work state, display mode,
-     * gear) when it changes, and every [CAMERA_REPEAT_MS] to keep adb's read deadline alive.
-     * A car without a panorama unit still reports the gear, which brings up the rear camera.
+     * gear, vehicle power level) when it changes, and every [CAMERA_REPEAT_MS] to keep adb's read
+     * deadline alive. A car without a panorama unit still reports the gear, which brings up the
+     * rear camera. The power level tells the app the car was switched off before the head unit
+     * sleeps.
      */
     private fun cameraWatch(context: Context, once: Boolean) {
         val panorama = runCatching { Device("panorama.BYDAutoPanoramaDevice", context) }.getOrNull()
         val gearbox = runCatching { Device("gearbox.BYDAutoGearboxDevice", context) }.getOrNull()
+        val bodywork = runCatching { Device("bodywork.BYDAutoBodyworkDevice", context) }.getOrNull()
         check(panorama != null || gearbox != null)
         fun read(device: Device?, method: String): String =
             device?.let { runCatching { it.read(method).toInt().toString() }.getOrNull() } ?: "-"
@@ -55,7 +58,8 @@ object BydVehicleDataTool {
         var lastPrinted = 0L
         do {
             val line = "${BydCameraReading.LINE_PREFIX} ${read(panorama, "getPanoWorkState")} " +
-                "${read(panorama, "getDisplayMode")} ${read(gearbox, "getGearboxAutoModeType")}"
+                "${read(panorama, "getDisplayMode")} ${read(gearbox, "getGearboxAutoModeType")} " +
+                read(bodywork, "getPowerLevel")
             val now = SystemClock.elapsedRealtime()
             if (line != last || now - lastPrinted >= CAMERA_REPEAT_MS) {
                 println(line)
