@@ -15,7 +15,9 @@ import org.robolectric.annotation.Config
 class WifiScanPauseTest {
     private class Shell : WifiScanShell {
         val commands = CopyOnWriteArrayList<String>()
-        var mode = "allow"
+        val modes = mutableMapOf<String, String>()
+        /** Gaode's mode; each package keeps its own AppOps entry. */
+        val mode get() = modes[AppScanRestriction.GAODE] ?: "allow"
         var losePauseReply = false
         override fun connect() = true
         override fun close() = Unit
@@ -25,12 +27,13 @@ class WifiScanPauseTest {
                 "wifiscan off" in command -> if (losePauseReply) null else "XCERTPLAY wifiscan enabled=false ok"
                 "wifiscan on" in command -> "XCERTPLAY wifiscan enabled=true ok"
                 command.startsWith("pm path") -> "package:/system/app/Gaode.apk"
-                command.startsWith("cmd appops get") -> "CHANGE_WIFI_STATE: $mode\nXCERTPLAY-appops-read"
+                command.startsWith("cmd appops get") ->
+                    "CHANGE_WIFI_STATE: ${modes[command.split(' ')[5]] ?: "allow"}\nXCERTPLAY-appops-read"
                 command.startsWith("cmd appops set") -> {
-                    mode = command.substringBefore(" &&").substringAfterLast(' ')
+                    modes[command.split(' ')[5]] = command.substringBefore(" &&").substringAfterLast(' ')
                     "XCERTPLAY-appops-set"
                 }
-                command.startsWith("am force-stop") -> "XCERTPLAY-gaode-stopped"
+                command.startsWith("am force-stop") -> "XCERTPLAY-app-stopped"
                 else -> error(command)
             }
         }
@@ -79,6 +82,18 @@ class WifiScanPauseTest {
         assertEquals(1, shell.commands.count { it.startsWith("am force-stop") })
         assertEquals(2, shell.commands.count { "wifiscan on" in it })
         assertEquals("allow", shell.mode)
+    }
+
+    @Test fun pauseRestrictsBaiduLocationScansWithoutStoppingIt() {
+        val shell = Shell()
+        val manager = manager(shell)
+        manager.pause()
+        assertTrue(manager.resumeNowBlocking(2000))
+        val baidu = AppScanRestriction.BAIDU_LOCATION
+        assertTrue(shell.commands.any { it.startsWith("cmd appops set") && "$baidu CHANGE_WIFI_STATE ignore" in it })
+        assertTrue(shell.commands.any { it.startsWith("cmd appops set") && "$baidu CHANGE_WIFI_STATE allow" in it })
+        assertFalse(shell.commands.any { it.startsWith("am force-stop") && baidu in it })
+        assertEquals(1, shell.commands.count { it.startsWith("am force-stop") })
     }
 
     @Test fun startupRepairsPendingSearchEvenWithoutPauseAcknowledgement() {

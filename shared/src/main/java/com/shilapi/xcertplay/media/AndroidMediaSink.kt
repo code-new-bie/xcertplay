@@ -27,6 +27,8 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -42,6 +44,8 @@ class AndroidMediaSink(
     private val preferSoftwareHevcDecoder: Boolean = false,
     private val advancedAudioChannelMapping: Boolean = false,
     private val mainMediaAudioBufferDurationMs: Int = MainMediaAudioBuffer.DEFAULT_DURATION_MS,
+    /** Start-up buffer of navigation prompts ([NavigationAudioBuffer]). */
+    private val navigationAudioBufferDurationMs: Int = NavigationAudioBuffer.DEFAULT_DURATION_MS,
     private val microphoneGainPercent: Int = MicrophoneGain.DEFAULT_PERCENT,
     mediaMetricsMonitor: MediaMetricsMonitor? = null,
     onScreenStreamActiveChanged: ((Int, Boolean) -> Unit)? = null,
@@ -188,7 +192,14 @@ class AndroidMediaSink(
                     "elapsedMs=$now lastDownGapMs=${stats.lastReceivedMs.get().takeIf { it >= 0 }?.let { now - it } ?: "none"}",
             )
         }
-        audioRenderers.remove(id)?.close()
+        audioRenderers.remove(id)?.let { renderer ->
+            // The iPhone tears a prompt down as soon as it has sent it; let the buffered end play.
+            if (NavigationAudioBuffer.isPromptStream(id.type)) {
+                renderer.finish(NavigationAudioBuffer.drainLimitMs(navigationAudioBufferDurationMs))
+            } else {
+                renderer.close()
+            }
+        }
         synchronized(callLogLock) {
             if (callStreams.isEmpty()) { callLogTask?.cancel(false); callLogTask = null }
         }
@@ -273,6 +284,7 @@ class AndroidMediaSink(
             format,
             advancedAudioChannelMapping,
             mainMediaAudioBufferDurationMs,
+            navigationAudioBufferDurationMs,
             mediaMetricsMonitor,
             mediaChannel,
             navigationChannel,
@@ -667,15 +679,22 @@ private class AudioRenderer(
     val format: AudioFormat,
     private val advancedAudioChannelMapping: Boolean,
     private val mainMediaAudioBufferDurationMs: Int,
+    private val navigationAudioBufferDurationMs: Int,
     mediaMetricsMonitor: MediaMetricsMonitor?,
     private val mediaChannel: Int,
     private val navigationChannel: Int,
     private val phoneChannel: Int,
     private val diagnostic: (String) -> Unit,
 ) : Closeable {
-    private data class AudioPacket(val rtp: ByteArray, val sample: Int)
+    private class AudioPacket(val rtp: ByteArray, val sample: Int)
 
     private val queue = LinkedBlockingQueue<AudioPacket>(MAX_QUEUED_PACKETS)
+    private val navigationPrompt = NavigationAudioBuffer.isPromptStream(format.payloadType)
+    private val sequence = RtpSequenceTracker()
+    private val droppedPackets = AtomicInteger()
+    private val drainReported = AtomicBoolean(false)
+    @Volatile private var drainDeadlineNs = 0L
+    private var lastStatsMs = 0L
     @Volatile private var running = true
     @Volatile private var started = false
     private var codec: MediaCodec? = null
@@ -687,7 +706,6 @@ private class AudioRenderer(
     private var reportedUnderruns = 0
     private var startThresholdBytes = 0
     private var fadeApplied = false
-    private var droppedPacketsLogged = false
     private var firstAacPayloadLogged = false
     private var firstOpusShortPacketLogged = false
     private var firstInputQueuedLogged = false
@@ -717,9 +735,9 @@ private class AudioRenderer(
 
     fun submit(rtp: ByteArray, sample: Int) {
         if (!started || !queue.offer(AudioPacket(rtp, sample))) {
-            if (started && !droppedPacketsLogged) {
-                droppedPacketsLogged = true
-                Log.w(TAG, "audio queue full; dropping newest packets to bound latency")
+            if (started && droppedPackets.incrementAndGet() == 1) {
+                report("Audio queue full type=${format.payloadType} audioType=${format.audioType}: " +
+                    "dropping newest packets to bound latency")
             }
         }
     }
@@ -733,6 +751,30 @@ private class AudioRenderer(
         thread.interrupt()
     }
 
+    /**
+     * End of stream: plays what is already queued and buffered, then releases. [maxDrainMs] bounds
+     * the wait even if the worker is blocked, so a stuck output cannot hold the track.
+     */
+    fun finish(maxDrainMs: Long) {
+        drainDeadlineNs = System.nanoTime() + maxDrainMs * NANOS_PER_MILLI
+        if (!started || !running || !queue.offer(END_OF_STREAM)) {
+            close()
+            return
+        }
+        Thread({
+            try {
+                Thread.sleep(maxDrainMs)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            if (thread.isAlive && drainReported.compareAndSet(false, true)) {
+                report("Audio stream drain limit reached type=${format.payloadType} " +
+                    "audioType=${format.audioType} limitMs=$maxDrainMs")
+            }
+            close()
+        }, "carplay-audio-drain-limit").apply { isDaemon = true }.start()
+    }
+
     private fun run() {
         try {
             when (format.codec) {
@@ -741,7 +783,14 @@ private class AudioRenderer(
                 AudioCodecKind.LPCM -> Unit
             }
             createTrack()
-            while (running) handle(queue.take())
+            while (running) {
+                val packet = queue.take()
+                if (packet === END_OF_STREAM) {
+                    drain()
+                    break
+                }
+                handle(packet)
+            }
         } catch (_: InterruptedException) {
             // Worker shut down.
         } catch (error: Exception) {
@@ -749,6 +798,59 @@ private class AudioRenderer(
         } finally {
             release()
         }
+    }
+
+    /** Waits until everything written has been played, or the drain deadline passes. */
+    private fun drain() {
+        val track = track ?: return
+        if (trackBytesPerFrame <= 0) return
+        val written = totalBytesWritten / trackBytesPerFrame
+        if (!playbackStarted) {
+            if (written == 0L) return
+            track.play() // A prompt shorter than the start-up buffer still plays.
+            playbackStarted = true
+        }
+        val startNs = System.nanoTime()
+        val pendingMs = framesToMs(written - playbackHeadFrames(track))
+        var complete = false
+        try {
+            while (running && System.nanoTime() < drainDeadlineNs) {
+                if (playbackHeadFrames(track) >= written) {
+                    complete = true
+                    break
+                }
+                Thread.sleep(DRAIN_POLL_MS)
+            }
+            // The mixer has taken the last frames; give the output a moment before release.
+            if (complete) Thread.sleep(DRAIN_TAIL_MS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        if (drainReported.compareAndSet(false, true)) {
+            report("Audio stream drained type=${format.payloadType} audioType=${format.audioType} " +
+                "pendingMs=$pendingMs drainMs=${(System.nanoTime() - startNs) / NANOS_PER_MILLI} " +
+                "complete=$complete")
+        }
+    }
+
+    private fun framesToMs(frames: Long): Long = frames.coerceAtLeast(0L) * 1_000L / format.sampleRate
+
+    /** Buffer level, packet counts and underruns; written every [STATS_INTERVAL_MS] and at the end. */
+    private fun reportStats(label: String) {
+        val track = track
+        val bufferedMs = if (track != null && trackBytesPerFrame > 0) {
+            framesToMs(totalBytesWritten / trackBytesPerFrame - playbackHeadFrames(track))
+        } else {
+            0L
+        }
+        val underruns = track?.let { runCatching { it.underrunCount }.getOrNull() } ?: reportedUnderruns
+        report("$label type=${format.payloadType} audioType=${format.audioType} bufferedMs=$bufferedMs " +
+            "${sequence.describe()} dropped=${droppedPackets.get()} underruns=$underruns")
+    }
+
+    private fun report(message: String) {
+        Log.i(TAG, message)
+        runCatching { diagnostic(message) }
     }
 
     private fun configureCodec(mime: String) {
@@ -812,15 +914,26 @@ private class AudioRenderer(
         } else {
             0
         }
-        val bufferBytes = if (configuredMainMediaBuffer) {
-            configuredBytes + maxOf(minBuffer, MIN_TRACK_BUFFER_BYTES)
+        // Navigation prompts start after the configured buffer; the default 80 ms matches the
+        // system minimum, so the default sizes below equal the generic ones.
+        val navigationBytes = if (navigationPrompt) {
+            NavigationAudioBuffer.startBytes(navigationAudioBufferDurationMs, format.sampleRate, trackChannelCount)
         } else {
-            maxOf(minBuffer * 4, MIN_TRACK_BUFFER_BYTES)
+            0
         }
-        startThresholdBytes = if (configuredMainMediaBuffer) {
-            configuredBytes
-        } else {
-            maxOf(minBuffer, MIN_START_BUFFER_BYTES)
+        val bufferBytes = when {
+            configuredMainMediaBuffer -> configuredBytes + maxOf(minBuffer, MIN_TRACK_BUFFER_BYTES)
+            navigationPrompt -> maxOf(
+                minBuffer * 4,
+                MIN_TRACK_BUFFER_BYTES,
+                navigationBytes + maxOf(minBuffer, MIN_TRACK_BUFFER_BYTES),
+            )
+            else -> maxOf(minBuffer * 4, MIN_TRACK_BUFFER_BYTES)
+        }
+        startThresholdBytes = when {
+            configuredMainMediaBuffer -> configuredBytes
+            navigationPrompt -> maxOf(minBuffer, MIN_START_BUFFER_BYTES, navigationBytes)
+            else -> maxOf(minBuffer, MIN_START_BUFFER_BYTES)
         }
         track = AudioTrack.Builder()
             .setAudioAttributes(audioAttributes())
@@ -840,10 +953,12 @@ private class AudioRenderer(
             "codec=${format.codec} " +
             "rate=${format.sampleRate} channels=${format.channels} " +
             "bufferBytes=$bufferBytes prefillBytes=$startThresholdBytes" +
-            if (configuredMainMediaBuffer) {
-                " configuredDurationMs=${MainMediaAudioBuffer.sanitizeDurationMs(mainMediaAudioBufferDurationMs)}"
-            } else {
-                ""
+            when {
+                configuredMainMediaBuffer ->
+                    " configuredDurationMs=${MainMediaAudioBuffer.sanitizeDurationMs(mainMediaAudioBufferDurationMs)}"
+                navigationPrompt ->
+                    " navigationBufferMs=${NavigationAudioBuffer.sanitizeDurationMs(navigationAudioBufferDurationMs)}"
+                else -> ""
             }
         Log.i(TAG, prepared)
         runCatching { diagnostic(prepared) }
@@ -930,6 +1045,14 @@ private class AudioRenderer(
 
     private fun handle(packet: AudioPacket) {
         val rtp = packet.rtp
+        sequence.onPacket(rtp)
+        val nowMs = SystemClock.elapsedRealtime()
+        if (lastStatsMs == 0L) {
+            lastStatsMs = nowMs
+        } else if (nowMs - lastStatsMs >= STATS_INTERVAL_MS) {
+            lastStatsMs = nowMs
+            reportStats("Audio stats")
+        }
         val timestampUs = sampleTimestampUs(packet.sample)
         when (format.codec) {
             AudioCodecKind.LPCM -> writePcm(byteSwapS16(rtp.copyOfRange(12, rtp.size)))
@@ -1173,6 +1296,7 @@ private class AudioRenderer(
 
     @Synchronized
     private fun release() {
+        if (sequence.received > 0) runCatching { reportStats("Audio stream final stats") }
         val codec = codec
         this.codec = null
         if (codec != null) {
@@ -1223,9 +1347,15 @@ private class AudioRenderer(
         const val DECODED_BUFFER_LOG_INTERVAL = 50
         const val AUDIO_TIMESTAMP_INTERVAL_NS = 200_000_000L
         const val NANOS_PER_SECOND = 1_000_000_000L
+        const val NANOS_PER_MILLI = 1_000_000L
         const val BYTES_PER_PCM_16_SAMPLE = 2
         const val UINT32_MASK = 0xffff_ffffL
         const val UINT32_HALF_RANGE = 0x8000_0000L
         const val UINT32_MODULUS = 0x1_0000_0000L
+        const val STATS_INTERVAL_MS = 10_000L
+        const val DRAIN_POLL_MS = 10L
+        const val DRAIN_TAIL_MS = 40L
+        /** Queued after the last packet; the worker drains the track when it reaches this. */
+        val END_OF_STREAM = AudioPacket(ByteArray(0), 0)
     }
 }

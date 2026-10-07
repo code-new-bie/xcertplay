@@ -59,9 +59,14 @@ class WifiScanPause internal constructor(
     }.apply { removeOnCancelPolicy = true }
     private var pendingResume: ScheduledFuture<*>? = null // worker thread
     private var sessionRequested = false
-    private var gaodeAttempted = false
-    private var gaodeApplied = false
-    private val gaode = GaodeScanRestriction(prefs, android.os.Process.myUid() / 100_000, ::report)
+    private var appsAttempted = false
+    private var appsApplied = false
+    private val restrictions = (android.os.Process.myUid() / 100_000).let { userId ->
+        listOf(
+            AppScanRestriction.gaode(prefs, userId, ::report),
+            AppScanRestriction.baiduLocation(prefs, userId, ::report),
+        )
+    }
 
     /** Where progress is written; the controller of the current connection sets it. */
     @Volatile
@@ -91,8 +96,8 @@ class WifiScanPause internal constructor(
     fun resumeLater() {
         worker.execute {
             sessionRequested = false
-            gaodeAttempted = false
-            gaodeApplied = false
+            appsAttempted = false
+            appsApplied = false
             if (!needsRestore()) return@execute
             pendingResume?.cancel(false)
             pendingResume = worker.schedule({
@@ -114,7 +119,7 @@ class WifiScanPause internal constructor(
                 pendingResume?.cancel(false)
                 pendingResume = null
                 sessionRequested = false
-                gaodeAttempted = false
+                appsAttempted = false
                 restore()
                 !needsRestore()
             }.get(timeoutMillis, TimeUnit.MILLISECONDS)
@@ -137,29 +142,34 @@ class WifiScanPause internal constructor(
     private fun restrict() {
         // Reassert after reconnect: a previous resume may have succeeded but lost its reply.
         setSearch(enabled = false)
-        if (!gaodeApplied) {
-            val forceStop = !gaodeAttempted
-            gaodeAttempted = true
-            gaodeApplied = true
-            withShell { gaode.apply(it, forceStop) }
+        if (!appsApplied) {
+            // Gaode is force-stopped at most once per connection; Baidu location is never stopped.
+            val forceStop = !appsAttempted
+            appsAttempted = true
+            appsApplied = true
+            withShell { shell -> restrictions.forEach { it.apply(shell, forceStop) } }
         }
     }
 
-    private fun needsRestore() = isPaused() || prefs.getBoolean(KEY_RECOVERY, false) || gaode.pending
+    private fun needsRestore() =
+        isPaused() || prefs.getBoolean(KEY_RECOVERY, false) || restrictions.any { it.pending }
 
     private fun restore() {
-        gaodeApplied = false
+        appsApplied = false
         if (isPaused() || prefs.getBoolean(KEY_RECOVERY, false)) setSearch(enabled = true)
-        if (gaode.pending) withShell { gaode.restore(it) }
+        val pending = restrictions.filter { it.pending }
+        if (pending.isNotEmpty()) withShell { shell -> pending.forEach { it.restore(shell) } }
     }
 
     private fun withShell(action: ((String) -> String?) -> Unit) {
         runCatching {
             newShell().use { adb ->
                 if (adb.connect()) action(adb::shell)
-                else report("Gaode: ADB unavailable; pending recovery retained")
+                else report("App scan restriction: ADB unavailable; pending recovery retained")
             }
-        }.onFailure { report("Gaode: ADB failed ${it.javaClass.simpleName}; pending recovery retained") }
+        }.onFailure {
+            report("App scan restriction: ADB failed ${it.javaClass.simpleName}; pending recovery retained")
+        }
     }
 
     // Worker thread.

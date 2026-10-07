@@ -19,6 +19,7 @@
     <string name="auto_start_label">开机自动启动</string>
     <string name="auto_start_desc">设备开机后自动启动 CarPlay</string>
     <string name="main_media_buffer">音乐缓冲</string>
+    <string name="navigation_buffer">导航缓冲</string>
     <string name="advanced_mapping_label">高级音频通道映射</string>
     <string name="advanced_mapping_desc">按 CarPlay 音频类型路由 AAOS 音频总线</string>
     <string name="resolution">画面清晰度</string>
@@ -253,6 +254,7 @@
     <string name="hint_resolution">按车机屏幕分辨率的比例渲染 CarPlay。1.0x 最清晰；画面卡顿时可调低。</string>
     <string name="hint_driving_side">让 CarPlay 的侧边栏靠近驾驶员一侧。</string>
     <string name="hint_music_buffer">音乐卡顿时调大；代价是音乐和画面的延迟略增。</string>
+    <string name="hint_navigation_buffer">导航播报吞字时调大；代价是每次播报略晚开始。80 ms 是 iPhone 要求的值。不影响通话和 Siri。</string>
     <string name="hint_mic_gain">Siri 或通话对方听不清时调大。</string>
     <string name="hint_vehicle_name">显示在 iPhone 的车辆列表和 CarPlay 返回按钮上。留空则使用车机蓝牙名。</string>
     <string name="hint_bt_settings">配对或管理 iPhone。</string>

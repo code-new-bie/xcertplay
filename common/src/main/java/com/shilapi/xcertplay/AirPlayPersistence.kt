@@ -11,6 +11,7 @@ import com.shilapi.xcertplay.airplay.SafeAreaCodec
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.MicrophoneGain
+import com.shilapi.xcertplay.media.NavigationAudioBuffer
 import com.shilapi.xcertplay.media.VehicleAudioChannel
 import com.shilapi.xcertplay.network.P2pChannelPreference
 import com.shilapi.xcertplay.orchestration.ManualHotspotBand
@@ -45,6 +46,7 @@ object AirPlayPersistence {
     private const val KEY_PHONE_AUDIO_CHANNEL = "phone_audio_channel"
     private const val KEY_AUDIO_CHANNEL_AUTO_IS_MINUS_ONE = "audio_channel_auto_is_minus_one"
     private const val KEY_MAIN_MEDIA_AUDIO_BUFFER_DURATION_MS = "main_media_audio_buffer_duration_ms"
+    private const val KEY_NAVIGATION_AUDIO_BUFFER_DURATION_MS = "navigation_audio_buffer_duration_ms"
     private const val KEY_MICROPHONE_GAIN_PERCENT = "microphone_gain_percent"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
     private const val KEY_WIRELESS_HOTSPOT_MODE = "wireless_hotspot_mode"
@@ -194,6 +196,23 @@ object AirPlayPersistence {
             .putInt(
                 KEY_MAIN_MEDIA_AUDIO_BUFFER_DURATION_MS,
                 MainMediaAudioBuffer.sanitizeDurationMs(durationMs),
+            )
+            .apply()
+    }
+
+    fun loadNavigationAudioBufferDurationMs(context: Context): Int =
+        NavigationAudioBuffer.sanitizeDurationMs(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(
+                KEY_NAVIGATION_AUDIO_BUFFER_DURATION_MS,
+                NavigationAudioBuffer.DEFAULT_DURATION_MS,
+            ),
+        )
+
+    fun saveNavigationAudioBufferDurationMs(context: Context, durationMs: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(
+                KEY_NAVIGATION_AUDIO_BUFFER_DURATION_MS,
+                NavigationAudioBuffer.sanitizeDurationMs(durationMs),
             )
             .apply()
     }

@@ -10,7 +10,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], manifest = Config.NONE)
-class GaodeScanRestrictionTest {
+class AppScanRestrictionTest {
     private val prefs get() = RuntimeEnvironment.getApplication()
         .getSharedPreferences("gaode-test", Context.MODE_PRIVATE)
 
@@ -20,7 +20,7 @@ class GaodeScanRestrictionTest {
         var failRestore = false
         var stops = 0
         val modes = mutableListOf<String>()
-        lateinit var restriction: GaodeScanRestriction
+        lateinit var restriction: AppScanRestriction
         fun execute(command: String): String? = when {
             command.startsWith("pm path") -> if (installed) "package:/system/app/Gaode.apk" else ""
             command.startsWith("cmd appops get") -> if (!readable) null else
@@ -34,18 +34,18 @@ class GaodeScanRestrictionTest {
                     "XCERTPLAY-appops-set"
                 }
             }
-            command.startsWith("am force-stop") -> { stops++; "XCERTPLAY-gaode-stopped" }
+            command.startsWith("am force-stop") -> { stops++; "XCERTPLAY-app-stopped" }
             else -> error(command)
         }
     }
 
     @Test fun savesOriginalBeforeMutationAndRecoversAcrossNewInstance() {
         val shell = Shell("foreground")
-        val first = GaodeScanRestriction(prefs, 0, {}).also { shell.restriction = it }
+        val first = AppScanRestriction.gaode(prefs, 0, {}).also { shell.restriction = it }
         first.apply(shell::execute)
         assertEquals("ignore", shell.mode)
         assertEquals(1, shell.stops)
-        val next = GaodeScanRestriction(prefs, 0, {}).also { shell.restriction = it }
+        val next = AppScanRestriction.gaode(prefs, 0, {}).also { shell.restriction = it }
         next.apply(shell::execute, forceStop = false)
         assertEquals(1, shell.stops)
         assertTrue(next.restore(shell::execute))
@@ -55,7 +55,7 @@ class GaodeScanRestrictionTest {
 
     @Test fun failedRestoreRetainsOriginalForNextAttempt() {
         val shell = Shell("deny")
-        val restriction = GaodeScanRestriction(prefs, 0, {}).also { shell.restriction = it }
+        val restriction = AppScanRestriction.gaode(prefs, 0, {}).also { shell.restriction = it }
         restriction.apply(shell::execute)
         shell.failRestore = true
         assertFalse(restriction.restore(shell::execute))
@@ -67,7 +67,7 @@ class GaodeScanRestrictionTest {
 
     @Test fun absentPackageIsSkippedAndUnknownModeIsNotOverwritten() {
         val shell = Shell().apply { installed = false }
-        val restriction = GaodeScanRestriction(prefs, 0, {}).also { shell.restriction = it }
+        val restriction = AppScanRestriction.gaode(prefs, 0, {}).also { shell.restriction = it }
         restriction.apply(shell::execute)
         assertEquals(0, shell.stops)
         assertFalse(restriction.pending)
@@ -79,12 +79,25 @@ class GaodeScanRestrictionTest {
         assertFalse(restriction.pending)
     }
 
+    @Test fun baiduLocationIsRestrictedAndRestoredButNeverStopped() {
+        val shell = Shell("allow")
+        val baidu = AppScanRestriction.baiduLocation(prefs, 0, {}).also { shell.restriction = it }
+        baidu.apply(shell::execute, forceStop = true)
+        assertEquals("ignore", shell.mode)
+        assertEquals(0, shell.stops)
+        assertTrue(baidu.pending)
+        assertFalse("Each app keeps its own recovery record", AppScanRestriction.gaode(prefs, 0, {}).pending)
+        assertTrue(baidu.restore(shell::execute))
+        assertEquals("allow", shell.mode)
+        assertFalse(baidu.pending)
+    }
+
     @Test fun parserNeverConfusesUidOverridesOrFailedReadsWithPackageMode() {
-        assertEquals("allow", GaodeScanRestriction.parseMode("No operations.\nDefault mode: allow\nXCERTPLAY-appops-read"))
-        assertNull(GaodeScanRestriction.parseMode("No operations.\nXCERTPLAY-appops-read"))
-        assertNull(GaodeScanRestriction.parseMode("CHANGE_WIFI_STATE: allow"))
-        assertNull(GaodeScanRestriction.parseMode("Uid mode: CHANGE_WIFI_STATE: ignore\nXCERTPLAY-appops-read"))
-        assertEquals("allow", GaodeScanRestriction.parseMode(
+        assertEquals("allow", AppScanRestriction.parseMode("No operations.\nDefault mode: allow\nXCERTPLAY-appops-read"))
+        assertNull(AppScanRestriction.parseMode("No operations.\nXCERTPLAY-appops-read"))
+        assertNull(AppScanRestriction.parseMode("CHANGE_WIFI_STATE: allow"))
+        assertNull(AppScanRestriction.parseMode("Uid mode: CHANGE_WIFI_STATE: ignore\nXCERTPLAY-appops-read"))
+        assertEquals("allow", AppScanRestriction.parseMode(
             "Uid mode: CHANGE_WIFI_STATE: ignore\nCHANGE_WIFI_STATE: allow; time=+1s\nXCERTPLAY-appops-read"))
     }
 }

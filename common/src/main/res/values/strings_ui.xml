@@ -19,6 +19,7 @@
     <string name="auto_start_label">Auto-start on boot</string>
     <string name="auto_start_desc">Start CarPlay automatically after device boot</string>
     <string name="main_media_buffer">Music buffer</string>
+    <string name="navigation_buffer">Navigation buffer</string>
     <string name="advanced_mapping_label">Advanced audio channel mapping</string>
     <string name="advanced_mapping_desc">Route AAOS audio buses by CarPlay audio type</string>
     <string name="resolution">Picture sharpness</string>
@@ -253,6 +254,7 @@
     <string name="hint_resolution">Renders CarPlay at this share of the screen resolution. 1.0x is sharpest; lower it if the picture stutters.</string>
     <string name="hint_driving_side">Puts the CarPlay dock on the driver side.</string>
     <string name="hint_music_buffer">Raise it if music stutters; music and picture then lag slightly more.</string>
+    <string name="hint_navigation_buffer">Raise it if navigation prompts drop words; each prompt then starts slightly later. 80 ms is the value the iPhone asks for. Calls and Siri are not affected.</string>
     <string name="hint_mic_gain">Raise it if Siri or the other caller cannot hear you well.</string>
     <string name="hint_vehicle_name">Shown in the iPhone car list and on the CarPlay return button. Leave empty to use the head unit Bluetooth name.</string>
     <string name="hint_bt_settings">Pair or manage the iPhone.</string>

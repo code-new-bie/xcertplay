@@ -95,6 +95,7 @@ import com.shilapi.xcertplay.hud.BydSettingsAvailability
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
 import com.shilapi.xcertplay.media.CarPlayVideoLayout
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
+import com.shilapi.xcertplay.media.NavigationAudioBuffer
 import com.shilapi.xcertplay.media.VehicleAudioChannel
 import com.shilapi.xcertplay.media.MediaMetricsMonitor
 import com.shilapi.xcertplay.media.MicrophoneGain
@@ -333,6 +334,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var locationReportingSwitch: Switch? = null
     private var mainMediaAudioBufferSeekBar: SeekBar? = null
     private var mainMediaAudioBufferValueView: TextView? = null
+    private var navigationAudioBufferSeekBar: SeekBar? = null
+    private var navigationAudioBufferValueView: TextView? = null
     private var microphoneGainSeekBar: SeekBar? = null
     private var microphoneGainValueView: TextView? = null
     private var microphoneTestButton: Button? = null
@@ -376,6 +379,7 @@ class CarPlayHostActivity : ComponentActivity() {
         Toast.makeText(this, getString(R.string.audio_channel_preview_failed, channel), Toast.LENGTH_SHORT).show()
     }
     private var mainMediaAudioBufferDurationMs = MainMediaAudioBuffer.DEFAULT_DURATION_MS
+    private var navigationAudioBufferDurationMs = NavigationAudioBuffer.DEFAULT_DURATION_MS
     @Volatile private var debugLogsEnabled = false
     private var mediaMetricsEnabled = false
     private var audioPacketCaptureEnabled = false
@@ -589,6 +593,8 @@ class CarPlayHostActivity : ComponentActivity() {
         phoneAudioChannel = AirPlayPersistence.loadPhoneAudioChannel(this)
         mainMediaAudioBufferDurationMs =
             AirPlayPersistence.loadMainMediaAudioBufferDurationMs(this)
+        navigationAudioBufferDurationMs =
+            AirPlayPersistence.loadNavigationAudioBufferDurationMs(this)
         microphoneGainPercent = AirPlayPersistence.loadMicrophoneGainPercent(this)
         debugLogsEnabled = AirPlayPersistence.loadDebugLogsEnabled(this)
         mediaMetricsEnabled = AirPlayPersistence.loadMediaMetricsEnabled(this)
@@ -1236,6 +1242,24 @@ class CarPlayHostActivity : ComponentActivity() {
             getString(R.string.hint_music_buffer),
             topMarginDp = 8,
         )
+        addSetting(
+            page,
+            buildStepSliderSection(
+                title = getString(R.string.navigation_buffer),
+                values = (
+                    NavigationAudioBuffer.MIN_DURATION_MS..NavigationAudioBuffer.MAX_DURATION_MS
+                        step NavigationAudioBuffer.STEP_DURATION_MS
+                    ).toList(),
+                selectedValue = navigationAudioBufferDurationMs,
+                label = ::navigationAudioBufferLabel,
+                onControlsCreated = { valueView, seekBar ->
+                    navigationAudioBufferValueView = valueView
+                    navigationAudioBufferSeekBar = seekBar
+                },
+                onValueChanged = { value -> navigationAudioBufferDurationMs = value },
+            ),
+            getString(R.string.hint_navigation_buffer),
+        )
         addSetting(page, buildMicrophoneGainSection(), getString(R.string.hint_mic_gain))
         if (sessionKeptForSettings) {
             microphoneTestButton?.isEnabled = false
@@ -1766,6 +1790,7 @@ class CarPlayHostActivity : ComponentActivity() {
             this,
             mainMediaAudioBufferDurationMs,
         )
+        AirPlayPersistence.saveNavigationAudioBufferDurationMs(this, navigationAudioBufferDurationMs)
         AirPlayPersistence.saveMicrophoneGainPercent(this, microphoneGainPercent)
         AirPlayPersistence.saveDisplayScaleTenths(this, displayScaleTenths)
         AirPlayPersistence.saveFps(this, fps)
@@ -1824,7 +1849,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 .getOrNull(),
             audioPacketCaptureEnabled,
             advancedAudioChannelMapping, mediaAudioChannel, navigationAudioChannel, phoneAudioChannel,
-            mainMediaAudioBufferDurationMs, microphoneGainPercent,
+            mainMediaAudioBufferDurationMs, navigationAudioBufferDurationMs, microphoneGainPercent,
             BydVehicleSettings.speedEnabled(this), BydVehicleSettings.batteryEnabled(this),
             BydVehicleSettings.dcChargingEnabled(this), BydVehicleSettings.capacityKwh(this),
         )
@@ -1861,6 +1886,7 @@ class CarPlayHostActivity : ComponentActivity() {
         hotspotStatus = HotspotStatus(state = if (wirelessEnabled) "stopped" else "off")
         syncMfiSettingsControls()
         syncMainMediaAudioBufferControls()
+        syncNavigationAudioBufferControls()
         syncMicrophoneGainControls()
         updateManualHotspotFields()
         updateAirPlayIconPreview()
@@ -2602,6 +2628,17 @@ class CarPlayHostActivity : ComponentActivity() {
         mainMediaAudioBufferSeekBar?.progress =
             (durationMs - MainMediaAudioBuffer.MIN_DURATION_MS) /
                 MainMediaAudioBuffer.STEP_DURATION_MS
+    }
+
+    private fun navigationAudioBufferLabel(durationMs: Int): String =
+        String.format(Locale.US, "%d ms", NavigationAudioBuffer.sanitizeDurationMs(durationMs))
+
+    private fun syncNavigationAudioBufferControls() {
+        val durationMs = NavigationAudioBuffer.sanitizeDurationMs(navigationAudioBufferDurationMs)
+        navigationAudioBufferDurationMs = durationMs
+        navigationAudioBufferValueView?.text = navigationAudioBufferLabel(durationMs)
+        navigationAudioBufferSeekBar?.progress =
+            (durationMs - NavigationAudioBuffer.MIN_DURATION_MS) / NavigationAudioBuffer.STEP_DURATION_MS
     }
 
     private fun syncMicrophoneGainControls() {
@@ -3834,6 +3871,7 @@ class CarPlayHostActivity : ComponentActivity() {
         preferSoftwareHevcDecoder = hevcSoftwareDecoderEnabled,
         advancedAudioChannelMapping = advancedAudioChannelMapping,
         mainMediaAudioBufferDurationMs = mainMediaAudioBufferDurationMs,
+        navigationAudioBufferDurationMs = navigationAudioBufferDurationMs,
         microphoneGainPercent = microphoneGainPercent,
         mediaMetricsMonitor = mediaMetricsMonitor,
         onScreenStreamActiveChanged = { type, active ->
@@ -4273,6 +4311,7 @@ class CarPlayHostActivity : ComponentActivity() {
         showSettingsCategory(settingsCategory)
         settingsMenu?.visibility = View.VISIBLE
         syncMainMediaAudioBufferControls()
+        syncNavigationAudioBufferControls()
         syncMicrophoneGainControls()
         microphoneTestButton?.isEnabled = false
         if (sessionKeptForSettings) {

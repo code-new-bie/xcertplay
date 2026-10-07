@@ -73,7 +73,7 @@
     <string name="call_wind_target_note">仅在当前风量高于此档时调整。默认 2 档，下一通电话起生效。</string>
     <string name="wifi_scan_pause_label">CarPlay 期间暂停车机 Wi-Fi 搜索（推荐）</string>
     <string name="wifi_scan_pause_desc">减少 Wi-Fi 扫描干扰；安装了高德车机版时也会停止其导航</string>
-    <string name="wifi_scan_pause_note">通过已授权的 ADB，在无线 CarPlay 期间暂停车机自动搜索。若安装了高德车机版，会尝试限制其 Wi-Fi 扫描，并在每次连接时强制停止一次，原车高德导航会结束。断开 15 秒后恢复搜索与原权限，关闭此开关或退出应用时立即恢复，不会重新启动高德。暂停期间车机不会自动连接已保存的 Wi-Fi。需要先授权 ADB（比亚迪分组）。</string>
+    <string name="wifi_scan_pause_note">通过已授权的 ADB，在无线 CarPlay 期间暂停车机自动搜索。若安装了高德车机版，会尝试限制其 Wi-Fi 扫描，并在每次连接时强制停止一次，原车高德导航会结束。同时限制系统百度网络定位的 Wi-Fi 扫描（不停止它，期间网络定位可能变粗）。断开 15 秒后恢复搜索与原权限，关闭此开关或退出应用时立即恢复，不会重新启动高德。暂停期间车机不会自动连接已保存的 Wi-Fi。需要先授权 ADB（比亚迪分组）。</string>
     <string name="cluster_song_label">仪表显示歌曲/歌词</string>
     <string name="cluster_song_desc">在仪表的音乐卡片中显示 CarPlay 歌曲</string>
     <string name="cluster_song_note">显示“歌名 — 歌手”及播放/暂停；想显示歌词，请在音乐 App（QQ 音乐、网易云音乐等）中打开“车载/蓝牙歌词”，它会把当前歌词放进歌名。通过已授权的 ADB 写入，卡片显示为“其他”音源。</string>
