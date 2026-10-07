@@ -39,6 +39,38 @@ object BydVehicleDataTool {
         }
     }
 
+    /**
+     * Prints the camera state ([BydCameraReading.LINE_PREFIX]: panorama work state, display mode,
+     * gear) when it changes, and every [CAMERA_REPEAT_MS] to keep adb's read deadline alive.
+     * A car without a panorama unit still reports the gear, which brings up the rear camera.
+     */
+    private fun cameraWatch(context: Context, once: Boolean) {
+        val panorama = runCatching { Device("panorama.BYDAutoPanoramaDevice", context) }.getOrNull()
+        val gearbox = runCatching { Device("gearbox.BYDAutoGearboxDevice", context) }.getOrNull()
+        check(panorama != null || gearbox != null)
+        fun read(device: Device?, method: String): String =
+            device?.let { runCatching { it.read(method).toInt().toString() }.getOrNull() } ?: "-"
+        val deadline = SystemClock.elapsedRealtime() + 5 * 60_000L
+        var last: String? = null
+        var lastPrinted = 0L
+        do {
+            val line = "${BydCameraReading.LINE_PREFIX} ${read(panorama, "getPanoWorkState")} " +
+                "${read(panorama, "getDisplayMode")} ${read(gearbox, "getGearboxAutoModeType")}"
+            val now = SystemClock.elapsedRealtime()
+            if (line != last || now - lastPrinted >= CAMERA_REPEAT_MS) {
+                println(line)
+                System.out.flush()
+                last = line
+                lastPrinted = now
+            }
+            if (once || System.out.checkError()) break
+            Thread.sleep(CAMERA_POLL_MS)
+        } while (SystemClock.elapsedRealtime() < deadline)
+    }
+
+    private const val CAMERA_POLL_MS = 300L
+    private const val CAMERA_REPEAT_MS = 2_000L
+
     /** BYD's instrument device type; setMediaState/setMediaInfo take it explicitly. */
     private const val INSTRUMENT_DEVICE = 1007
 
@@ -185,6 +217,10 @@ object BydVehicleDataTool {
             val context = systemContext()
             val mode = args.firstOrNull() ?: return
             val once = args.getOrNull(1) == "once"
+            if (mode == "panorama") {
+                cameraWatch(context, once)
+                return
+            }
             val speed = if (mode == "speed") Device("speed.BYDAutoSpeedDevice", context) else null
             val gearbox = if (speed != null) Device("gearbox.BYDAutoGearboxDevice", context) else null
             val statistic = if (mode == "battery") Device("statistic.BYDAutoStatisticDevice", context) else null

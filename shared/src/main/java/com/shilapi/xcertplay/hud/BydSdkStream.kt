@@ -82,7 +82,7 @@ internal class BydSdkStream(
 
     companion object {
         fun command(context: Context, mode: String, once: Boolean = false): String {
-            require(mode == "speed" || mode == "battery")
+            require(mode == "speed" || mode == "battery" || mode == "panorama")
             return helper(context, mode) + if (once) " once" else ""
         }
 

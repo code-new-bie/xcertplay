@@ -4,7 +4,6 @@ import com.shilapi.xcertplay.iap2.message.Iap2Messages
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -42,10 +41,50 @@ class Iap2LocationReporterTest {
         assertTrue(sent.all { it.messageId == Iap2LocationMessages.LOCATION_INFORMATION })
 
         assertTrue(link.handle(stop) { sent += it })
-        assertNull(request.components)
+        // The stop ends this Bluetooth link only; the request stays for the Wi-Fi link.
+        assertEquals(setOf(0, 1, 2, 4, 0x8001), request.components)
         assertFalse(provider.started)
         link.tick { sent += it }
         assertEquals(2, sent.size)
+    }
+
+    @Test
+    fun theWifiLinkContinuesAfterTheBluetoothLinkWasStopped() {
+        // In the car the iPhone sent 0xFFFC on Bluetooth 28 ms after 0xFFFA, before Wi-Fi was up.
+        val bluetoothLink = bluetooth()
+        bluetoothLink.handle(start) { }
+        bluetoothLink.handle(stop) { }
+        assertFalse(provider.started)
+
+        val link = wifi()
+        link.tick { sent += it }
+        nowMillis += 1_000
+        link.tick { sent += it }
+
+        assertTrue(provider.started)
+        assertEquals(2, sent.size)
+        assertTrue(progress.any { it.startsWith("iap2 location request continues from the Bluetooth link") })
+    }
+
+    @Test
+    fun aBluetoothStopAfterTheWifiTakeoverKeepsWifiReporting() {
+        val bluetoothLink = bluetooth()
+        bluetoothLink.handle(start) { }
+        val wifiLink = wifi()
+        wifiLink.tick { sent += it }
+        bluetoothLink.handle(stop) { }
+
+        assertTrue(provider.started)
+        nowMillis += 1_000
+        wifiLink.tick { sent += it }
+        assertEquals(2, sent.size)
+    }
+
+    @Test
+    fun theFirstReportNamesItsSentences() {
+        provider.nmea = "\$GPGGA,1*00\r\n\$GPRMC,2*00\r\n\$GPGSV,1,1,00*00\r\n"
+        bluetooth().handle(start) { sent += it }
+        assertTrue(progress.contains("iap2 tx=0xfffb location-information sentences=GPGGA+GPRMC+GPGSV"))
     }
 
     @Test

@@ -75,6 +75,7 @@ import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.hud.BydClusterSongSettings
 import com.shilapi.xcertplay.hud.BydCallWindSettings
 import com.shilapi.xcertplay.hud.BydCallWindTest
+import com.shilapi.xcertplay.hud.BydCameraMonitor
 import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.adb.LocalAdb
@@ -367,6 +368,14 @@ class CarPlayHostActivity : ComponentActivity() {
     private var currentSurfaceTexture: SurfaceTexture? = null
     private var activeDisplaySize: DisplaySize? = null
     private var pendingDisplaySize: DisplaySize? = null
+    /** When a shrink started waiting for the BYD camera state ([waitForCameraSignal]). */
+    private var cameraWaitStartedMs: Long? = null
+    /** When a start in a camera-sized window began waiting for the camera state. */
+    private var startCameraWaitStartedMs: Long? = null
+    private val retryStartAfterCameraWait = Runnable { maybeStartCarPlay() }
+    private val bydHeadUnit by lazy { BydSettingsAvailability.available(this) }
+    private val cameraLog: (String) -> Unit = { appendLog(it) }
+    private val cameraChanged: (Boolean) -> Unit = { shown -> if (!shown) runOnUiThread { recordNormalWindow() } }
     private var displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
     private var hevcEnabled = true
     private var hevcSoftwareDecoderEnabled = false
@@ -566,6 +575,12 @@ class CarPlayHostActivity : ComponentActivity() {
             "Host started; MFI target=${mfiTargetLabel(mfiTarget)}; " +
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
+        if (bydHeadUnit) {
+            // Started before CarPlay so a session that begins in reverse can be sized correctly.
+            BydCameraMonitor.log = cameraLog
+            BydCameraMonitor.onChanged = cameraChanged
+            BydCameraMonitor.start(applicationContext)
+        }
         val reusedBackgroundSession = adoptBackgroundSession()
         microphoneAvailable =
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -779,6 +794,10 @@ class CarPlayHostActivity : ComponentActivity() {
         appearanceSync.stop()
         stopMicrophoneGainTest()
         mainHandler.removeCallbacks(applyDisplaySize)
+        mainHandler.removeCallbacks(retryStartAfterCameraWait)
+        // The reader keeps running for the next screen; it must not call back into this one.
+        if (BydCameraMonitor.log === cameraLog) BydCameraMonitor.log = {}
+        if (BydCameraMonitor.onChanged === cameraChanged) BydCameraMonitor.onChanged = {}
         mainHandler.removeCallbacks(expireOldLogLines)
         mainHandler.removeCallbacks(renderLogLines)
         mainHandler.removeCallbacks(drainScreenLogs)
@@ -4028,7 +4047,15 @@ class CarPlayHostActivity : ComponentActivity() {
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         val controllerGeneration = restartGeneration
         val config = createRuntimeConfig()
-        val airPlayConfig = createAirPlayConfig(size)
+        startCameraWaitStartedMs = null
+        val negotiated = negotiationWindow(size)
+        if (negotiated != size) {
+            appendLog(
+                "BYD camera picture shown at connect: negotiating for the normal window " +
+                    "${negotiated.width}x${negotiated.height} instead of ${size.width}x${size.height}",
+            )
+        }
+        val airPlayConfig = createAirPlayConfig(negotiated)
         val locationProvider: Iap2LocationProvider? =
             if (config.locationReportingEnabled) {
                 val position = AndroidCarPlayLocationProvider(this)
@@ -4102,9 +4129,10 @@ class CarPlayHostActivity : ComponentActivity() {
             displayRotation(),
             hideTopBar,
             hideBottomBar,
-            size.width,
-            size.height,
-        ).takeIf { keepSessionOnWindowShrink }
+            negotiated.width,
+            negotiated.height,
+        // On BYD head units the camera state can keep the session even with the setting off.
+        ).takeIf { keepSessionOnWindowShrink || bydHeadUnit }
         videoView?.let { updateVideoLayout(it.width, it.height) }
         CarPlayBackgroundSession.store(next, renderer, size.width, size.height, sessionDisplay)
         next.start()
@@ -4137,7 +4165,16 @@ class CarPlayHostActivity : ComponentActivity() {
         if (width <= 0 || height <= 0 || shuttingDown.get()) return
         val size = DisplaySize(width, height)
         if (size == pendingDisplaySize) return
-        if (size == activeDisplaySize && !displayLayoutChanged()) return
+        if (size == activeDisplaySize && !displayLayoutChanged()) {
+            // The window came back before a pending change applied, e.g. a camera picture that
+            // closed again: that change is stale and must not renegotiate.
+            if (pendingDisplaySize != null) {
+                pendingDisplaySize = null
+                cameraWaitStartedMs = null
+                mainHandler.removeCallbacks(applyDisplaySize)
+            }
+            return
+        }
         pendingDisplaySize = size
         mainHandler.removeCallbacks(applyDisplaySize)
         mainHandler.postDelayed(applyDisplaySize, DISPLAY_CHANGE_DEBOUNCE_MILLIS)
@@ -4151,8 +4188,12 @@ class CarPlayHostActivity : ComponentActivity() {
         activeDisplaySize = size
         recordDetectedMaximum(size)
         updateResolutionMenu()
+        // The window the canvas was negotiated for: going back to it never needs a new session.
+        val backToNegotiated = display != null &&
+            size.width == display.windowWidth && size.height == display.windowHeight
         if (previous == null) {
             appendLog("Display detected: ${size.width}x${size.height}")
+            recordNormalWindow()
             maybeStartCarPlay()
         } else if (menuOpen || handshakeResetInProgress) {
             if (sessionKeptForSettings) displayChangedWhileSettingsOpen = true
@@ -4162,20 +4203,52 @@ class CarPlayHostActivity : ComponentActivity() {
             )
         } else if (
             !layoutChanged &&
-            display?.canKeepSession(size.width, size.height, displayRotation(), hideTopBar, hideBottomBar) == true
+            display?.canKeepSession(size.width, size.height, displayRotation(), hideTopBar, hideBottomBar) == true &&
+            (backToNegotiated || keepSessionOnWindowShrink || BydCameraMonitor.cameraShown())
         ) {
-            // Keep camera shrink/restore cycles within the original window connected. If the
-            // session started in a camera window, growth beyond it needs a full-size canvas.
+            // Keep camera shrink/restore cycles within the negotiated window connected. A session
+            // that started in a camera window was negotiated for the normal window when known.
+            cameraWaitStartedMs = null
+            val reason = when {
+                backToNegotiated -> "negotiated window"
+                keepSessionOnWindowShrink -> "setting"
+                else -> "BYD camera shown"
+            }
             appendLog(
                 "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}; " +
-                    "keeping CarPlay session canvas=${display.width}x${display.height}",
+                    "keeping CarPlay session canvas=${display.width}x${display.height} reason=$reason",
             )
             videoView?.let { updateVideoLayout(it.width, it.height) }
+            recordNormalWindow()
+        } else if (
+            !layoutChanged &&
+            display?.canKeepSession(size.width, size.height, displayRotation(), hideTopBar, hideBottomBar) == true &&
+            BydCameraMonitor.signalAvailable() &&
+            waitForCameraSignal(size, previous)
+        ) {
+            // Checked again shortly: the window may shrink just before the camera state arrives.
         } else {
+            cameraWaitStartedMs = null
+            recordNormalWindow()
             restartCarPlay(
                 getString(R.string.stage_display_changed, previous.width, previous.height, size.width, size.height),
             )
         }
+    }
+
+    /**
+     * Defers a shrink that only the BYD camera state could keep: the window can change before the
+     * reversing or panorama state is read. Returns false once [CAMERA_SIGNAL_WAIT_MS] has passed.
+     */
+    private fun waitForCameraSignal(size: DisplaySize, previous: DisplaySize): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val started = cameraWaitStartedMs ?: now.also { cameraWaitStartedMs = it }
+        if (now - started >= CAMERA_SIGNAL_WAIT_MS) return false
+        activeDisplaySize = previous
+        pendingDisplaySize = size
+        mainHandler.removeCallbacks(applyDisplaySize)
+        mainHandler.postDelayed(applyDisplaySize, CAMERA_SIGNAL_POLL_MS)
+        return true
     }
 
     @Suppress("DEPRECATION")
@@ -4233,7 +4306,61 @@ class CarPlayHostActivity : ComponentActivity() {
         ) {
             return
         }
+        if (waitForCameraBeforeStart(size)) return
         startCarPlay(size)
+    }
+
+    private fun windowOf(size: DisplaySize) =
+        NormalWindow(size.width, size.height, displayRotation(), hideTopBar, hideBottomBar)
+
+    /**
+     * On a BYD head unit, holds a start in a window smaller than the normal one until the camera
+     * state is known (the reader needs a second or two after launch), for at most
+     * [START_CAMERA_WAIT_MS]. A start in the normal window never waits.
+     */
+    private fun waitForCameraBeforeStart(size: DisplaySize): Boolean {
+        if (!bydHeadUnit || BydCameraMonitor.signalAvailable()) {
+            startCameraWaitStartedMs = null
+            return false
+        }
+        val normal = AirPlayPersistence.loadNormalWindow(this) ?: return false
+        if (!normal.shrinksTo(windowOf(size))) return false
+        val now = SystemClock.elapsedRealtime()
+        val started = startCameraWaitStartedMs ?: now.also {
+            startCameraWaitStartedMs = it
+            appendLog(
+                "Window ${size.width}x${size.height} is smaller than the normal " +
+                    "${normal.width}x${normal.height}; waiting for the BYD camera state before connecting",
+            )
+        }
+        if (now - started >= START_CAMERA_WAIT_MS) {
+            startCameraWaitStartedMs = null
+            appendLog("BYD camera state still unknown; connecting at ${size.width}x${size.height}")
+            return false
+        }
+        mainHandler.removeCallbacks(retryStartAfterCameraWait)
+        mainHandler.postDelayed(retryStartAfterCameraWait, CAMERA_SIGNAL_POLL_MS)
+        return true
+    }
+
+    /**
+     * The window to negotiate CarPlay for: the normal window while a camera picture shrinks the
+     * current one, so closing the picture grows the window back within the session's canvas.
+     */
+    private fun negotiationWindow(size: DisplaySize): DisplaySize {
+        recordNormalWindow()
+        if (!bydHeadUnit || !BydCameraMonitor.cameraShown()) return size
+        val normal = AirPlayPersistence.loadNormalWindow(this) ?: return size
+        return if (normal.shrinksTo(windowOf(size))) DisplaySize(normal.width, normal.height) else size
+    }
+
+    /** Remembers the full CarPlay window while no BYD camera picture is shown. */
+    private fun recordNormalWindow() {
+        val size = activeDisplaySize ?: return
+        if (!bydHeadUnit || !BydCameraMonitor.signalAvailable() || BydCameraMonitor.cameraShown()) return
+        val next = NormalWindow.next(AirPlayPersistence.loadNormalWindow(this), windowOf(size)) ?: return
+        AirPlayPersistence.saveNormalWindow(this, next)
+        appendLog("Normal CarPlay window recorded: ${next.width}x${next.height}")
     }
 
     private fun reconnectAfterLoss(reason: String) {
@@ -4463,6 +4590,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun shutdown(terminateProcess: Boolean, reason: String) {
         if (!shuttingDown.compareAndSet(false, true)) return
         val windStopped = BydCallWindTest.cancel("application shutdown")
+        BydCameraMonitor.stop()
         stopMicrophoneGainTest()
         restartGeneration += 1
         appearanceSync.stop()
@@ -4991,6 +5119,9 @@ class CarPlayHostActivity : ComponentActivity() {
         const val LOG_RENDER_INTERVAL_MILLIS = 100L
         const val MAX_SCREEN_LOG_LINES = 100
         const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
+        const val CAMERA_SIGNAL_WAIT_MS = 1_500L
+        const val CAMERA_SIGNAL_POLL_MS = 250L
+        const val START_CAMERA_WAIT_MS = 3_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L

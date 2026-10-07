@@ -14,7 +14,7 @@
     <!-- 窗口 -->
     <string name="keep_session_label">窗口缩小时保持会话</string>
     <string name="keep_session_desc">倒车或 360 影像窗口缩小画面时保持 CarPlay 连接</string>
-    <string name="keep_session_note">窗口在原始尺寸范围内缩小时（例如倒车或 360 影像），缩放现有的 CarPlay 画面，而不是按新尺寸重新连接。屏幕旋转或状态栏变化仍会重新连接。</string>
+    <string name="keep_session_note">窗口在原始尺寸范围内缩小时（例如倒车或 360 影像），缩放现有的 CarPlay 画面，而不是按新尺寸重新连接。屏幕旋转或状态栏变化仍会重新连接。比亚迪车机授权 ADB 后，倒车或 360 影像显示期间会自动这样处理，不需要打开此开关；在倒车画面显示时连接的 CarPlay 也按正常窗口尺寸协商，关闭画面后不重连。</string>
 
     <!-- 比亚迪 -->
     <string name="byd_settings_header">比亚迪</string>

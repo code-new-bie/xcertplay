@@ -14,7 +14,7 @@
     <!-- Window -->
     <string name="keep_session_label">Keep session on window shrink</string>
     <string name="keep_session_desc">Keep CarPlay connected when a reverse or 360 camera window shrinks it</string>
-    <string name="keep_session_note">When the window shrinks inside its original size (for example a reverse or 360 camera view), scale the existing CarPlay picture instead of reconnecting at the new size. Rotation and bar changes still reconnect.</string>
+    <string name="keep_session_note">When the window shrinks inside its original size (for example a reverse or 360 camera view), scale the existing CarPlay picture instead of reconnecting at the new size. Rotation and bar changes still reconnect. On BYD head units with ADB authorized, this happens automatically while the reverse or 360 camera is shown, even with this option off; a session that connects while the camera is shown is sized for the normal window, so closing the camera does not reconnect.</string>
 
     <!-- BYD -->
     <string name="byd_settings_header">BYD</string>

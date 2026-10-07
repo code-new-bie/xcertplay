@@ -136,11 +136,13 @@ object NmeaLocationEncoder {
 
 /**
  * The iPhone's StartLocationInformation in one wireless session. The iPhone asks on the Bluetooth
- * iAP2 link and closes that link about 2 s later. In testing it did not ask again on the Wi-Fi
- * link, even while driving, so the Wi-Fi link carries the request on.
+ * iAP2 link and then closes that link, some iPhones after sending 0xFFFC there within milliseconds.
+ * In testing it did not ask again on the Wi-Fi link, even while driving, so the Wi-Fi link carries
+ * the request on.
  *
  * Both links share one location provider, so each link holds it while reporting and only the
- * last link to let go stops it; 0xFFFC from the iPhone stops it outright.
+ * last link to let go stops it. 0xFFFC on the Bluetooth link ends only that link; on the Wi-Fi
+ * link it stops reporting outright.
  */
 class Iap2LocationRequest {
     /** The 0xFFFA parameter ids while a request is running, otherwise null. */
@@ -186,6 +188,7 @@ class Iap2LocationReporter(
     private var continued = false
     private var lastAttemptNanos = 0L
     private var holdToken: Int? = null
+    private var sentCount = 0L
 
     /** Handles 0xFFFA/0xFFFC; returns false for any other message. */
     fun handle(frame: Iap2Frame, send: (Iap2Frame) -> Unit): Boolean = when (frame.messageId) {
@@ -199,12 +202,21 @@ class Iap2LocationReporter(
         }
         Iap2LocationMessages.STOP_LOCATION_INFORMATION -> {
             onProgress("iap2 rx=0xfffc stop-location-information")
-            request?.components = null
-            request?.stopAll()
-            holdToken = null
-            active = false
-            sentLogged = false
-            provider?.stop()
+            if (request != null && !continueRequest) {
+                // Bluetooth link of a wireless session: the iPhone stops here within milliseconds while
+                // handing the session to Wi-Fi and does not ask again there, so only this link stops.
+                onProgress("iap2 location: Bluetooth link stopped; the request stays for the Wi-Fi link")
+                active = false
+                sentLogged = false
+                releaseProvider()
+            } else {
+                request?.components = null
+                request?.stopAll()
+                holdToken = null
+                active = false
+                sentLogged = false
+                provider?.stop()
+            }
             true
         }
         else -> false
@@ -279,14 +291,23 @@ class Iap2LocationReporter(
         lastAttemptNanos = nanoTime()
         val sentence = provider?.latestNmea() ?: return
         send(Iap2LocationMessages.locationInformation(sentence))
+        sentCount++
         if (!sentLogged) {
             sentLogged = true
-            onProgress("iap2 tx=0xfffb location-information")
+            onProgress("iap2 tx=0xfffb location-information sentences=${sentenceTypes(sentence)}")
+        } else if (sentCount % REPORT_EVERY_SENT == 0L) {
+            onProgress("iap2 location reports sent=$sentCount sentences=${sentenceTypes(sentence)}")
         }
     }
 
+    private fun sentenceTypes(nmea: String): String =
+        nmea.lineSequence().map { it.trim().removePrefix("$").substringBefore(',') }
+            .filter { it.isNotEmpty() }.distinct().joinToString("+")
+
     private companion object {
         const val POLL_INTERVAL_MILLIS = 1_000L
+        /** About once every five minutes at one report a second. */
+        const val REPORT_EVERY_SENT = 300L
     }
 }
 

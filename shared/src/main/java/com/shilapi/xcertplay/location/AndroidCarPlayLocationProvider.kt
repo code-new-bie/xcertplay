@@ -5,9 +5,12 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.OnNmeaMessageListener
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import com.shilapi.xcertplay.transport.CarPlayLocationFix
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
@@ -17,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Foreground Android location source for iAP2 LocationInformation.
  *
- * The freshest usable fix from GPS, fused, or network location is sent.
+ * The freshest usable fix from GPS, fused, or network location is sent, followed by the GNSS chip's
+ * own `$GPGSV` satellites-in-view sentences when they are fresh.
  */
 class AndroidCarPlayLocationProvider(
     context: Context,
@@ -47,6 +51,11 @@ class AndroidCarPlayLocationProvider(
         override fun onStatusChanged(provider: String, status: Int, extras: Bundle?) = Unit
     }
 
+    private val satellites = GpgsvCollector()
+    private val nmeaListener = OnNmeaMessageListener { message, _ ->
+        satellites.onSentence(message, SystemClock.elapsedRealtime())
+    }
+
     private var started = false
 
     @SuppressLint("MissingPermission")
@@ -73,6 +82,12 @@ class AndroidCarPlayLocationProvider(
             started = subscribedProviders > 0
             if (!started) {
                 Log.w(TAG, "No Android location provider could be started")
+            } else {
+                try {
+                    locationManager.addNmeaListener(nmeaListener, Handler(Looper.getMainLooper()))
+                } catch (error: Exception) {
+                    Log.w(TAG, "Could not subscribe to raw GNSS NMEA; satellites are not sent", error)
+                }
             }
             started
         }
@@ -107,11 +122,18 @@ class AndroidCarPlayLocationProvider(
         } catch (_: Exception) {
             // Already unregistered.
         }
+        try {
+            locationManager.removeNmeaListener(nmeaListener)
+        } catch (_: Exception) {
+            // Already unregistered.
+        }
+        satellites.clear()
     }
 
     override fun latestNmea(): String? {
         val fix = latestFix() ?: return null
         return try {
+            val satellitesInView = satellites.latest(SystemClock.elapsedRealtime()).orEmpty()
             NmeaLocationEncoder.encode(
                 CarPlayLocationFix(
                     latitudeDegrees = fix.latitude,
@@ -122,7 +144,7 @@ class AndroidCarPlayLocationProvider(
                     accuracyMeters = fix.accuracy.takeIf { fix.hasAccuracy() }?.toDouble(),
                     timestampMillis = fix.time,
                 ),
-            )
+            ) + satellitesInView
         } catch (error: Throwable) {
             Log.w(TAG, "Could not encode Android location as NMEA", error)
             null

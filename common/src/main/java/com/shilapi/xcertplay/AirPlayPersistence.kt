@@ -70,6 +70,11 @@ object AirPlayPersistence {
     private const val KEY_PHYSICAL_SIZE_BASIS = "display_physical_size_basis"
     private const val KEY_MAX_DETECTED_WIDTH = "display_max_detected_width"
     private const val KEY_MAX_DETECTED_HEIGHT = "display_max_detected_height"
+    private const val KEY_NORMAL_WINDOW_WIDTH = "display_normal_window_width"
+    private const val KEY_NORMAL_WINDOW_HEIGHT = "display_normal_window_height"
+    private const val KEY_NORMAL_WINDOW_ROTATION = "display_normal_window_rotation"
+    private const val KEY_NORMAL_WINDOW_HIDE_TOP_BAR = "display_normal_window_hide_top_bar"
+    private const val KEY_NORMAL_WINDOW_HIDE_BOTTOM_BAR = "display_normal_window_hide_bottom_bar"
     private const val KEY_RIGHT_HAND_DRIVE = "right_hand_drive"
     private const val KEY_HIDE_TOP_BAR = "hide_top_bar"
     private const val KEY_HIDE_BOTTOM_BAR = "hide_bottom_bar"
@@ -576,6 +581,30 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(KEY_MAX_DETECTED_WIDTH, widthPixels.coerceAtLeast(0))
             .putInt(KEY_MAX_DETECTED_HEIGHT, heightPixels.coerceAtLeast(0))
+            .apply()
+    }
+
+    internal fun loadNormalWindow(context: Context): NormalWindow? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val width = prefs.getInt(KEY_NORMAL_WINDOW_WIDTH, 0)
+        val height = prefs.getInt(KEY_NORMAL_WINDOW_HEIGHT, 0)
+        if (width <= 0 || height <= 0) return null
+        return NormalWindow(
+            width,
+            height,
+            prefs.getInt(KEY_NORMAL_WINDOW_ROTATION, 0),
+            prefs.getBoolean(KEY_NORMAL_WINDOW_HIDE_TOP_BAR, false),
+            prefs.getBoolean(KEY_NORMAL_WINDOW_HIDE_BOTTOM_BAR, false),
+        )
+    }
+
+    internal fun saveNormalWindow(context: Context, window: NormalWindow) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NORMAL_WINDOW_WIDTH, window.width)
+            .putInt(KEY_NORMAL_WINDOW_HEIGHT, window.height)
+            .putInt(KEY_NORMAL_WINDOW_ROTATION, window.rotation)
+            .putBoolean(KEY_NORMAL_WINDOW_HIDE_TOP_BAR, window.hideTopBar)
+            .putBoolean(KEY_NORMAL_WINDOW_HIDE_BOTTOM_BAR, window.hideBottomBar)
             .apply()
     }
 
