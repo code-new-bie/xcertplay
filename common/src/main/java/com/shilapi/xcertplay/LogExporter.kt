@@ -16,7 +16,8 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Copies the session log and this process's logcat to a folder a file manager can reach, so logs
+ * Copies the session log, the boot-restore log and this process's logcat to a folder a file
+ * manager can reach, so logs
  * can be taken off a head unit without adb. Android 10+ writes to the public Download folder
  * through MediaStore (no permission); Android 9 falls back to the app's own download directory.
  */
@@ -25,16 +26,19 @@ internal object LogExporter {
 
     data class Result(val location: String, val fileCount: Int)
 
-    fun fileNames(timestampMillis: Long): Pair<String, String> {
+    data class FileNames(val session: String, val logcat: String, val boot: String)
+
+    fun fileNames(timestampMillis: Long): FileNames {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(timestampMillis))
-        return "xcertplay-$stamp.log" to "xcertplay-logcat-$stamp.txt"
+        return FileNames("xcertplay-$stamp.log", "xcertplay-logcat-$stamp.txt", "xcertplay-boot-$stamp.txt")
     }
 
     fun export(context: Context, sessionLog: File?): Result {
-        val (sessionName, logcatName) = fileNames(System.currentTimeMillis())
+        val names = fileNames(System.currentTimeMillis())
         val files = buildList {
-            sessionLog?.takeIf { it.isFile }?.let { add(sessionName to it.readBytes()) }
-            add(logcatName to readOwnLogcat())
+            sessionLog?.takeIf { it.isFile }?.let { add(names.session to it.readBytes()) }
+            BootRestoreLog.file(context).takeIf { it.isFile }?.let { add(names.boot to it.readBytes()) }
+            add(names.logcat to readOwnLogcat())
         }
         val location = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             files.forEach { (name, bytes) -> writeToDownloads(context, name, bytes) }

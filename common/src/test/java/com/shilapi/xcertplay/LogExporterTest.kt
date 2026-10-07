@@ -11,9 +11,10 @@ class LogExporterTest {
         val zone = TimeZone.getDefault()
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
         try {
-            val (session, logcat) = LogExporter.fileNames(0L)
+            val (session, logcat, boot) = LogExporter.fileNames(0L)
             assertEquals("xcertplay-19700101-000000.log", session)
             assertEquals("xcertplay-logcat-19700101-000000.txt", logcat)
+            assertEquals("xcertplay-boot-19700101-000000.txt", boot)
         } finally {
             TimeZone.setDefault(zone)
         }
@@ -21,8 +22,8 @@ class LogExporterTest {
 
     @Test
     fun namesAreSafeForFileManagers() {
-        val (session, logcat) = LogExporter.fileNames(System.currentTimeMillis())
-        for (name in listOf(session, logcat)) {
+        val (session, logcat, boot) = LogExporter.fileNames(System.currentTimeMillis())
+        for (name in listOf(session, logcat, boot)) {
             assertTrue(name, name.matches(Regex("[A-Za-z0-9._-]+")))
         }
     }

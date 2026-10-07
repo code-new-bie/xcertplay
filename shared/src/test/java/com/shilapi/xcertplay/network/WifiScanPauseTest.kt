@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.network
 
+import android.os.Looper
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -8,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -39,10 +41,71 @@ class WifiScanPauseTest {
         }
     }
 
-    private fun manager(shell: Shell, delay: Long = 100L): WifiScanPause {
+    private fun manager(shell: Shell, delay: Long = 100L, grace: Long = 60_000L): WifiScanPause {
         val app = RuntimeEnvironment.getApplication()
         app.applicationInfo.sourceDir = "/data/app/xcertplay/base.apk"
-        return WifiScanPause(app, { shell }, delay)
+        return WifiScanPause(app, { shell }, delay, grace)
+    }
+
+    /** What a run killed by the head unit's power-off leaves: the search paused, Gaode restricted. */
+    private fun leavePaused() {
+        WifiScanPauseSettings.prefs(RuntimeEnvironment.getApplication()).edit()
+            .putBoolean("paused", true).putBoolean("search_recovery_pending", true)
+            .putString("gaode_original_change_wifi_state", "allow").commit()
+    }
+
+    /** Runs the startup check, which goes through the main looper to the worker. */
+    private fun started(manager: WifiScanPause): WifiScanPause {
+        shadowOf(Looper.getMainLooper()).idle()
+        Thread.sleep(50)
+        return manager
+    }
+
+    private fun awaitResume(shell: Shell): Boolean {
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (System.nanoTime() < deadline) {
+            if (shell.commands.any { "wifiscan on" in it }) return true
+            Thread.sleep(20)
+        }
+        return false
+    }
+
+    @Test fun searchLeftPausedByAKilledRunWaitsForCarPlayBeforeResuming() {
+        val shell = Shell()
+        leavePaused()
+        val manager = started(manager(shell, grace = 400L))
+        assertFalse("Still paused right after startup", shell.commands.any { "wifiscan on" in it })
+        assertTrue(awaitResume(shell))
+        Thread.sleep(100)
+        assertFalse(manager.isPaused())
+        assertTrue(shell.commands.any { it.startsWith("cmd appops set") && "${AppScanRestriction.GAODE} CHANGE_WIFI_STATE allow" in it })
+    }
+
+    @Test fun carPlayConnectingDuringTheStartupGraceKeepsTheSearchPaused() {
+        val shell = Shell()
+        leavePaused()
+        val manager = started(manager(shell, grace = 300L))
+        manager.pause()
+        Thread.sleep(700)
+        assertFalse(shell.commands.any { "wifiscan on" in it })
+        assertTrue(manager.isPaused())
+    }
+
+    @Test fun resumeLaterDoesNotShortenTheStartupGrace() {
+        val shell = Shell()
+        leavePaused()
+        val manager = started(manager(shell, delay = 100L, grace = 900L))
+        manager.resumeLater()
+        Thread.sleep(400)
+        assertFalse(shell.commands.any { "wifiscan on" in it })
+        assertTrue(awaitResume(shell))
+    }
+
+    @Test fun aLeftoverIsFoundFromTheSavedStateAlone() {
+        val app = RuntimeEnvironment.getApplication()
+        assertFalse(WifiScanPause.hasLeftover(app))
+        WifiScanPauseSettings.prefs(app).edit().putString("baidu_location_original_change_wifi_state", "allow").commit()
+        assertTrue(WifiScanPause.hasLeftover(app))
     }
 
     @Test fun lostPauseReplyStillRestoresSearchAndOriginalPermissionOnExit() {

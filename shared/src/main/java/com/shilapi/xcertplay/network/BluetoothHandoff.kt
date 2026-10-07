@@ -48,7 +48,8 @@ object BluetoothHandoffSettings {
  * before any reconnect, and the link is disconnected. One instance serves the whole process, so a
  * reconnect (settings saved, reconnect button, brief drop) keeps the links off: [releaseLater]
  * restores them only if no session holds them again within [RELEASE_DELAY_MS]. The saved
- * priorities persist, so a process killed while holding is repaired on the next start.
+ * priorities persist: BYD's power-off kills the app before that release, so the next start takes
+ * the links over and restores them unless CarPlay connects within [STARTUP_GRACE_MS].
  *
  * BYD's HeadsetClientService and A2dpSinkService only require BLUETOOTH_ADMIN; the methods are
  * hidden API and are called reflectively. All state lives on the main thread.
@@ -74,7 +75,9 @@ class BluetoothHandoff private constructor(context: Context) {
     private var releasePending = false
     private var receiverRegistered = false
     private val guards = Link.values().associateWith { HandoffReconnectGuard() }
-    private val delayedRelease = Runnable { releaseNow("no CarPlay session for ${RELEASE_DELAY_MS / 1000}s") }
+    private var releaseAt = 0L
+    private var releaseReason = ""
+    private val delayedRelease = Runnable { releaseNow(releaseReason) }
 
     /** Where progress is written; the controller of the current connection sets it. */
     @Volatile
@@ -99,14 +102,30 @@ class BluetoothHandoff private constructor(context: Context) {
     }
 
     init {
-        // Repair priorities left off by a process that died while holding.
         handler.post {
             if (!prefs.getBoolean(KEY_STUCK_OFF_REPAIRED, false)) repairStuckPhones()
-            val address = prefs.getString(KEY_HELD_ADDRESS, null) ?: return@post
-            if (target != null) return@post
-            report("Bluetooth handoff: restoring links left off by an earlier run for $address")
-            for (link in Link.values()) restoreLink(link, address)
+            if (target == null) takeOverLeftover()
         }
+    }
+
+    /**
+     * Links a killed process left off stay off a while longer: restoring at once would reconnect
+     * the iPhone only for the CarPlay session about to start to drop it again.
+     */
+    private fun takeOverLeftover() {
+        val address = prefs.getString(KEY_HELD_ADDRESS, null) ?: return
+        val links = Link.values().filter { prefs.contains(priorityKey(it)) }
+        if (links.isEmpty()) {
+            prefs.edit().remove(KEY_HELD_ADDRESS).apply()
+            return
+        }
+        target = address
+        held += links
+        links.forEach { guards.getValue(it).reset() }
+        registerReceiver()
+        scheduleRelease(STARTUP_GRACE_MS, "no CarPlay session within ${STARTUP_GRACE_MS / 1000}s of startup")
+        report("Bluetooth handoff: ${links.joinToString("+") { it.label }} to $address left off by an earlier run; " +
+            "restoring in ${STARTUP_GRACE_MS / 1000}s unless CarPlay connects")
     }
 
     /**
@@ -133,10 +152,11 @@ class BluetoothHandoff private constructor(context: Context) {
     }
 
     /**
-     * The app is exiting: restore the links now instead of after [RELEASE_DELAY_MS], and wait up to
-     * [timeoutMillis] for it. Call from a background thread.
+     * The app is exiting, or the head unit powered on without CarPlay: restore the links now
+     * instead of after the delay, and wait up to [timeoutMillis] for it. Call from a background
+     * thread.
      */
-    fun releaseNowBlocking(timeoutMillis: Long): Boolean {
+    fun releaseNowBlocking(timeoutMillis: Long, reason: String = "app exit"): Boolean {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Bluetooth restore must not block the main thread" }
         require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
@@ -145,7 +165,7 @@ class BluetoothHandoff private constructor(context: Context) {
             try {
                 handler.removeCallbacks(delayedRelease)
                 if (target != null) {
-                    releaseNow("app exit")
+                    releaseNow(reason)
                 } else {
                     prefs.getString(KEY_HELD_ADDRESS, null)?.let { address ->
                         for (link in Link.values()) restoreLink(link, address)
@@ -229,15 +249,25 @@ class BluetoothHandoff private constructor(context: Context) {
         }
     }
 
-    /** Restores the links after [RELEASE_DELAY_MS] unless a session holds them again first. */
+    /**
+     * Restores the links after [RELEASE_DELAY_MS] unless a session holds them again first. A longer
+     * wait already pending (after startup) is kept.
+     */
     fun releaseLater() {
         handler.post {
             if (target == null) return@post
-            handler.removeCallbacks(delayedRelease)
-            handler.postDelayed(delayedRelease, RELEASE_DELAY_MS)
-            releasePending = true
+            if (releasePending && releaseAt >= SystemClock.uptimeMillis() + RELEASE_DELAY_MS) return@post
+            scheduleRelease(RELEASE_DELAY_MS, "no CarPlay session for ${RELEASE_DELAY_MS / 1000}s")
             report("Bluetooth handoff: restoring in ${RELEASE_DELAY_MS / 1000}s unless CarPlay reconnects")
         }
+    }
+
+    private fun scheduleRelease(delayMillis: Long, reason: String) {
+        handler.removeCallbacks(delayedRelease)
+        releaseAt = SystemClock.uptimeMillis() + delayMillis
+        releaseReason = reason
+        handler.postAtTime(delayedRelease, releaseAt)
+        releasePending = true
     }
 
     private fun releaseNow(reason: String) {
@@ -381,7 +411,7 @@ class BluetoothHandoff private constructor(context: Context) {
     private fun remoteDevice(address: String): BluetoothDevice? =
         runCatching { adapter?.getRemoteDevice(address) }.getOrNull()
 
-    private fun priorityKey(link: Link) = "saved_priority_${link.name.lowercase()}"
+    private fun priorityKey(link: Link) = "$PRIORITY_KEY_PREFIX${link.name.lowercase()}"
 
     private fun report(message: String) {
         runCatching { diagnostic(message) }
@@ -390,10 +420,13 @@ class BluetoothHandoff private constructor(context: Context) {
     companion object {
         /** Long enough for a settings save or reconnect to bring the session back. */
         const val RELEASE_DELAY_MS = 15_000L
+        /** Long enough for wireless CarPlay to connect after the head unit powers on. */
+        const val STARTUP_GRACE_MS = 60_000L
         private const val PRIORITY_OFF = 0
         private const val PRIORITY_ON = 100
         private const val KEY_HELD_ADDRESS = "held_address"
         private const val KEY_STUCK_OFF_REPAIRED = "stuck_off_repaired"
+        private const val PRIORITY_KEY_PREFIX = "saved_priority_"
 
         @Volatile
         private var instance: BluetoothHandoff? = null
@@ -402,6 +435,12 @@ class BluetoothHandoff private constructor(context: Context) {
             instance ?: synchronized(this) {
                 instance ?: BluetoothHandoff(context).also { instance = it }
             }
+
+        /** Whether an earlier run left an iPhone link off; reads only the saved state. */
+        fun hasLeftover(context: Context): Boolean {
+            val prefs = BluetoothHandoffSettings.prefs(context)
+            return prefs.all.keys.any { it.startsWith(PRIORITY_KEY_PREFIX) }
+        }
     }
 }
 

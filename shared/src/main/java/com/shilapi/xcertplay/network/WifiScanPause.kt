@@ -1,6 +1,9 @@
 package com.shilapi.xcertplay.network
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import com.shilapi.xcertplay.adb.AdbKeys
 import com.shilapi.xcertplay.adb.LocalAdb
 import com.shilapi.xcertplay.hud.BydSdkStream
@@ -44,13 +47,15 @@ object WifiScanPauseSettings {
  *
  * One instance serves the process: a reconnect keeps the search paused (resuming would start a scan
  * at once), and [resumeLater] resumes it only if no session pauses it again within
- * [RESUME_DELAY_MS]. The paused state is saved, so a run killed while paused is repaired on the
- * next start. Without adb approval nothing happens.
+ * [RESUME_DELAY_MS]. The paused state is saved: BYD's power-off kills the app before that resume,
+ * so the next start resumes the search unless CarPlay connects within [STARTUP_GRACE_MS]. Without
+ * adb approval nothing happens.
  */
 class WifiScanPause internal constructor(
     context: Context,
     private val newShell: () -> WifiScanShell = { AdbWifiScanShell(context.applicationContext) },
     private val resumeDelayMillis: Long = RESUME_DELAY_MS,
+    private val startupGraceMillis: Long = STARTUP_GRACE_MS,
 ) {
     private val app = context.applicationContext
     private val prefs = WifiScanPauseSettings.prefs(app)
@@ -61,24 +66,29 @@ class WifiScanPause internal constructor(
     private var sessionRequested = false
     private var appsAttempted = false
     private var appsApplied = false
-    private val restrictions = (android.os.Process.myUid() / 100_000).let { userId ->
-        listOf(
-            AppScanRestriction.gaode(prefs, userId, ::report),
-            AppScanRestriction.baiduLocation(prefs, userId, ::report),
-        )
-    }
+    private val restrictions = scanRestrictions(prefs, ::report)
 
     /** Where progress is written; the controller of the current connection sets it. */
     @Volatile
     var diagnostic: (String) -> Unit = {}
 
     init {
-        worker.execute {
-            if (needsRestore()) {
-                report("Wi-Fi network search was left paused by an earlier run; resuming")
-                restore()
-            }
-        }
+        // Through the main looper: callers set [diagnostic] right after shared() on the main thread.
+        Handler(Looper.getMainLooper()).post { worker.execute(::takeOverLeftover) }
+    }
+
+    /**
+     * A search a killed process left paused stays paused a while longer: resuming at once would
+     * start a scan just as the CarPlay session about to connect needs the radio.
+     */
+    private fun takeOverLeftover() {
+        if (sessionRequested || pendingResume != null || !needsRestore()) return
+        pendingResume = worker.schedule({
+            pendingResume = null
+            restore()
+        }, startupGraceMillis, TimeUnit.MILLISECONDS)
+        report("Wi-Fi network search was left paused by an earlier run; resuming in " +
+            "${startupGraceMillis / 1000}s unless CarPlay connects")
     }
 
     fun pause() {
@@ -99,6 +109,8 @@ class WifiScanPause internal constructor(
             appsAttempted = false
             appsApplied = false
             if (!needsRestore()) return@execute
+            // A longer wait already pending (after startup) is kept.
+            if ((pendingResume?.getDelay(TimeUnit.MILLISECONDS) ?: 0L) >= resumeDelayMillis) return@execute
             pendingResume?.cancel(false)
             pendingResume = worker.schedule({
                 pendingResume = null
@@ -109,8 +121,8 @@ class WifiScanPause internal constructor(
     }
 
     /**
-     * The app is exiting: resume the search now instead of after [RESUME_DELAY_MS], waiting up to
-     * [timeoutMillis]. Call from a background thread.
+     * The app is exiting, or the head unit powered on without CarPlay: resume the search now
+     * instead of after the delay, waiting up to [timeoutMillis]. Call from a background thread.
      */
     fun resumeNowBlocking(timeoutMillis: Long): Boolean {
         require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
@@ -204,6 +216,8 @@ class WifiScanPause internal constructor(
 
     companion object {
         const val RESUME_DELAY_MS = 15_000L
+        /** Long enough for wireless CarPlay to connect after the head unit powers on. */
+        const val STARTUP_GRACE_MS = 60_000L
         private const val KEY_PAUSED = "paused"
         private const val KEY_RECOVERY = "search_recovery_pending"
 
@@ -212,5 +226,20 @@ class WifiScanPause internal constructor(
 
         fun shared(context: Context): WifiScanPause =
             instance ?: synchronized(this) { instance ?: WifiScanPause(context).also { instance = it } }
+
+        /** Whether an earlier run left the search paused or an app restricted; reads only the saved state. */
+        fun hasLeftover(context: Context): Boolean {
+            val prefs = WifiScanPauseSettings.prefs(context)
+            return prefs.getBoolean(KEY_PAUSED, false) || prefs.getBoolean(KEY_RECOVERY, false) ||
+                scanRestrictions(prefs) {}.any { it.pending }
+        }
+
+        private fun scanRestrictions(prefs: SharedPreferences, report: (String) -> Unit) =
+            (android.os.Process.myUid() / 100_000).let { userId ->
+                listOf(
+                    AppScanRestriction.gaode(prefs, userId, report),
+                    AppScanRestriction.baiduLocation(prefs, userId, report),
+                )
+            }
     }
 }

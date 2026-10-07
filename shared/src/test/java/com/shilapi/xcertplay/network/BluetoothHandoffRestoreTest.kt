@@ -147,6 +147,71 @@ class BluetoothHandoffRestoreTest {
         assertEquals(0, calls.connects)
     }
 
+    @Test
+    fun linksLeftOffByAKilledRunWaitForCarPlayBeforeTheyAreRestored() {
+        leaveCallsOff()
+        newHandoff()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Still off right after startup", 0, calls.priority)
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(BluetoothHandoff.STARTUP_GRACE_MS))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(100, calls.priority)
+        assertEquals(1, calls.connects)
+        assertFalse(prefs().contains("held_address"))
+    }
+
+    @Test
+    fun carPlayConnectingDuringTheStartupGraceKeepsTheLeftoverLinkOff() {
+        leaveCallsOff()
+        val restarted = newHandoff()
+        restarted.hold(ADDRESS, calls = true, audio = false)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2 * BluetoothHandoff.STARTUP_GRACE_MS))
+        assertEquals(0, calls.priority)
+        assertEquals(0, calls.connects)
+        assertTrue(prefs().contains("saved_priority_calls"))
+    }
+
+    @Test
+    fun releaseLaterDoesNotShortenTheStartupGrace() {
+        leaveCallsOff()
+        val restarted = newHandoff()
+        shadowOf(Looper.getMainLooper()).idle()
+        restarted.releaseLater()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(BluetoothHandoff.RELEASE_DELAY_MS + 1_000))
+        assertEquals(0, calls.priority)
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(BluetoothHandoff.STARTUP_GRACE_MS))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(100, calls.priority)
+    }
+
+    @Test
+    fun powerOnWithoutAutoStartRestoresTheLeftoverAtOnce() {
+        leaveCallsOff()
+        handoff = newHandoff()
+        assertTrue(restore())
+        assertEquals(100, calls.priority)
+        assertFalse(prefs().contains("held_address"))
+    }
+
+    @Test
+    fun aLeftoverIsFoundFromTheSavedStateAlone() {
+        assertFalse(BluetoothHandoff.hasLeftover(app))
+        leaveCallsOff()
+        assertTrue(BluetoothHandoff.hasLeftover(app))
+    }
+
+    /** What a run killed by the head unit's power-off leaves: the priority off and its original saved. */
+    private fun leaveCallsOff() {
+        prefs().edit().putString("held_address", ADDRESS).putInt("saved_priority_calls", 100).commit()
+        calls.priority = 0
+    }
+
+    private fun newHandoff(): BluetoothHandoff = ReflectionHelpers.callConstructor(
+        BluetoothHandoff::class.java, ClassParameter.from(Context::class.java, app),
+    )
+
     private fun setting(calls: Boolean, audio: Boolean) {
         prefs().edit().putBoolean("disconnect_calls", calls).putBoolean("disconnect_audio", audio).commit()
         handoff.settingsChanged()
