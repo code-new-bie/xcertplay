@@ -748,6 +748,8 @@ class CarPlayHostActivity : ComponentActivity() {
         applyFullscreenMode()
     }
 
+    // Lint flags ComponentActivity's restricted override; overriding Activity.dispatchKeyEvent is public API.
+    @Suppress("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val currentController = controller
         if (!CarPlayVoiceKey.handles(event.keyCode) ||

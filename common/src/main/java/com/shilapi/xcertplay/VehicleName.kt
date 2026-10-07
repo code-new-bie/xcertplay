@@ -30,6 +30,8 @@ internal object VehicleName {
             ?: sanitize(bluetoothName)?.let { it to Source.BLUETOOTH }
             ?: (DEFAULT to Source.FALLBACK)
 
+    // A missing Bluetooth permission only makes the adapter read fail, which runCatching handles.
+    @Suppress("MissingPermission")
     fun bluetoothName(context: Context): String? {
         val adapter = runCatching {
             context.getSystemService(BluetoothManager::class.java)?.adapter?.name

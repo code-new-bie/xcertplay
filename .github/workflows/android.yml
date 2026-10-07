@@ -176,6 +176,7 @@ jobs:
           :automotive:lintRelease
           :automotive:assembleRelease
           :mobile:assembleRelease
+          -PreleaseVersionName=${{ github.ref_name }}
           --stacktrace
 
       - name: Verify and collect signed APKs
@@ -203,8 +204,20 @@ jobs:
           set -euo pipefail
 
           if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release create "${GITHUB_REF_NAME}" \
-              --verify-tag \
-              --generate-notes
+            # An annotated tag carries the release notes in its message; otherwise generate them.
+            ref_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.type')"
+            if [[ "${ref_type}" == "tag" ]]; then
+              tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.sha')"
+              gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.message' > release-notes.md
+            fi
+            if [[ -s release-notes.md ]]; then
+              gh release create "${GITHUB_REF_NAME}" \
+                --verify-tag \
+                --notes-file release-notes.md
+            else
+              gh release create "${GITHUB_REF_NAME}" \
+                --verify-tag \
+                --generate-notes
+            fi
           fi
           gh release upload "${GITHUB_REF_NAME}" release/*.apk --clobber

@@ -67,7 +67,8 @@ internal data class AccessoryIds(
                 access to realBluetoothAddress(adb.shell(ADB_READ_COMMAND).orEmpty().lines())
             }
 
-        @Suppress("DEPRECATION", "HardwareIds")
+        // A missing Bluetooth permission only makes the adapter read fail, which runCatching handles.
+        @Suppress("DEPRECATION", "HardwareIds", "MissingPermission")
         private fun bluetoothAddressCandidates(context: Context): List<String?> = listOf(
             runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.address }.getOrNull(),
             runCatching { Settings.Secure.getString(context.contentResolver, "bluetooth_address") }.getOrNull(),
