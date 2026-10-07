@@ -30,6 +30,7 @@ class BluetoothHandoffRestoreTest {
     private lateinit var app: Application
     private lateinit var handoff: BluetoothHandoff
     private lateinit var calls: TestProfile
+    private lateinit var audio: TestProfile
 
     @Before
     fun setUp() {
@@ -37,8 +38,9 @@ class BluetoothHandoffRestoreTest {
         BluetoothHandoffSettings.prefs(app).edit().clear().putBoolean("stuck_off_repaired", true).commit()
         val adapter = app.getSystemService(BluetoothManager::class.java).adapter
         calls = TestProfile()
+        audio = TestProfile()
         shadowOf(adapter).setProfileProxy(16, calls)
-        shadowOf(adapter).setProfileProxy(11, TestProfile())
+        shadowOf(adapter).setProfileProxy(11, audio)
         handoff = ReflectionHelpers.callConstructor(
             BluetoothHandoff::class.java, ClassParameter.from(Context::class.java, app),
         )
@@ -91,6 +93,64 @@ class BluetoothHandoffRestoreTest {
         calls.acceptConnect = false
         assertTrue(restore())
         assertEquals(0, calls.connects)
+    }
+
+    @Test
+    fun switchingASettingOffDuringASessionRestoresThatLinkAtOnce() {
+        handoff.hold(ADDRESS, calls = true, audio = true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(0, calls.priority)
+        assertEquals(0, audio.priority)
+
+        setting(calls = false, audio = true)
+
+        assertEquals(100, calls.priority)
+        assertEquals(1, calls.connects)
+        assertFalse(prefs().contains("saved_priority_calls"))
+        assertEquals("Music stays off", 0, audio.priority)
+        assertEquals(ADDRESS, prefs().getString("held_address", null))
+    }
+
+    @Test
+    fun switchingASettingOnDuringASessionTurnsThatLinkOff() {
+        handoff.hold(ADDRESS, calls = false, audio = false)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(100, calls.priority)
+
+        setting(calls = true, audio = false)
+
+        assertEquals(0, calls.priority)
+        assertTrue(prefs().contains("saved_priority_calls"))
+    }
+
+    @Test
+    fun afterTheSessionEndedASettingOnlyRestoresAndTheDelayedReleaseStillRuns() {
+        handoff.hold(ADDRESS, calls = true, audio = false)
+        shadowOf(Looper.getMainLooper()).idle()
+        handoff.releaseLater()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        setting(calls = false, audio = true)
+        assertEquals("Switched off: restored now, not after 15 s", 100, calls.priority)
+        assertEquals("No new hold once the session ended", 100, audio.priority)
+
+        setting(calls = true, audio = true)
+        assertEquals(100, calls.priority)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(BluetoothHandoff.RELEASE_DELAY_MS))
+        assertFalse(prefs().contains("held_address"))
+    }
+
+    @Test
+    fun aSettingChangeWithoutASessionChangesNothing() {
+        setting(calls = false, audio = false)
+        assertEquals(100, calls.priority)
+        assertEquals(0, calls.connects)
+    }
+
+    private fun setting(calls: Boolean, audio: Boolean) {
+        prefs().edit().putBoolean("disconnect_calls", calls).putBoolean("disconnect_audio", audio).commit()
+        handoff.settingsChanged()
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     private fun hold() {

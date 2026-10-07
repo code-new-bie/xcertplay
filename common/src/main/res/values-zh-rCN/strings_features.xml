@@ -58,7 +58,7 @@
     <string name="bluetooth_handoff_calls_desc">通话走 CarPlay，原车电话不再弹窗</string>
     <string name="bluetooth_handoff_audio_label">CarPlay 期间断开 iPhone 蓝牙音乐</string>
     <string name="bluetooth_handoff_audio_desc">音乐走 CarPlay，不走蓝牙</string>
-    <string name="bluetooth_handoff_note">这是 CarPlay 要求车机断开的蓝牙连接。若经 Wi-Fi 播放的音乐卡顿，可在“音频”中调大音乐缓冲，或关闭“断开蓝牙音乐”让音乐继续走蓝牙（iPhone 的播放输出会显示为蓝牙）。CarPlay 结束 15 秒后自动恢复两项连接。下次连接生效。</string>
+    <string name="bluetooth_handoff_note">这是 CarPlay 要求车机断开的蓝牙连接。若经 Wi-Fi 播放的音乐卡顿，可在“音频”中调大音乐缓冲，或关闭“断开蓝牙音乐”让音乐继续走蓝牙（iPhone 的播放输出会显示为蓝牙）。CarPlay 结束 15 秒后自动恢复两项连接。开关改动立即生效：连接中关闭某项会马上恢复该连接。</string>
     <string name="wifi_scan_diag">Wi-Fi 扫描诊断</string>
     <string name="wifi_scan_diag_running">正在读取…</string>
     <string name="wifi_scan_diag_note">通过 ADB 读取哪些应用和系统服务在扫描 Wi-Fi，并写入日志。频繁扫描会让 Wi-Fi P2P 卡顿。读取后请导出日志。</string>

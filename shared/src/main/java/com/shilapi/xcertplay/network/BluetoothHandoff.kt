@@ -22,14 +22,18 @@ object BluetoothHandoffSettings {
     /** Hands-free (HFP): calls go through CarPlay and the stock phone shows no popup. */
     fun callsEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_CALLS, true)
 
-    fun setCallsEnabled(context: Context, enabled: Boolean) =
+    fun setCallsEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_CALLS, enabled).apply()
+        BluetoothHandoff.shared(context).settingsChanged()
+    }
 
     /** Bluetooth audio (A2DP): music goes through CarPlay instead of Bluetooth. */
     fun audioEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AUDIO, true)
 
-    fun setAudioEnabled(context: Context, enabled: Boolean) =
+    fun setAudioEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUDIO, enabled).apply()
+        BluetoothHandoff.shared(context).settingsChanged()
+    }
 
     internal fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -66,6 +70,8 @@ class BluetoothHandoff private constructor(context: Context) {
     private val pending = mutableMapOf<Link, MutableList<(BluetoothProfile) -> Unit>>()
     private val held = mutableSetOf<Link>()
     private var target: String? = null
+    /** The session ended and [delayedRelease] is waiting: a setting may restore, never newly hold. */
+    private var releasePending = false
     private var receiverRegistered = false
     private val guards = Link.values().associateWith { HandoffReconnectGuard() }
     private val delayedRelease = Runnable { releaseNow("no CarPlay session for ${RELEASE_DELAY_MS / 1000}s") }
@@ -179,25 +185,46 @@ class BluetoothHandoff private constructor(context: Context) {
             }
             if (target != null && target != normalized) releaseNow("another iPhone took over")
             target = normalized
+            releasePending = false
             registerReceiver()
-            val wanted = buildSet {
-                if (calls) add(Link.CALLS)
-                if (audio) add(Link.AUDIO)
-            }
-            for (link in Link.values()) {
-                when {
-                    link in wanted && link !in held -> {
-                        held += link
-                        guards.getValue(link).reset()
-                        withProxy(link) { profile -> if (link in held) turnOff(link, profile, normalized) }
-                    }
-                    link in wanted -> report("${link.label} to $normalized still off for CarPlay")
-                    link in held -> {
-                        held -= link
-                        restoreLink(link, normalized)
-                    }
-                    else -> report("${link.label} to $normalized left connected (setting off)")
+            applyLinks(normalized, wanted(calls, audio), allowNewHolds = true)
+        }
+    }
+
+    /**
+     * A Bluetooth setting changed: it applies at once, as the Wi-Fi search setting does. A link
+     * switched off is restored now; a link switched on is turned off while a session runs. After
+     * the session ended only restoring applies, so the pending delayed release still happens.
+     */
+    fun settingsChanged() {
+        handler.post {
+            val address = target ?: return@post
+            val wanted = wanted(BluetoothHandoffSettings.callsEnabled(app), BluetoothHandoffSettings.audioEnabled(app))
+            report("Bluetooth handoff settings changed: calls=${Link.CALLS in wanted} audio=${Link.AUDIO in wanted}")
+            applyLinks(address, wanted, allowNewHolds = !releasePending)
+        }
+    }
+
+    private fun wanted(calls: Boolean, audio: Boolean): Set<Link> = buildSet {
+        if (calls) add(Link.CALLS)
+        if (audio) add(Link.AUDIO)
+    }
+
+    private fun applyLinks(address: String, wanted: Set<Link>, allowNewHolds: Boolean) {
+        for (link in Link.values()) {
+            when {
+                link in wanted && link in held -> report("${link.label} to $address still off for CarPlay")
+                link in wanted && allowNewHolds -> {
+                    held += link
+                    guards.getValue(link).reset()
+                    withProxy(link) { profile -> if (link in held) turnOff(link, profile, address) }
                 }
+                link in wanted -> report("${link.label} to $address stays connected until the next CarPlay session")
+                link in held -> {
+                    held -= link
+                    restoreLink(link, address)
+                }
+                else -> report("${link.label} to $address left connected (setting off)")
             }
         }
     }
@@ -208,6 +235,7 @@ class BluetoothHandoff private constructor(context: Context) {
             if (target == null) return@post
             handler.removeCallbacks(delayedRelease)
             handler.postDelayed(delayedRelease, RELEASE_DELAY_MS)
+            releasePending = true
             report("Bluetooth handoff: restoring in ${RELEASE_DELAY_MS / 1000}s unless CarPlay reconnects")
         }
     }
@@ -217,6 +245,7 @@ class BluetoothHandoff private constructor(context: Context) {
         handler.removeCallbacks(delayedRelease)
         report("Bluetooth handoff: restoring links ($reason)")
         target = null
+        releasePending = false
         held.clear()
         unregisterReceiver()
         for (link in Link.values()) restoreLink(link, address)
