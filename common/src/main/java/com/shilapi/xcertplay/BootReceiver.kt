@@ -18,7 +18,8 @@ import kotlin.concurrent.thread
  * restore of the iPhone's Bluetooth links, the Wi-Fi search and the app scan permissions never
  * runs, and all of them survive into the next drive. Power-on resends BOOT_COMPLETED (with
  * from_quickboot). With auto-start the restrictions wait for CarPlay to connect; without it they
- * are restored now in the background.
+ * are restored now in the background. A CarPlay screen already running (opened before this
+ * broadcast) manages them itself and is left alone.
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -26,7 +27,15 @@ class BootReceiver : BroadcastReceiver() {
         val app = context.applicationContext
         val autoStart = AirPlayPersistence.loadAutoStartOnBoot(app)
         if (BluetoothHandoff.hasLeftover(app) || WifiScanPause.hasLeftover(app)) {
-            handleLeftover(app, autoStart, intent.getBooleanExtra(EXTRA_FROM_QUICKBOOT, false))
+            val quickBoot = intent.getBooleanExtra(EXTRA_FROM_QUICKBOOT, false)
+            if (CarPlayHostLaunch.hostRunning) {
+                BootRestoreLog(app).append(
+                    "${bootLabel(quickBoot)}: CarPlay restrictions left by the last run; CarPlay already " +
+                        "running, which restores them unless CarPlay connects",
+                )
+            } else {
+                handleLeftover(app, autoStart, quickBoot)
+            }
         }
         if (!autoStart) return
 
@@ -36,6 +45,7 @@ class BootReceiver : BroadcastReceiver() {
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP,
             )
+            putExtra(CarPlayHostLaunch.EXTRA_SOURCE, CarPlayHostLaunch.SOURCE_BOOT)
         }
         try {
             context.startActivity(launch)
@@ -47,7 +57,7 @@ class BootReceiver : BroadcastReceiver() {
     private fun handleLeftover(app: Context, autoStart: Boolean, quickBoot: Boolean) {
         val log = BootRestoreLog(app)
         log.append(
-            "${if (quickBoot) "Head unit powered on" else "Device booted"}: CarPlay restrictions left by the last run; " +
+            "${bootLabel(quickBoot)}: CarPlay restrictions left by the last run; " +
                 if (autoStart) "auto-start on, waiting for CarPlay" else "auto-start off, restoring now",
         )
         // Creating them takes the leftover over: they restore it unless CarPlay connects in time.
@@ -76,6 +86,8 @@ class BootReceiver : BroadcastReceiver() {
             }
         }
     }
+
+    private fun bootLabel(quickBoot: Boolean) = if (quickBoot) "Head unit powered on" else "Device booted"
 
     private companion object {
         const val TAG = "xcertplay-boot"

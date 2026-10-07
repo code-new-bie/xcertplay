@@ -17,7 +17,7 @@
     <string name="wireless_carplay_desc">无线 CarPlay 传输</string>
     <string name="hotspot_status">热点状态</string>
     <string name="auto_start_label">开机自动启动</string>
-    <string name="auto_start_desc">设备开机后自动启动 CarPlay</string>
+    <string name="auto_start_desc">车机开机或上电后自动启动 CarPlay；关闭时，要手动打开应用才会连接</string>
     <string name="main_media_buffer">音乐缓冲</string>
     <string name="navigation_buffer">导航缓冲</string>
     <string name="advanced_mapping_label">高级音频通道映射</string>

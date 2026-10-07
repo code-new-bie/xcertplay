@@ -533,6 +533,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CarPlayHostLaunch.hostCreated()
         latestStage = getString(R.string.stage_preparing)
         initializeSessionLog()
         darkMode = isDarkMode(applicationContext.resources.configuration.uiMode)
@@ -572,7 +573,7 @@ class CarPlayHostActivity : ComponentActivity() {
         )
 
         appendLog(
-            "Host started; MFI target=${mfiTargetLabel(mfiTarget)}; " +
+            "Host started; launch=${CarPlayHostLaunch.source(intent)}; MFI target=${mfiTargetLabel(mfiTarget)}; " +
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
         if (bydHeadUnit) {
@@ -813,6 +814,7 @@ class CarPlayHostActivity : ComponentActivity() {
         sessionLog?.append("Activity destroyed")
         sessionLog?.close()
         sessionLog = null
+        CarPlayHostLaunch.hostDestroyed()
         super.onDestroy()
     }
 

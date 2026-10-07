@@ -17,7 +17,7 @@
     <string name="wireless_carplay_desc">Wireless CarPlay transport</string>
     <string name="hotspot_status">Hotspot status</string>
     <string name="auto_start_label">Auto-start on boot</string>
-    <string name="auto_start_desc">Start CarPlay automatically after device boot</string>
+    <string name="auto_start_desc">Start CarPlay automatically after boot or power-on; when off, CarPlay connects only after you open the app</string>
     <string name="main_media_buffer">Music buffer</string>
     <string name="navigation_buffer">Navigation buffer</string>
     <string name="advanced_mapping_label">Advanced audio channel mapping</string>
