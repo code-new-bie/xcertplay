@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.network
 
 import android.os.Looper
+import com.shilapi.xcertplay.adb.LocalAdb
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -21,7 +22,8 @@ class WifiScanPauseTest {
         /** Gaode's mode; each package keeps its own AppOps entry. */
         val mode get() = modes[AppScanRestriction.GAODE] ?: "allow"
         var losePauseReply = false
-        override fun connect() = true
+        var access = LocalAdb.Access.READY
+        override fun connect() = access
         override fun close() = Unit
         override fun shell(command: String): String? {
             commands += command
@@ -166,5 +168,46 @@ class WifiScanPauseTest {
         val manager = manager(shell)
         assertTrue(manager.resumeNowBlocking(2000))
         assertTrue(shell.commands.any { "wifiscan on" in it })
+    }
+
+    @Test fun thePauseStateTellsWhyTheSearchKeepsRunning() {
+        val shell = Shell()
+        val manager = manager(shell)
+        assertEquals(WifiScanPause.PauseState.IDLE, manager.state)
+        manager.pause()
+        assertTrue(manager.resumeNowBlocking(2000))
+        assertEquals("Resumed after the session", WifiScanPause.PauseState.IDLE, manager.state)
+
+        shell.access = LocalAdb.Access.NOT_APPROVED
+        manager.pause()
+        awaitState(manager, WifiScanPause.PauseState.ADB_NOT_APPROVED)
+        assertTrue(manager.state.notInEffect)
+
+        shell.access = LocalAdb.Access.UNREACHABLE
+        manager.pause()
+        awaitState(manager, WifiScanPause.PauseState.ADB_UNREACHABLE)
+
+        shell.access = LocalAdb.Access.READY
+        manager.pause()
+        awaitState(manager, WifiScanPause.PauseState.PAUSED)
+        assertFalse(manager.state.notInEffect)
+
+        WifiScanPauseSettings.prefs(RuntimeEnvironment.getApplication()).edit().putBoolean("enabled", false).commit()
+        manager.settingChanged(false)
+        awaitState(manager, WifiScanPause.PauseState.SETTING_OFF)
+        assertFalse(manager.state.notInEffect)
+    }
+
+    @Test fun aLostPauseReplyIsAFailureRatherThanAnAdbProblem() {
+        val shell = Shell().apply { losePauseReply = true }
+        val manager = manager(shell)
+        manager.pause()
+        awaitState(manager, WifiScanPause.PauseState.FAILED)
+    }
+
+    private fun awaitState(manager: WifiScanPause, expected: WifiScanPause.PauseState) {
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (manager.state != expected && System.nanoTime() < deadline) Thread.sleep(10)
+        assertEquals(expected, manager.state)
     }
 }

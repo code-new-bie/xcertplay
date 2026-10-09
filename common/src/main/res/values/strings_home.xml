@@ -36,4 +36,9 @@
     <string name="stage_manual_reconnect">Reconnecting</string>
     <string name="hotspot_mode_p2p">Wi-Fi Direct</string>
     <string name="hotspot_mode_local">System local hotspot</string>
+    <string name="home_notice_scan_adb_not_approved">Head-unit ADB is not authorized, so the head unit\'s Wi-Fi search cannot be paused and wireless CarPlay may stutter periodically (about every 10 s). Authorize it under Settings → Vehicle → BYD → Head-unit ADB.</string>
+    <string name="home_notice_scan_adb_unreachable">Cannot reach head-unit ADB (127.0.0.1:5555), so the head unit\'s Wi-Fi search cannot be paused and wireless CarPlay may stutter periodically (about every 10 s). Enable network ADB on the head unit, then authorize it under Settings → Vehicle → BYD → Head-unit ADB.</string>
+    <string name="home_notice_scan_failed">Pausing the head unit\'s Wi-Fi search failed; wireless CarPlay may stutter periodically (about every 10 s). See the log.</string>
+    <string name="home_notice_iphone_hotspot">The head unit is joined to an iPhone Personal Hotspot%1$s; wireless CarPlay may stutter. Turn off the iPhone\'s Personal Hotspot.</string>
+    <string name="home_notice_hotspot_name">" (“%1$s”)"</string>
 </resources>

@@ -74,6 +74,11 @@
     <string name="wifi_scan_pause_label">Pause head-unit Wi-Fi search during CarPlay (recommended)</string>
     <string name="wifi_scan_pause_desc">Reduces Wi-Fi scan interruptions; also stops installed Gaode navigation</string>
     <string name="wifi_scan_pause_note">Through authorized ADB, pauses automatic Wi-Fi search during wireless CarPlay. If Gaode Auto is installed, attempts to restrict its Wi-Fi scans and force-stops it once per connection, ending stock navigation. Wi-Fi scans by the system\'s Baidu network location are restricted too (it keeps running; network positioning may be coarser meanwhile). Search and the original permissions are restored 15 s after disconnect, or immediately when this option is disabled or the app exits. Turning the car off exits CarPlay and restores them at once; anything left is restored in the background after the next power-on, or, with auto-start on, after 60 s if CarPlay has not connected. Gaode is not relaunched. The head unit cannot automatically join saved Wi-Fi networks while search is paused. Needs ADB authorization (BYD group).</string>
+    <string name="wifi_scan_pause_status_paused">Status: paused</string>
+    <string name="wifi_scan_pause_status_idle">Status: no wireless CarPlay session</string>
+    <string name="wifi_scan_pause_status_adb_not_approved">Status: not in effect, head-unit ADB is not authorized</string>
+    <string name="wifi_scan_pause_status_adb_unreachable">Status: not in effect, cannot reach head-unit ADB (127.0.0.1:5555)</string>
+    <string name="wifi_scan_pause_status_failed">Status: not in effect, pausing failed (see the log)</string>
     <string name="cluster_song_label">Song and lyrics on the cluster</string>
     <string name="cluster_song_desc">CarPlay song in the instrument cluster\'s music card</string>
     <string name="cluster_song_note">Shows \"title — artist\" with play and pause; for lyrics, turn on car or Bluetooth lyrics in the music app (QQ Music, NetEase Cloud Music…), which puts the current line in the title. Written through the authorized ADB link; the card shows as \"other\" music source.</string>

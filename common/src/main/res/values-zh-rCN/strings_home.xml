@@ -36,4 +36,9 @@
     <string name="stage_manual_reconnect">正在重新连接</string>
     <string name="hotspot_mode_p2p">Wi-Fi 直连</string>
     <string name="hotspot_mode_local">系统本地热点</string>
+    <string name="home_notice_scan_adb_not_approved">车机 ADB 未授权，车机的 Wi-Fi 搜索无法暂停，无线 CarPlay 可能周期性卡顿（约每 10 秒一次）。请到“设置 → 车辆 → 比亚迪 → 车机 ADB”授权。</string>
+    <string name="home_notice_scan_adb_unreachable">无法连接车机 ADB（127.0.0.1:5555），车机的 Wi-Fi 搜索无法暂停，无线 CarPlay 可能周期性卡顿（约每 10 秒一次）。请在车机上开启网络 ADB，再到“设置 → 车辆 → 比亚迪 → 车机 ADB”授权。</string>
+    <string name="home_notice_scan_failed">暂停车机 Wi-Fi 搜索失败，无线 CarPlay 可能周期性卡顿（约每 10 秒一次），详见日志。</string>
+    <string name="home_notice_iphone_hotspot">车机正连着 iPhone 个人热点%1$s，无线 CarPlay 可能卡顿。建议关闭 iPhone 的个人热点。</string>
+    <string name="home_notice_hotspot_name">（“%1$s”）</string>
 </resources>

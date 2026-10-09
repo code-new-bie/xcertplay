@@ -13,13 +13,13 @@ import java.util.concurrent.TimeUnit
 import java.io.Closeable
 
 internal interface WifiScanShell : Closeable {
-    fun connect(): Boolean
+    fun connect(): LocalAdb.Access
     fun shell(command: String): String?
 }
 
 private class AdbWifiScanShell(context: Context) : WifiScanShell {
     private val adb = LocalAdb(AdbKeys.load(context))
-    override fun connect() = adb.connect(mayAsk = false) == LocalAdb.Access.READY
+    override fun connect() = adb.connect(mayAsk = false)
     override fun shell(command: String) = adb.shell(command)
     override fun close() = adb.close()
 }
@@ -72,6 +72,11 @@ class WifiScanPause internal constructor(
     @Volatile
     var diagnostic: (String) -> Unit = {}
 
+    /** What the latest pause request achieved; see [PauseState]. */
+    @Volatile
+    var state: PauseState = PauseState.IDLE
+        private set
+
     init {
         // Through the main looper: callers set [diagnostic] right after shared() on the main thread.
         Handler(Looper.getMainLooper()).post { worker.execute(::takeOverLeftover) }
@@ -96,7 +101,7 @@ class WifiScanPause internal constructor(
             pendingResume?.cancel(false)
             pendingResume = null
             sessionRequested = true
-            if (WifiScanPauseSettings.enabled(app)) restrict()
+            if (WifiScanPauseSettings.enabled(app)) restrict() else setState(PauseState.SETTING_OFF)
         }
     }
 
@@ -108,6 +113,7 @@ class WifiScanPause internal constructor(
             sessionRequested = false
             appsAttempted = false
             appsApplied = false
+            setState(PauseState.IDLE)
             if (!needsRestore()) return@execute
             // A longer wait already pending (after startup) is kept.
             if ((pendingResume?.getDelay(TimeUnit.MILLISECONDS) ?: 0L) >= resumeDelayMillis) return@execute
@@ -132,6 +138,7 @@ class WifiScanPause internal constructor(
                 pendingResume = null
                 sessionRequested = false
                 appsAttempted = false
+                setState(PauseState.IDLE)
                 restore()
                 !needsRestore()
             }.get(timeoutMillis, TimeUnit.MILLISECONDS)
@@ -147,7 +154,12 @@ class WifiScanPause internal constructor(
         worker.execute {
             pendingResume?.cancel(false)
             pendingResume = null
-            if (!enabled) restore() else if (sessionRequested) restrict()
+            if (!enabled) {
+                restore()
+                setState(if (sessionRequested) PauseState.SETTING_OFF else PauseState.IDLE)
+            } else if (sessionRequested) {
+                restrict()
+            }
         }
     }
 
@@ -176,7 +188,7 @@ class WifiScanPause internal constructor(
     private fun withShell(action: ((String) -> String?) -> Unit) {
         runCatching {
             newShell().use { adb ->
-                if (adb.connect()) action(adb::shell)
+                if (adb.connect() == LocalAdb.Access.READY) action(adb::shell)
                 else report("App scan restriction: ADB unavailable; pending recovery retained")
             }
         }.onFailure {
@@ -191,27 +203,60 @@ class WifiScanPause internal constructor(
             report("Wi-Fi network search unchanged: cannot persist recovery")
             return
         }
+        var access: LocalAdb.Access? = null
         val output = runCatching {
             newShell().use { adb ->
-                if (!adb.connect()) null
+                access = adb.connect()
+                if (access != LocalAdb.Access.READY) null
                 else adb.shell(BydSdkStream.helper(app, "wifiscan", if (enabled) "on" else "off"))
             }
         }.getOrNull()
         val ok = output?.contains("XCERTPLAY wifiscan enabled=$enabled ok") == true
         if (ok) prefs.edit().putBoolean(KEY_PAUSED, !enabled)
             .putBoolean(KEY_RECOVERY, !enabled).commit()
+        if (!enabled) setState(PauseState.of(ok, access))
         val verb = if (enabled) "resumed" else "paused"
         report(
             when {
                 ok -> "Wi-Fi network search $verb"
-                output == null -> "Wi-Fi network search not $verb: adb shell unavailable (authorize ADB first)"
+                access != LocalAdb.Access.READY ->
+                    "Wi-Fi network search not $verb: adb ${access ?: "unavailable"} (authorize ADB first)"
+                output == null -> "Wi-Fi network search not $verb: no reply from the helper"
                 else -> "Wi-Fi network search not $verb: ${output.trim().take(160)}"
             },
         )
     }
 
+    private fun setState(value: PauseState) {
+        if (state == value) return
+        state = value
+        runCatching { onStateChanged() }
+    }
+
     private fun report(message: String) {
         runCatching { diagnostic(message) }
+    }
+
+    /** What pausing the search achieved this session; a pause that is not in effect is shown to the driver. */
+    enum class PauseState {
+        /** No wireless session asked for a pause. */
+        IDLE,
+        PAUSED,
+        SETTING_OFF,
+        ADB_NOT_APPROVED,
+        ADB_UNREACHABLE,
+        FAILED;
+
+        val notInEffect: Boolean get() = this == ADB_NOT_APPROVED || this == ADB_UNREACHABLE || this == FAILED
+
+        companion object {
+            fun of(paused: Boolean, access: LocalAdb.Access?): PauseState = when {
+                paused -> PAUSED
+                access == LocalAdb.Access.NOT_APPROVED -> ADB_NOT_APPROVED
+                access == null || access == LocalAdb.Access.UNREACHABLE -> ADB_UNREACHABLE
+                else -> FAILED
+            }
+        }
     }
 
     companion object {
@@ -226,6 +271,13 @@ class WifiScanPause internal constructor(
 
         fun shared(context: Context): WifiScanPause =
             instance ?: synchronized(this) { instance ?: WifiScanPause(context).also { instance = it } }
+
+        /** Called on the worker thread whenever [currentState] changes; the CarPlay screen sets it. */
+        @Volatile
+        var onStateChanged: () -> Unit = {}
+
+        /** The current pause state, without creating the instance. */
+        fun currentState(): PauseState = instance?.state ?: PauseState.IDLE
 
         /** Whether an earlier run left the search paused or an app restricted; reads only the saved state. */
         fun hasLeftover(context: Context): Boolean {

@@ -23,7 +23,6 @@ import com.shilapi.xcertplay.airplay.toHexString
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -125,10 +124,10 @@ class AndroidMediaSink(
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) {
         val arrivalUs = System.nanoTime() / 1_000L
         val arrivalMs = arrivalUs / 1_000L
-        videoGaps.computeIfAbsent(type) { ArrivalGapDetector(ArrivalGapDetector.VIDEO_THRESHOLD_MS) }
+        // A static screen, the call screen included, refreshes about once a second; only a pause in
+        // a moving picture counts as a stall.
+        videoGaps.computeIfAbsent(type) { ArrivalGapDetector.video() }
             .onArrival(arrivalMs)
-            // The call screen refreshes about once a second, so pauses during a call are not stalls.
-            ?.takeIf { callStreams.keys.none { channelOf(it) == AudioChannel.PHONE } }
             ?.let { reportStall("video type=$type", it) }
         videoDecoder(type).submit(naluBytes, arrivalUs)
     }
@@ -688,7 +687,10 @@ private class AudioRenderer(
 ) : Closeable {
     private class AudioPacket(val rtp: ByteArray, val sample: Int)
 
-    private val queue = LinkedBlockingQueue<AudioPacket>(MAX_QUEUED_PACKETS)
+    private val queue = AudioPacketQueue<AudioPacket>(MAX_QUEUED_MS * MICROS_PER_MILLI) { packet ->
+        AudioPacketDuration.of(format.codec, format.sampleRate, format.channels, packet.rtp)
+    }
+    private var startedNs = 0L
     private val navigationPrompt = NavigationAudioBuffer.isPromptStream(format.payloadType)
     private val sequence = RtpSequenceTracker()
     private val droppedPackets = AtomicInteger()
@@ -730,15 +732,16 @@ private class AudioRenderer(
     fun start() {
         if (started) return
         started = true
+        startedNs = System.nanoTime()
         thread.start()
     }
 
     fun submit(rtp: ByteArray, sample: Int) {
-        if (!started || !queue.offer(AudioPacket(rtp, sample))) {
-            if (started && droppedPackets.incrementAndGet() == 1) {
-                report("Audio queue full type=${format.payloadType} audioType=${format.audioType}: " +
-                    "dropping newest packets to bound latency")
-            }
+        if (!started) return
+        val dropped = queue.offer(AudioPacket(rtp, sample))
+        if (dropped > 0 && droppedPackets.getAndAdd(dropped) == 0) {
+            report("Audio queue over ${MAX_QUEUED_MS}ms type=${format.payloadType} audioType=${format.audioType}: " +
+                "dropping the oldest packets to bound latency")
         }
     }
 
@@ -757,10 +760,11 @@ private class AudioRenderer(
      */
     fun finish(maxDrainMs: Long) {
         drainDeadlineNs = System.nanoTime() + maxDrainMs * NANOS_PER_MILLI
-        if (!started || !running || !queue.offer(END_OF_STREAM)) {
+        if (!started || !running) {
             close()
             return
         }
+        queue.offer(END_OF_STREAM)
         Thread({
             try {
                 Thread.sleep(maxDrainMs)
@@ -845,7 +849,7 @@ private class AudioRenderer(
         }
         val underruns = track?.let { runCatching { it.underrunCount }.getOrNull() } ?: reportedUnderruns
         report("$label type=${format.payloadType} audioType=${format.audioType} bufferedMs=$bufferedMs " +
-            "${sequence.describe()} dropped=${droppedPackets.get()} underruns=$underruns")
+            "queuedMs=${queue.queuedMs} ${sequence.describe()} dropped=${droppedPackets.get()} underruns=$underruns")
     }
 
     private fun report(message: String) {
@@ -952,7 +956,8 @@ private class AudioRenderer(
         val prepared = "audio track prepared type=${format.payloadType} audioType=${format.audioType} " +
             "codec=${format.codec} " +
             "rate=${format.sampleRate} channels=${format.channels} " +
-            "bufferBytes=$bufferBytes prefillBytes=$startThresholdBytes" +
+            "bufferBytes=$bufferBytes prefillBytes=$startThresholdBytes " +
+            "readyAfterMs=${(System.nanoTime() - startedNs) / NANOS_PER_MILLI} queuedMs=${queue.queuedMs}" +
             when {
                 configuredMainMediaBuffer ->
                     " configuredDurationMs=${MainMediaAudioBuffer.sanitizeDurationMs(mainMediaAudioBufferDurationMs)}"
@@ -1339,7 +1344,9 @@ private class AudioRenderer(
         const val OPUS_CODEC_DELAY_NANOS = 6_500_000L
         const val OPUS_SEEK_PRE_ROLL_NANOS = 80_000_000L
         const val INPUT_TIMEOUT_US = 10_000L
-        const val MAX_QUEUED_PACKETS = 64
+        /** Audio waiting for the output; covers creating the output (about 1.2 s seen on a BYD head unit). */
+        const val MAX_QUEUED_MS = 2_000L
+        const val MICROS_PER_MILLI = 1_000L
         const val UNDERRUN_CHECK_INTERVAL_NS = 1_000_000_000L
         const val MIN_TRACK_BUFFER_BYTES = 16 * 1024
         const val MIN_START_BUFFER_BYTES = 4 * 1024

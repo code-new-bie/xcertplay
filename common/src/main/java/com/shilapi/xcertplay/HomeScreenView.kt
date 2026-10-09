@@ -24,6 +24,8 @@ internal data class HomeModel(
     val steps: List<HomeStep>,
     val failure: HomeFailure?,
     val showUseLocalHotspot: Boolean,
+    /** Conditions that make wireless CarPlay stutter, shown under the connection mode. */
+    val notices: List<String> = emptyList(),
 )
 
 internal data class HomeStep(val title: String, val detail: String?, val state: StepState)
@@ -53,6 +55,10 @@ internal class HomeScreenView(
         setPadding(dp(14), dp(6), dp(14), dp(6))
         background = rounded(Color.argb(40, 127, 205, 154), 16)
     }
+    private val noticeView = text(14f, WARNING).apply {
+        gravity = Gravity.CENTER
+        visibility = View.GONE
+    }
     private val stepsView = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val failureCard = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -80,6 +86,7 @@ internal class HomeScreenView(
             addView(titleView, wrap().apply { topMargin = dp(18) })
             addView(hintView, wrap().apply { topMargin = dp(10) })
             addView(modeView, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(18) })
+            addView(noticeView, wrap().apply { topMargin = dp(14) })
         }
 
         failureCard.addView(adviceView, wrap())
@@ -135,6 +142,8 @@ internal class HomeScreenView(
         titleView.text = model.title
         hintView.text = model.hint
         modeView.text = model.modeLabel
+        noticeView.text = model.notices.joinToString("\n\n")
+        noticeView.visibility = if (model.notices.isEmpty()) View.GONE else View.VISIBLE
         spinner.visibility = if (model.failure == null) View.VISIBLE else View.INVISIBLE
         stepsView.removeAllViews()
         model.steps.forEachIndexed { index, step ->
@@ -206,6 +215,7 @@ internal class HomeScreenView(
         val BACKGROUND = Color.rgb(0x16, 0x16, 0x18)
         val ACCENT = Color.rgb(127, 205, 154)
         val SECONDARY = Color.rgb(170, 180, 190)
+        val WARNING = Color.rgb(240, 190, 90)
         val MUTED = Color.rgb(98, 106, 114)
         val DANGER = Color.rgb(232, 96, 96)
         val BUTTON_TEXT = Color.rgb(8, 17, 11)

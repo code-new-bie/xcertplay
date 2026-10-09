@@ -86,6 +86,7 @@ import com.shilapi.xcertplay.hud.BydVehicleSettings
 import com.shilapi.xcertplay.hud.BydWheelSpeedSource
 import com.shilapi.xcertplay.network.BluetoothHandoff
 import com.shilapi.xcertplay.network.BluetoothHandoffSettings
+import com.shilapi.xcertplay.network.IphoneHotspotMonitor
 import com.shilapi.xcertplay.network.P2pChannelPreference
 import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WifiScanPauseSettings
@@ -378,6 +379,10 @@ class CarPlayHostActivity : ComponentActivity() {
     private val cameraLog: (String) -> Unit = { appendLog(it) }
     private val cameraChanged: (Boolean) -> Unit = { shown -> if (!shown) runOnUiThread { recordNormalWindow() } }
     private val vehiclePoweredOff: () -> Unit = { runOnUiThread { exitForVehiclePowerOff() } }
+    private val scanPauseChanged: () -> Unit = { runOnUiThread { renderHome() } }
+    private var iphoneHotspotMonitor: IphoneHotspotMonitor? = null
+    /** The iPhone Personal Hotspot the head unit's Wi-Fi is joined to ("" when unnamed), or null. */
+    private var iphoneHotspot: String? = null
     private var displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
     private var hevcEnabled = true
     private var hevcSoftwareDecoderEnabled = false
@@ -538,6 +543,10 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayHostLaunch.hostCreated()
         latestStage = getString(R.string.stage_preparing)
         initializeSessionLog()
+        WifiScanPause.onStateChanged = scanPauseChanged
+        iphoneHotspotMonitor = IphoneHotspotMonitor(applicationContext) { name ->
+            runOnUiThread { onIphoneHotspotChanged(name) }
+        }
         darkMode = isDarkMode(applicationContext.resources.configuration.uiMode)
         appearanceMonitor = CarPlayAppearanceMonitor(
             this, mainHandler, applicationContext.resources.configuration.uiMode, diagnostic = ::appendLog,
@@ -815,6 +824,9 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         currentSurface = null
         currentSurfaceTexture = null
+        if (WifiScanPause.onStateChanged === scanPauseChanged) WifiScanPause.onStateChanged = {}
+        iphoneHotspotMonitor?.close()
+        iphoneHotspotMonitor = null
         sessionLog?.append("Activity destroyed")
         sessionLog?.close()
         sessionLog = null
@@ -1194,6 +1206,7 @@ class CarPlayHostActivity : ComponentActivity() {
             ) { checked -> WifiScanPauseSettings.setEnabled(this, checked) },
             getString(R.string.wifi_scan_pause_note),
         )
+        scanPauseStatus()?.let { addHint(page, it) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             addSetting(
                 page,
@@ -4866,8 +4879,46 @@ class CarPlayHostActivity : ComponentActivity() {
                 },
                 showUseLocalHotspot = failureKind == FailureKind.WIFI_P2P && wirelessEnabled &&
                     wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P,
+                notices = if (wirelessEnabled) wirelessNotices() else emptyList(),
             ),
         )
+    }
+
+    /** Conditions known to make wireless CarPlay stutter, for the home screen. */
+    private fun wirelessNotices(): List<String> = buildList {
+        when (WifiScanPause.currentState()) {
+            WifiScanPause.PauseState.ADB_NOT_APPROVED -> add(getString(R.string.home_notice_scan_adb_not_approved))
+            WifiScanPause.PauseState.ADB_UNREACHABLE -> add(getString(R.string.home_notice_scan_adb_unreachable))
+            WifiScanPause.PauseState.FAILED -> add(getString(R.string.home_notice_scan_failed))
+            else -> Unit
+        }
+        iphoneHotspot?.let { name ->
+            val named = if (name.isEmpty()) "" else getString(R.string.home_notice_hotspot_name, name)
+            add(getString(R.string.home_notice_iphone_hotspot, named))
+        }
+    }
+
+    /** Whether the Wi-Fi search pause is in effect, under its setting; nothing while the setting is off. */
+    private fun scanPauseStatus(): String? = when (WifiScanPause.currentState()) {
+        WifiScanPause.PauseState.IDLE -> getString(R.string.wifi_scan_pause_status_idle)
+        WifiScanPause.PauseState.PAUSED -> getString(R.string.wifi_scan_pause_status_paused)
+        WifiScanPause.PauseState.SETTING_OFF -> null
+        WifiScanPause.PauseState.ADB_NOT_APPROVED -> getString(R.string.wifi_scan_pause_status_adb_not_approved)
+        WifiScanPause.PauseState.ADB_UNREACHABLE -> getString(R.string.wifi_scan_pause_status_adb_unreachable)
+        WifiScanPause.PauseState.FAILED -> getString(R.string.wifi_scan_pause_status_failed)
+    }.takeIf { WifiScanPauseSettings.enabled(this) }
+
+    private fun onIphoneHotspotChanged(name: String?) {
+        iphoneHotspot = name
+        appendLog(
+            if (name != null) {
+                "Head-unit Wi-Fi is joined to an iPhone Personal Hotspot" +
+                    (if (name.isEmpty()) "" else " ssid=$name") + "; wireless CarPlay may stutter"
+            } else {
+                "Head-unit Wi-Fi left the iPhone Personal Hotspot"
+            },
+        )
+        renderHome()
     }
 
     private fun homeStepTitle(step: ConnectionStep): String = getString(
