@@ -90,7 +90,7 @@ When opening an issue, attach all three files and name the car model and head-un
 
 - Music occasionally stutters briefly during long playback; diagnostic logging has been added.
 - If the car is switched on again within 10 s of switching it off, CarPlay does not come back by itself; open it manually.
-- Keeping the session during reversing, location continuation, exit at switch-off, and the power-on restore need more in-car testing.
+- Keeping the session during reversing and location continuation need more in-car testing. Exit at switch-off and the power-on restore are verified in a Song PLUS 2021 (1.3.3-byd.5).
 
 ## Development
 
