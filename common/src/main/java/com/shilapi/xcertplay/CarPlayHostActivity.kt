@@ -4175,7 +4175,17 @@ class CarPlayHostActivity : ComponentActivity() {
         resetHomeProgress()
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         val controllerGeneration = restartGeneration
-        val config = createRuntimeConfig()
+        // Settings the runtime rejects are shown on the home screen instead of crashing at every launch.
+        val config = try {
+            createRuntimeConfig()
+        } catch (error: IllegalArgumentException) {
+            val message = "CarPlay not started, the settings are not valid: ${error.message}"
+            appendLog(message)
+            Log.e(TAG, message, error)
+            trackHomeProgress(CarPlayStatus.Failed(error.message ?: error.toString()))
+            renderHome()
+            return
+        }
         startCameraWaitStartedMs = null
         val negotiated = negotiationWindow(size)
         if (negotiated != size) {
