@@ -55,7 +55,7 @@
     <string name="remote_note">地址必须以 http:// 或 https:// 开头。令牌可选，会作为 Authorization Bearer 令牌发送。</string>
     <string name="cert_p7b">证书（.p7b）</string>
     <string name="key_pk8">私钥（.pk8）</string>
-    <string name="local_files_note">请选择 DER 格式的 PKCS#7 证书，以及与之匹配的未加密 DER PKCS#8 私钥。MFi 重连时会重新读取文件。</string>
+    <string name="local_files_note">请选择 DER 格式的 PKCS#7 证书，以及与之匹配的未加密 DER PKCS#8 私钥。MFi 重连时会重新读取文件。如果文件选择器无法长期授权（比如比亚迪车机），会在应用私有目录保存一份副本，必要时会请求“读取存储”权限。</string>
     <string name="choose">选择</string>
     <string name="choose_desc">选择%1$s</string>
     <string name="doc_certificate">证书</string>
@@ -63,7 +63,10 @@
     <string name="not_selected">未选择</string>
     <string name="selection_unavailable">所选文件不可用</string>
     <string name="selected_document">已选文件</string>
-    <string name="keep_access_failed">无法保留对所选%1$s的访问权限</string>
+    <string name="local_mfi_storage_permission_needed">需要“读取存储”权限才能读取所选%1$s：车机的文件选择器无法把文件授权给 CarPlay，只能按文件路径读取。</string>
+    <string name="local_mfi_choose_from_storage">无法读取所选%1$s。请在文件选择器里从“内部存储”或 U 盘中选择文件。</string>
+    <string name="local_mfi_read_failed">无法读取所选%1$s：%2$s</string>
+    <string name="local_mfi_copy_suffix">（已保存副本）</string>
     <string name="vpn_denied">VPN 授权被拒绝</string>
 
     <!-- 身份、位置、诊断 -->

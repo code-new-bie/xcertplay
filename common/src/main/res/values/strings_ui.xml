@@ -55,7 +55,7 @@
     <string name="remote_note">Address must start with http:// or https://. Token is optional and sent as an Authorization bearer token.</string>
     <string name="cert_p7b">Certificate (.p7b)</string>
     <string name="key_pk8">Private key (.pk8)</string>
-    <string name="local_files_note">Select a DER PKCS#7 certificate and its matching unencrypted DER PKCS#8 private key. Documents are reloaded when MFI reconnects.</string>
+    <string name="local_files_note">Select a DER PKCS#7 certificate and its matching unencrypted DER PKCS#8 private key. Documents are reloaded when MFI reconnects. If the file picker cannot grant lasting access (as on BYD head units), a private copy is kept in the app\'s own storage, asking for storage permission when needed.</string>
     <string name="choose">Choose</string>
     <string name="choose_desc">Choose %1$s</string>
     <string name="doc_certificate">certificate</string>
@@ -63,7 +63,10 @@
     <string name="not_selected">Not selected</string>
     <string name="selection_unavailable">Selection unavailable</string>
     <string name="selected_document">Selected document</string>
-    <string name="keep_access_failed">Could not keep access to the selected %1$s</string>
+    <string name="local_mfi_storage_permission_needed">Storage permission is needed to read the selected %1$s: the head unit\'s file picker cannot grant CarPlay access, so the file is read from its path.</string>
+    <string name="local_mfi_choose_from_storage">Cannot read the selected %1$s. In the file picker, choose it from internal storage or a USB drive.</string>
+    <string name="local_mfi_read_failed">Cannot read the selected %1$s: %2$s</string>
+    <string name="local_mfi_copy_suffix">" (private copy)"</string>
     <string name="vpn_denied">VPN consent was denied</string>
 
     <!-- Identity, location, diagnostics -->

@@ -2,8 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- BYD's file picker runs as the system user and cannot grant a picked local MFi document, so it is read from its path. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
-    <application>
+    <!-- Android 10 head units: direct file reads for local MFi documents (ignored on later versions). -->
+    <application android:requestLegacyExternalStorage="true">
 
         <activity
             android:name="com.shilapi.xcertplay.CarPlayHostActivity"

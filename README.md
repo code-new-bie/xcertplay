@@ -136,7 +136,12 @@ MFi adapter board: [CH341-to-MFI](https://github.com/shilapi/ch341-to-mfi-chip).
 
 Choose "Local files" under Authentication, then use the two "Choose" buttons to select the certificate and private key with Android's system document picker. The supported formats are a DER PKCS#7 certificate (`.p7b`) and its matching, unencrypted DER PKCS#8 private key (`.pk8`). The app validates that the files match before starting the phone connection and reloads them on MFI reconnect.
 
-Store the private key in a protected location. Neither file is copied into app preferences; only Android's persistent read permission and document URI are saved.
+Store the private key in a protected location. Neither file is copied into app preferences. When the file picker grants lasting read access, only that permission and the document URI are saved.
+
+BYD head units run their file picker ("Downloads") as the system user, and Android does not let it grant files to other apps. In that case:
+- The app asks once for storage permission and reads the selected file from its path.
+- It keeps a private copy in its own storage; the copy is excluded from backups.
+- Choose the files from internal storage or a USB drive. Files picked from Recent and similar entries may have no path.
 
 ### Remote MFI
 
