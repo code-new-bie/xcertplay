@@ -16,6 +16,7 @@ import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
+import android.media.MediaFormat
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -101,6 +102,7 @@ import com.shilapi.xcertplay.media.CarPlayVideoLayout
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.NavigationAudioBuffer
 import com.shilapi.xcertplay.media.VehicleAudioChannel
+import com.shilapi.xcertplay.media.VideoDecoderSupport
 import com.shilapi.xcertplay.media.MediaMetricsMonitor
 import com.shilapi.xcertplay.media.MicrophoneGain
 import com.shilapi.xcertplay.media.MicrophoneLevelMonitor
@@ -413,6 +415,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var audioPacketCaptureEnabled = false
     private var moreGesturesToSettings = false
     private var keepSessionOnWindowShrink = false
+    private var turnWithoutReconnect = false
     private var sessionDisplay: CarPlaySessionDisplay? = null
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
@@ -641,6 +644,7 @@ class CarPlayHostActivity : ComponentActivity() {
         audioPacketCaptureEnabled = AirPlayPersistence.loadAudioPacketCaptureEnabled(this)
         moreGesturesToSettings = AirPlayPersistence.loadMoreGesturesToSettings(this)
         keepSessionOnWindowShrink = AirPlayPersistence.loadKeepSessionOnWindowShrink(this)
+        turnWithoutReconnect = AirPlayPersistence.loadTurnWithoutReconnect(this)
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
         manufacturer = AirPlayPersistence.loadManufacturer(this)
         model = AirPlayPersistence.loadModel(this)
@@ -1645,6 +1649,15 @@ class CarPlayHostActivity : ComponentActivity() {
             ) { checked -> keepSessionOnWindowShrink = checked },
             getString(R.string.keep_session_note),
         )
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.turn_without_reconnect_label),
+                checked = turnWithoutReconnect,
+                description = getString(R.string.turn_without_reconnect_desc),
+            ) { checked -> turnWithoutReconnect = checked },
+            getString(R.string.turn_without_reconnect_note),
+        )
     }
 
     private fun buildDiagnosticsPage(page: LinearLayout) {
@@ -1858,6 +1871,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveAudioPacketCaptureEnabled(this, audioPacketCaptureEnabled)
         AirPlayPersistence.saveMoreGesturesToSettings(this, moreGesturesToSettings)
         AirPlayPersistence.saveKeepSessionOnWindowShrink(this, keepSessionOnWindowShrink)
+        AirPlayPersistence.saveTurnWithoutReconnect(this, turnWithoutReconnect)
         AirPlayPersistence.saveRightHandDrive(this, rightHandDrive)
         AirPlayPersistence.saveHideTopBar(this, hideTopBar)
         AirPlayPersistence.saveHideBottomBar(this, hideBottomBar)
@@ -1890,7 +1904,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val size = currentActivitySize()
         return listOf(
             wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
-            localMfiCertificateUri, localMfiPrivateKeyUri,
+            localMfiCertificateUri, localMfiPrivateKeyUri, turnWithoutReconnect,
             wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
             manualHotspotChannel, manualHotspotSecurity, wifiP2pChannel,
             locationReportingEnabled, customVehicleName, manufacturer, model,
@@ -3839,7 +3853,7 @@ class CarPlayHostActivity : ComponentActivity() {
             deviceId = accessoryIds.deviceId,
             btMac = accessoryIds.bluetoothId,
             sourceVersion = "950.7.1",
-            main = display,
+            main = squareCanvasDisplay(display) ?: display,
             rightHandDrive = rightHandDrive,
             hevc = hevcEnabled,
             microphone = microphoneAvailable,
@@ -3847,6 +3861,46 @@ class CarPlayHostActivity : ComponentActivity() {
             model = normalizedModel(),
             oemLabel = vehicleName(),
             icons = listOf(loadAirPlayIcon()),
+        )
+    }
+
+    /**
+     * With the turning-screen setting, the plain canvas becomes a square with both orientations as
+     * view areas, when the decoder the media sink will use can take it; otherwise null.
+     */
+    private fun squareCanvasDisplay(display: AirPlayDisplayConfig): AirPlayDisplayConfig? {
+        if (!turnWithoutReconnect) return null
+        val square = CarPlaySquareCanvas.plan(display.widthPixels, display.heightPixels)
+        if (square == null) {
+            appendLog(
+                "Square canvas not used: ${display.widthPixels}x${display.heightPixels} is square already or " +
+                    "its long side exceeds ${CarPlaySquareCanvas.MAX_SIDE}; a turning screen reconnects",
+            )
+            return null
+        }
+        val mime = if (hevcEnabled) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+        val decoder = VideoDecoderSupport.check(mime, square.side, square.side, hevcSoftwareDecoderEnabled)
+        if (!decoder.supported) {
+            appendLog(
+                "Square canvas not used: decoder ${decoder.decoder ?: "none"} cannot take " +
+                    "${square.side}x${square.side} $mime; a turning screen reconnects",
+            )
+            return null
+        }
+        val physicalMm = listOfNotNull(display.widthPhysicalMm, display.heightPhysicalMm).maxOrNull()
+        appendLog(
+            "Square canvas ${square.side}x${square.side} on ${decoder.decoder}: view areas " +
+                "${square.describe(CarPlaySquareCanvas.LANDSCAPE)} and ${square.describe(CarPlaySquareCanvas.PORTRAIT)}, " +
+                "starting in ${square.describe(square.initialArea)}",
+        )
+        return display.copy(
+            widthPixels = square.side,
+            heightPixels = square.side,
+            widthPhysicalMm = physicalMm,
+            heightPhysicalMm = physicalMm,
+            safeArea = null,
+            viewAreas = square.areas,
+            initialViewArea = square.initialArea,
         )
     }
 
@@ -4261,6 +4315,9 @@ class CarPlayHostActivity : ComponentActivity() {
             vehicleStatusProvider = vehicleStatusProvider,
         )
         controller = next
+        val square = airPlayConfig.main.viewAreas?.takeIf { it.size > 1 }?.let {
+            CarPlaySquareCanvas(airPlayConfig.main.widthPixels, it, airPlayConfig.main.initialViewArea)
+        }
         // Without the setting every size change renegotiates, exactly as before.
         sessionDisplay = CarPlaySessionDisplay(
             airPlayConfig.main.widthPixels,
@@ -4270,8 +4327,10 @@ class CarPlayHostActivity : ComponentActivity() {
             hideBottomBar,
             negotiated.width,
             negotiated.height,
+            square = square,
+            activeArea = square?.initialArea ?: 0,
         // On BYD head units the camera state can keep the session even with the setting off.
-        ).takeIf { keepSessionOnWindowShrink || bydHeadUnit }
+        ).takeIf { keepSessionOnWindowShrink || bydHeadUnit || square != null }
         videoView?.let { updateVideoLayout(it.width, it.height) }
         CarPlayBackgroundSession.store(next, renderer, size.width, size.height, sessionDisplay)
         next.start()
@@ -4334,6 +4393,8 @@ class CarPlayHostActivity : ComponentActivity() {
             appendLog("Display detected: ${size.width}x${size.height}")
             recordNormalWindow()
             maybeStartCarPlay()
+        } else if (display?.square != null && !handshakeResetInProgress) {
+            moveCarPlayArea(display, display.square, previous, size)
         } else if (menuOpen || handshakeResetInProgress) {
             if (sessionKeptForSettings) displayChangedWhileSettingsOpen = true
             appendLog(
@@ -4376,6 +4437,33 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     /**
+     * A square session keeps every window: a turn moves CarPlay to the other view area with
+     * updateViewArea, and any other change fits the current area into the new window.
+     */
+    private fun moveCarPlayArea(
+        display: CarPlaySessionDisplay,
+        square: CarPlaySquareCanvas,
+        previous: DisplaySize,
+        size: DisplaySize,
+    ) {
+        cameraWaitStartedMs = null
+        val index = square.areaFor(size.width, size.height)
+        val change = "${previous.width}x${previous.height} -> ${size.width}x${size.height}"
+        val next = display.copy(activeArea = index, rotation = displayRotation())
+        sessionDisplay = next
+        CarPlayBackgroundSession.updateDisplay(next)
+        if (index != display.activeArea) {
+            val target = controller
+            airPlayCommandExecutor.execute { if (target != null && !target.isClosed()) target.updateViewArea(index) }
+            appendLog("Display turned $change; CarPlay moved to the ${square.describe(index)} view area without reconnecting")
+        } else {
+            appendLog("Display changed $change; CarPlay stays in the ${square.describe(index)} view area")
+        }
+        videoView?.let { updateVideoLayout(it.width, it.height) }
+        recordNormalWindow()
+    }
+
+    /**
      * Defers a shrink that only the BYD camera state could keep: the window can change before the
      * reversing or panorama state is read. Returns false once [CAMERA_SIGNAL_WAIT_MS] has passed.
      */
@@ -4404,6 +4492,12 @@ class CarPlayHostActivity : ComponentActivity() {
     /** The part of the view that shows the negotiated canvas; the whole view unless a session was kept. */
     private fun contentRect(viewWidth: Int, viewHeight: Int): CarPlayVideoLayout {
         val display = sessionDisplay
+        display?.square?.let { square ->
+            val area = square.areas[display.activeArea]
+            return CarPlayVideoLayout.fitArea(
+                display.width, display.height, area.originX, area.originY, area.width, area.height, viewWidth, viewHeight,
+            )
+        }
         if (display == null || (viewWidth == display.windowWidth && viewHeight == display.windowHeight)) {
             return CarPlayVideoLayout(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
         }
@@ -5407,6 +5501,12 @@ private object CarPlayBackgroundSession {
         height = 0
         display = null
     }
+
+    /** A kept session's canvas layout changed (a square moved to another view area). */
+    @Synchronized
+    fun updateDisplay(display: CarPlaySessionDisplay?) {
+        if (controller != null) this.display = display
+    }
 }
 
 /** The canvas negotiated at session start and the window it was negotiated for. */
@@ -5419,6 +5519,9 @@ internal data class CarPlaySessionDisplay(
     // Compare unscaled startup window dimensions, not the scaled video canvas.
     val windowWidth: Int,
     val windowHeight: Int,
+    /** A square canvas with both orientations as view areas; [activeArea] is the one in use. */
+    val square: CarPlaySquareCanvas? = null,
+    val activeArea: Int = 0,
 ) {
     fun canKeepSession(
         newWidth: Int,

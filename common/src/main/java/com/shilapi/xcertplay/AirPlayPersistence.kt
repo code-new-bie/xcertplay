@@ -61,6 +61,7 @@ object AirPlayPersistence {
     private const val KEY_AUDIO_PACKET_CAPTURE_ENABLED = "audio_packet_capture_enabled"
     private const val KEY_MORE_GESTURES_TO_SETTINGS = "more_gestures_to_settings"
     private const val KEY_KEEP_SESSION_ON_WINDOW_SHRINK = "keep_session_on_window_shrink"
+    private const val KEY_TURN_WITHOUT_RECONNECT = "turn_without_reconnect"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
     private const val KEY_VEHICLE_NAME = "vehicle_name"
@@ -442,6 +443,17 @@ object AirPlayPersistence {
     fun saveKeepSessionOnWindowShrink(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_KEEP_SESSION_ON_WINDOW_SHRINK, enabled)
+            .apply()
+    }
+
+    /** A square canvas with both orientations, so a turning screen keeps the session. */
+    fun loadTurnWithoutReconnect(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_TURN_WITHOUT_RECONNECT, false)
+
+    fun saveTurnWithoutReconnect(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_TURN_WITHOUT_RECONNECT, enabled)
             .apply()
     }
 

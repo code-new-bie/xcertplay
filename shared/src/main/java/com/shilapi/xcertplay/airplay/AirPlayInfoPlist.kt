@@ -18,11 +18,29 @@ object AirPlayInfoPlist {
     private const val CARPLAY_AUDIO_FEATURES = 0x10004540a00L
     private val CARPLAY_FEATURES_NO_AUDIO = CARPLAY_FEATURES and CARPLAY_AUDIO_FEATURES.inv()
 
+    /** Short, so the UI change lands while the head unit's screen is still turning. */
+    private const val VIEW_AREA_ANIMATION_MILLIS = 300
+
     private const val RESOURCE_SCREEN = 1
     private const val RESOURCE_AUDIO = 2
     private const val TRANSFER_TAKE = 1
     private const val PRIORITY_NICE_TO_HAVE = 100
     private const val CONSTRAINT_ANYTIME = 100
+
+    /**
+     * Moves CarPlay on the main display to view area [index] of [areaCount]. The iPhone acts on it
+     * only with the animation duration and the adjacent areas (DiPlay, seen on a BYD Tang with
+     * iOS 27); the keys sit next to AirPlayReceiverSessionViewAreaUpdate in CarPlaySDK's strings.
+     */
+    fun viewAreaCommand(index: Int, areaCount: Int): Map<String, Any?> = linkedMapOf(
+        "type" to "updateViewArea",
+        "params" to linkedMapOf(
+            "uuid" to MAIN_UUID,
+            "viewAreaIndex" to index,
+            "animationDurationMillis" to VIEW_AREA_ANIMATION_MILLIS,
+            "adjacentViewAreas" to (0 until areaCount).filter { it != index },
+        ),
+    )
 
     fun build(config: AirPlayConfig): Map<String, Any?> {
         val displays = arrayListOf<Any?>(
@@ -173,10 +191,31 @@ object AirPlayInfoPlist {
             "primaryInputDevice" to display.primaryInputDevice,
         )
 
-        entry["viewAreas"] = listOf(areaDict(display))
-        entry["initialViewArea"] = 0
+        val areas = display.viewAreas
+        if (areas != null && areas.size > 1) {
+            // Several rectangles of one stream; the car switches between them with updateViewArea.
+            entry["viewAreas"] = areas.map(::switchableAreaDict)
+            entry["initialViewArea"] = display.initialViewArea.coerceIn(0, areas.lastIndex)
+            entry["viewAreaTransitionControl"] = true
+        } else {
+            entry["viewAreas"] = listOf(areaDict(display))
+            entry["initialViewArea"] = 0
+        }
         if (display.initialUrl != null) entry["initialURL"] = display.initialUrl
         return entry
+    }
+
+    /** A switchable area is its own safe area: the custom safe area applies to the whole screen only. */
+    private fun switchableAreaDict(area: AirPlayViewArea): Map<String, Any?> {
+        val rectangle = linkedMapOf<String, Any?>(
+            "widthPixels" to area.width,
+            "heightPixels" to area.height,
+            "originXPixels" to area.originX,
+            "originYPixels" to area.originY,
+        )
+        return LinkedHashMap(rectangle).apply {
+            put("safeArea", LinkedHashMap(rectangle).apply { put("drawUIOutsideSafeArea", true) })
+        }
     }
 
     private fun areaDict(display: AirPlayDisplayConfig): Map<String, Any?> {

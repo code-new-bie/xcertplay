@@ -252,4 +252,62 @@ class AirPlayInfoPlistTest {
             .toSet()
         assertEquals(setOf(100, 101, 102), types)
     }
+
+    @Test
+    fun aSquareCanvasDeclaresBothOrientationsAsSwitchableViewAreas() {
+        val info = AirPlayInfoPlist.build(
+            AirPlayConfig(
+                deviceName = "test",
+                deviceId = "02:00:00:00:00:02",
+                btMac = "02:00:00:00:00:02",
+                sourceVersion = "366.0",
+                main = AirPlayDisplayConfig(
+                    widthPixels = 1920,
+                    heightPixels = 1920,
+                    viewAreas = listOf(AirPlayViewArea(0, 0, 1920, 1080), AirPlayViewArea(0, 0, 1080, 1920)),
+                    initialViewArea = 1,
+                ),
+            ),
+        )
+        val display = (info["displays"] as List<*>).single() as Map<*, *>
+        val areas = display["viewAreas"] as List<*>
+        assertEquals(2, areas.size)
+        assertEquals(1, display["initialViewArea"])
+        assertEquals(true, display["viewAreaTransitionControl"])
+        val portrait = areas[1] as Map<*, *>
+        assertEquals(1080, portrait["widthPixels"])
+        assertEquals(1920, portrait["heightPixels"])
+        assertEquals(0, portrait["originXPixels"])
+        val safe = portrait["safeArea"] as Map<*, *>
+        assertEquals(1080, safe["widthPixels"])
+        assertEquals(1920, safe["heightPixels"])
+        assertEquals(1920, display["widthPixels"])
+        assertEquals(1920, display["heightPixels"])
+    }
+
+    @Test
+    fun aSingleAreaDisplayDoesNotOfferViewAreaTransitions() {
+        val info = AirPlayInfoPlist.build(
+            AirPlayConfig(
+                deviceName = "test",
+                deviceId = "02:00:00:00:00:02",
+                btMac = "02:00:00:00:00:02",
+                sourceVersion = "366.0",
+                main = AirPlayDisplayConfig(widthPixels = 1920, heightPixels = 1080),
+            ),
+        )
+        val display = (info["displays"] as List<*>).single() as Map<*, *>
+        assertFalse(display.containsKey("viewAreaTransitionControl"))
+    }
+
+    @Test
+    fun updateViewAreaNamesTheAreaItsAnimationAndTheOtherAreas() {
+        val command = AirPlayInfoPlist.viewAreaCommand(index = 1, areaCount = 2)
+        assertEquals("updateViewArea", command["type"])
+        val params = command["params"] as Map<*, *>
+        assertEquals(AirPlayInfoPlist.MAIN_UUID, params["uuid"])
+        assertEquals(1, params["viewAreaIndex"])
+        assertEquals(300, params["animationDurationMillis"])
+        assertEquals(listOf(0), params["adjacentViewAreas"])
+    }
 }

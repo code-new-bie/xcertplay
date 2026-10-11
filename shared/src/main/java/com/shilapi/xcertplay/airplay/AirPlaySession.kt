@@ -223,6 +223,10 @@ class AirPlaySession(
         }
     }
 
+    /** Moves CarPlay to view area [index] of the main display, keeping the stream. */
+    fun updateViewArea(index: Int): Boolean =
+        sendCommand(AirPlayInfoPlist.viewAreaCommand(index, config.main.viewAreas?.size ?: 1))
+
     fun setNightMode(night: Boolean): Boolean = synchronized(eventWriteLock) {
         pendingNightMode = night
         sendPendingNightModeLocked()

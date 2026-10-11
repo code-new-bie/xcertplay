@@ -35,6 +35,7 @@ This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Androi
 | Pause head-unit Wi-Fi search during CarPlay (recommended), and restrict Gaode and Baidu network location scans, to reduce stutter | Connection | On | Yes |
 | Auto-start on boot | Connection | Off | No |
 | Keep CarPlay connected while the reversing or 360 camera is shown | Automatic | — | Yes |
+| Keep CarPlay connected when the screen turns, with the picture turning too (experimental): connects with a square canvas, 1920×1920 on a Song PLUS; the custom safe area does not apply | Advanced | Off | No |
 | Exit CarPlay when the car is switched off and undo the head-unit changes | Automatic | — | Yes |
 | Hide stock call popups (experimental) | Vehicle → BYD → Calls | Off | No |
 | Lower AC fan during CarPlay calls, to level 1–3, restored when the call ends | Vehicle → BYD → Calls | Off | Yes |
@@ -90,7 +91,7 @@ When opening an issue, attach all three files and name the car model and head-un
 
 - Music occasionally stutters briefly during long playback; diagnostic logging has been added.
 - If the car is switched on again within 10 s of switching it off, CarPlay does not come back by itself; open it manually.
-- Keeping the session during reversing and location continuation need more in-car testing. Exit at switch-off and the power-on restore are verified in a Song PLUS 2021 (1.3.3-byd.5).
+- Exit at switch-off, the power-on restore, keeping the session during reversing and location continuation are verified in a Song PLUS 2021 (1.3.3-byd.5); turning the screen without reconnecting and local certificate files are verified there too (1.3.3-byd.8). Other models have not been tested.
 
 ## Development
 

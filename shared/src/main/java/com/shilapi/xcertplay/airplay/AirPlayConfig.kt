@@ -8,6 +8,14 @@ data class AirPlayInsets(
     val right: Int = 0,
 )
 
+/** A rectangle of the display's stream that CarPlay can draw its whole UI in. */
+data class AirPlayViewArea(
+    val originX: Int,
+    val originY: Int,
+    val width: Int,
+    val height: Int,
+)
+
 /** One display advertised to the phone in /info. */
 data class AirPlayDisplayConfig(
     val widthPixels: Int,
@@ -20,6 +28,12 @@ data class AirPlayDisplayConfig(
     val safeArea: AirPlayInsets? = null,
     val safeAreaDrawOutside: Boolean? = null,
     val initialUrl: String? = null,
+    /**
+     * Several areas of one stream, which the car switches between with updateViewArea without
+     * reconnecting (iOS 13 dynamic UI resizing). Null keeps the single area from [viewArea].
+     */
+    val viewAreas: List<AirPlayViewArea>? = null,
+    val initialViewArea: Int = 0,
 )
 
 /** One OEM homescreen icon. */

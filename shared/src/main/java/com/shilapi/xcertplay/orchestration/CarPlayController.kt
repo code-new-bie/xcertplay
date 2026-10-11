@@ -388,6 +388,14 @@ class CarPlayController(
 
     fun hasActiveAirPlaySession(): Boolean = !closed && activeSession != null
 
+    /** Moves CarPlay to another view area of the main display without reconnecting. */
+    fun updateViewArea(index: Int): Boolean {
+        if (closed) return false
+        val sent = activeSession?.updateViewArea(index) ?: false
+        debugLog("CarPlay view area -> $index sent=$sent")
+        return sent
+    }
+
     /** Sends through the current session, including one adopted from the background service. */
     fun setNightMode(night: Boolean): Boolean {
         if (closed) return false

@@ -15,6 +15,9 @@
     <string name="keep_session_label">Keep session on window shrink</string>
     <string name="keep_session_desc">Keep CarPlay connected when a reverse or 360 camera window shrinks it</string>
     <string name="keep_session_note">When the window shrinks inside its original size (for example a reverse or 360 camera view), scale the existing CarPlay picture instead of reconnecting at the new size. Rotation and bar changes still reconnect. On BYD head units with ADB authorized, this happens automatically while the reverse or 360 camera is shown, even with this option off; a session that connects while the camera is shown is sized for the normal window, so closing the camera does not reconnect.</string>
+    <string name="turn_without_reconnect_label">Keep CarPlay connected when the screen turns (experimental)</string>
+    <string name="turn_without_reconnect_desc">Use a square canvas so CarPlay turns with the screen without reconnecting</string>
+    <string name="turn_without_reconnect_note">When on, CarPlay connects with a square canvas (1920×1920 on a Song PLUS) holding a landscape and a portrait area; when the screen turns, the iPhone moves CarPlay to the matching area without reconnecting. A square is heavier to decode and send and may drop frames, and the custom safe area does not apply. If the long side exceeds 1920 or the head unit\'s decoder cannot take the square, the plain canvas is used. Applies on the next connection.</string>
 
     <!-- BYD -->
     <string name="byd_settings_header">BYD</string>
