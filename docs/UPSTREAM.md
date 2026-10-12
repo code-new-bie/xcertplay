@@ -64,4 +64,4 @@ git push origin upstream/master:refs/heads/master
 
 ## 提给上游的 PR
 
-暂无。候选：iOS 27 有线连接 USBMUX 回复带填充字节的修复（DiPlay #100 同源问题，上游 1.4.0 未修），本分支修好后可以提给上游。
+暂无。候选：iOS 27 有线连接 USBMUX 回复带填充字节的修复（DiPlay #100 同源问题，上游 1.4.0 未修）。本分支已从 DiPlay 移植（交接文档第 23 节），提给上游时注明来自 DiPlay `3d0411d5`、`f7af3286`。
