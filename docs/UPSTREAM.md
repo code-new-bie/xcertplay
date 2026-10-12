@@ -64,4 +64,21 @@ git push origin upstream/master:refs/heads/master
 
 ## 提给上游的 PR
 
-暂无。候选：iOS 27 有线连接 USBMUX 回复带填充字节的修复（DiPlay #100 同源问题，上游 1.4.0 未修）。本分支已从 DiPlay 移植（交接文档第 23 节），提给上游时注明来自 DiPlay `3d0411d5`、`f7af3286`。
+2026-10-12 提交，都基于上游 `551895a`（1.4.0），每个 PR 只做一项改动。分支在 fork 的 `pr/*`，本地工作区是与本仓库同级的 `xpr`（`git worktree`）。上游合并其中几个后，其余 PR 可能要同步上游再更新（多个 PR 改了 `CarPlayController.kt` 的不同位置）。
+
+| PR | 内容 | 对应本分支 | 状态 |
+| --- | --- | --- | --- |
+| [#43](https://github.com/shilapi/xcertplay/pull/43) | iOS 27 有线 USBMUX 回复的填充字节（来自 DiPlay `3d0411d5`、`f7af3286`） | `e790975` | 待审 |
+| [#44](https://github.com/shilapi/xcertplay/pull/44) | 同类型音频流按 audioType 区分 | `8f349e4` | 待审 |
+| [#45](https://github.com/shilapi/xcertplay/pull/45) | 音频队列按时长（2 s）限制 | `f651a1f` 的音频队列部分 | 待审 |
+| [#46](https://github.com/shilapi/xcertplay/pull/46) | P2P 和本地热点在射频忙时重试（不含信道选择） | `ccd3156`、`b8d547d` | 待审 |
+| [#47](https://github.com/shilapi/xcertplay/pull/47) | 无线期间高性能和低延迟 Wi-Fi 锁 | `be4b0b3`，以及 `7d404ef` 的低延迟锁 | 待审 |
+| [#48](https://github.com/shilapi/xcertplay/pull/48) | 定位请求从蓝牙续传到 Wi-Fi | `e901ee4`，以及 `2137a38` 的定位部分 | 待审 |
+| [#49](https://github.com/shilapi/xcertplay/pull/49) | 收到 disableBluetooth 时断开 iPhone 蓝牙通话和音乐（可选，默认关） | `BluetoothHandoff` 相关提交 | 待审 |
+| [#50](https://github.com/shilapi/xcertplay/pull/50) | 本地证书私有副本兜底，以及配置不合法时不闪退 | `4649b92`、`509284a` | 待审 |
+
+Issue：[#51](https://github.com/shilapi/xcertplay/issues/51) Wi-Fi 直连优先用车机 Wi-Fi 当前的 5 GHz 信道（`0b9f560`、`7d404ef`），先讨论再决定提哪部分代码。
+
+这次没提的：
+- 设备 ID 按车机生成：上游无线连接用热点 BSSID、有线连接用 USB 网卡地址作设备 ID，写死的值只是兜底，价值小，还会让现有用户重新配对；
+- 屏幕旋转不断连、简体中文界面：要基于上游 1.4.0 的新界面重写，暂不提。
