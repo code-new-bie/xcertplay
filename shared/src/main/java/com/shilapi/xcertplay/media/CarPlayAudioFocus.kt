@@ -14,6 +14,13 @@ import android.os.Looper
  * music start takes it back. Calls hold transient call focus so the head unit does not play over
  * them. One instance serves the process.
  */
+/**
+ * The car's own video player (iOS 27 video in car) plays through the head unit, not CarPlay's audio
+ * stream: it takes the same media focus, so the head unit's sources stop and the steering-wheel keys
+ * keep coming to CarPlay's media session, which hands them to the player.
+ */
+fun holdCarPlayMediaFocus(context: Context, log: (String) -> Unit) = CarPlayAudioFocus.onMediaStarted(context, log)
+
 internal object CarPlayAudioFocus {
     private val handler = Handler(Looper.getMainLooper())
     private var audio: AudioManager? = null

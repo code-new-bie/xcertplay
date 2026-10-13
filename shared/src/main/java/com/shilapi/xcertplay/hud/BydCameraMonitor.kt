@@ -33,6 +33,18 @@ internal data class BydCameraReading(
     }
 }
 
+/** BYDAutoGearboxDevice.GEARBOX_AUTO_MODE_*: P is 1, R/N/D/M/S are 2..6; anything else is not a gear. */
+internal object BydGear {
+    private const val P = 1
+    private val OTHER_GEARS = 2..6
+
+    fun parked(gear: Int?): Boolean? = when (gear) {
+        P -> true
+        in OTHER_GEARS -> false
+        else -> null
+    }
+}
+
 /**
  * Tells when the car was switched off: the power level drops to OFF from a level the car was on
  * at, and is still OFF [confirmMs] later, outside a driving gear. A head unit started while the car
@@ -96,6 +108,10 @@ internal class BydCameraState(private val holdMs: Long = HOLD_MS) {
 
     @Synchronized
     fun hasReading(): Boolean = reading != null
+
+    /** The last gear the helper read, or null while nothing is known. */
+    @Synchronized
+    fun gear(): Int? = reading?.gear
 
     @Synchronized
     fun shown(nowMs: Long): Boolean {
@@ -162,4 +178,7 @@ object BydCameraMonitor {
     fun signalAvailable(): Boolean = state.hasReading()
 
     fun cameraShown(): Boolean = state.shown(SystemClock.elapsedRealtime())
+
+    /** Whether the car is in P, or null when the gear is not known (no ADB, or the helper is not reporting). */
+    fun parked(): Boolean? = BydGear.parked(state.gear())
 }

@@ -13,13 +13,13 @@ android {
         applicationId = "com.shilapi.xcertplay"
         // BYD build: installs beside upstream xcertplay and is told apart in logs.
         applicationIdSuffix = ".byd"
-        // A tag build passes its tag (e.g. -PreleaseVersionName=1.3.3-byd.4) as the whole name.
+        // A tag build passes its tag (e.g. -PreleaseVersionName=1.4.0-byd.10) as the whole name.
         val releaseVersionName = providers.gradleProperty("releaseVersionName").orNull
         versionNameSuffix = if (releaseVersionName == null) "-byd.1" else null
         minSdk = 28
         targetSdk = 37
-        versionCode = 1303
-        versionName = releaseVersionName ?: "1.3.3"
+        versionCode = 1400
+        versionName = releaseVersionName ?: "1.4.0"
 
     }
 

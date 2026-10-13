@@ -24,10 +24,6 @@
     <string name="advanced_mapping_desc">Route AAOS audio buses by CarPlay audio type</string>
     <string name="resolution">Picture sharpness</string>
     <string name="frame_rate">Frame rate</string>
-    <string name="physical_basis">Size reference</string>
-    <string name="basis_width">Widest width</string>
-    <string name="basis_height">Longest height</string>
-    <string name="physical_length">Reference length</string>
     <string name="hevc_desc">HEVC H.265 video transport</string>
     <string name="hevc_sw">Software video decoder</string>
     <string name="hevc_sw_desc">Turn on only if hardware decoding shows a green or broken picture</string>
@@ -109,13 +105,7 @@
     <string name="hide_top_desc">Hide the status bar</string>
     <string name="hide_bottom">Hide bottom bar</string>
     <string name="hide_bottom_desc">Hide the navigation bar</string>
-    <string name="safe_area">CarPlay display area</string>
-    <string name="set">Set</string>
-    <string name="reset">Reset</string>
-    <string name="draw_outside">Draw outside safe area</string>
-    <string name="draw_outside_desc">Allow CarPlay UI outside the safe area</string>
     <string name="cancel">Cancel</string>
-    <string name="save">Save</string>
 
     <!-- Wi-Fi session -->
     <string name="wifi_session">Wireless hotspot type</string>
@@ -175,7 +165,6 @@
     <string name="preview_detected_max">Detected maximum: %1$d x %2$d px</string>
     <string name="preview_physical_reference">Physical reference: %1$s = %2$d mm</string>
     <string name="preview_widest_width">widest width</string>
-    <string name="preview_longest_height">longest height</string>
     <string name="preview_physical_size">CarPlay physical size: %1$s x %2$s mm</string>
     <string name="preview_driving_side">Driving side: %1$s</string>
     <string name="preview_right">right</string>
@@ -188,9 +177,6 @@
     <string name="preview_audio_mapping">Audio channel mapping: %1$s</string>
     <string name="preview_aaos_buses">AAOS buses</string>
     <string name="preview_mobile_compatible">Mobile compatible</string>
-    <string name="safe_area_waiting">Safe area: waiting for activity size</string>
-    <string name="safe_area_full">Safe area: full screen at %1$d x %2$d</string>
-    <string name="safe_area_custom">Safe area: %1$d x %2$d at (%3$d, %4$d) in %5$d x %6$d</string>
 
     <!-- Connection stages -->
     <string name="stage_preparing">Preparing CarPlay</string>
@@ -262,10 +248,7 @@
     <string name="hint_vehicle_name">Shown in the iPhone car list and on the CarPlay return button. Leave empty to use the head unit Bluetooth name.</string>
     <string name="hint_bt_settings">Pair or manage the iPhone.</string>
     <string name="hint_frame_rate">Lower it if the head unit struggles to decode the video.</string>
-    <string name="hint_physical">Fine control of the icon size. Choosing Large/Medium/Small under Display replaces these values.</string>
     <string name="group_video">Video</string>
-    <string name="group_display_size">Display size</string>
-    <string name="group_display_area">Display area</string>
     <string name="group_audio_routing">Audio routing</string>
     <string name="group_identity">Identity</string>
     <string name="group_other">Other</string>

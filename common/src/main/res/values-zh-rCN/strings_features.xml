@@ -18,12 +18,14 @@
     <string name="turn_without_reconnect_label">屏幕旋转时保持 CarPlay 连接（实验性）</string>
     <string name="turn_without_reconnect_desc">使用方形画布，屏幕转动时 CarPlay 跟着转，不重新连接</string>
     <string name="turn_without_reconnect_note">开启后，连接时改用方形画布（宋 PLUS 为 1920×1920），横屏和竖屏各占其中一块区域；屏幕转动时通知 iPhone 换到对应区域，画面跟着转，不用重新连接。方形画布的解码和网络负担更大，可能掉帧；自定义安全区不生效。画布长边超过 1920，或车机解码器不支持时，自动改用普通画布。下次连接生效。</string>
+    <string name="dock_position_label">CarPlay Dock 位置</string>
+    <string name="dock_position_automatic">自动</string>
+    <string name="dock_position_driver_side">驾驶员一侧</string>
+    <string name="dock_position_bottom">底部</string>
+    <string name="dock_position_note">CarPlay 应用栏（Dock）的位置。“自动”：横屏放在驾驶员一侧，竖屏放在底部；打开“屏幕旋转时保持 CarPlay 连接”时也是这样。驾驶员一侧跟随“右舵”设置。改动后 CarPlay 会重新连接。</string>
 
     <!-- 比亚迪 -->
     <string name="byd_settings_header">比亚迪</string>
-    <string name="byd_hide_call_label">隐藏原车来电弹窗（实验性）</string>
-    <string name="byd_hide_call_desc">CarPlay 已连接并显示在屏幕上时，关闭比亚迪原车来电弹窗</string>
-    <string name="byd_hide_call_note">CarPlay 已连接并显示在屏幕上时，借助原车 HiCar 接口关闭来电弹窗。无需 ADB。弹窗可能会短暂出现后再关闭。打开“CarPlay 期间断开 iPhone 蓝牙”时，来电弹窗一般根本不会出现。关闭此选项即可恢复原车来电界面。</string>
     <string name="byd_vehicle_data_title">车辆数据（DiLink 4）</string>
     <string name="byd_vehicle_speed_label">隧道导航使用车速和挡位</string>
     <string name="byd_vehicle_speed_note">iPhone 请求时读取比亚迪车辆数据（只读）。需要已授权的网络 ADB，并开启位置上报。</string>
@@ -42,26 +44,12 @@
     <string name="byd_adb_unreachable">无法连接 127.0.0.1:5555。请在车机上开启网络 ADB；仅有 USB ADB 连接不会开放该端口。</string>
     <string name="byd_adb_unsupported">该调试服务需要 xcertplay 不支持的协议。请使用 Android 10 的网络 ADB 服务。</string>
     <string name="byd_adb_failed">ADB 检查失败：%1$s</string>
-    <string name="byd_adb_note">仪表歌词、通话降风量、暂停车机 Wi-Fi 搜索、熄火时自动退出 CarPlay、车机蓝牙地址和车辆数据都需要先授权。点击后车机可能弹出调试授权对话框，请选择允许；检查结果会显示车速和电量能否读取。后台使用时不会再请求授权。</string>
+    <string name="byd_adb_note">仪表歌词、通话降风量、暂停车机 Wi-Fi 搜索、熄火时自动退出 CarPlay 和车辆数据都需要先授权。点击后车机可能弹出调试授权对话框，请选择允许；检查结果会显示车速和电量能否读取。后台使用时不会再请求授权。</string>
     <string name="byd_sub_adb">车机 ADB</string>
+    <string name="byd_sub_wireless">无线连接</string>
     <string name="byd_sub_call">通话</string>
     <string name="byd_sub_cluster">仪表</string>
     <string name="byd_vehicle_data_note">车辆数据不可用时会跳过，不影响 CarPlay；修改后下一次 CarPlay 连接时生效。</string>
-    <string name="head_unit_bt_header">车机蓝牙地址</string>
-    <string name="head_unit_bt_saved">发给 iPhone：%1$s（真实地址，通过 ADB 读取）</string>
-    <string name="head_unit_bt_system">发给 iPhone：%1$s（真实地址）</string>
-    <string name="head_unit_bt_generated">发给 iPhone：%1$s（生成值，尚未读取真实地址）</string>
-    <string name="head_unit_bt_read">通过 ADB 读取真实地址</string>
-    <string name="head_unit_bt_reading">正在读取…</string>
-    <string name="head_unit_bt_clear">清除</string>
-    <string name="head_unit_bt_read_ok">已读取并保存 %1$s，下次连接生效。</string>
-    <string name="head_unit_bt_read_empty">ADB 已连接，但车机没有返回有效的蓝牙地址。请打开蓝牙后重试。</string>
-    <string name="head_unit_bt_note">iPhone 通过这个地址识别车辆。下次连接生效；更换后建议在 iPhone 上忘记此车辆并重新配对。</string>
-    <string name="bluetooth_handoff_calls_label">CarPlay 期间断开 iPhone 蓝牙通话（推荐）</string>
-    <string name="bluetooth_handoff_calls_desc">通话走 CarPlay，原车电话不再弹窗</string>
-    <string name="bluetooth_handoff_audio_label">CarPlay 期间断开 iPhone 蓝牙音乐</string>
-    <string name="bluetooth_handoff_audio_desc">音乐走 CarPlay，不走蓝牙</string>
-    <string name="bluetooth_handoff_note">这是 CarPlay 要求车机断开的蓝牙连接。若经 Wi-Fi 播放的音乐卡顿，可在“音频”中调大音乐缓冲，或关闭“断开蓝牙音乐”让音乐继续走蓝牙（iPhone 的播放输出会显示为蓝牙）。CarPlay 结束 15 秒后自动恢复两项连接。开关改动立即生效：连接中关闭某项会马上恢复该连接。熄火时 CarPlay 会退出并立即恢复两项连接（需授权车机 ADB）；没来得及恢复的，下次上电后在后台恢复，开了“开机自动启动”时等 60 秒没连上 CarPlay 再恢复。</string>
     <string name="wifi_scan_diag">Wi-Fi 扫描诊断</string>
     <string name="wifi_scan_diag_running">正在读取…</string>
     <string name="wifi_scan_diag_note">通过 ADB 读取哪些应用和系统服务在扫描 Wi-Fi，并写入日志。频繁扫描会让 Wi-Fi P2P 卡顿。读取后请导出日志。</string>
@@ -85,4 +73,12 @@
     <string name="cluster_song_label">仪表显示歌曲/歌词</string>
     <string name="cluster_song_desc">在仪表的音乐卡片中显示 CarPlay 歌曲</string>
     <string name="cluster_song_note">显示“歌名 — 歌手”及播放/暂停；想显示歌词，请在音乐 App（QQ 音乐、网易云音乐等）中打开“车载/蓝牙歌词”，它会把当前歌词放进歌名。通过已授权的 ADB 写入，卡片显示为“其他”音源。</string>
+    <string name="byd_sub_video">视频</string>
+    <string name="video_while_parked_label">停车时在车机上看视频（实验性）</string>
+    <string name="video_while_parked_desc">iOS 27：在 iPhone 上把视频投到 CarPlay，P 挡时在车机屏幕上播放</string>
+    <string name="video_while_parked_note">需要 iPhone 升级到 iOS 27。只在 P 挡播放：挡位优先直接通过比亚迪接口读取；这台车不支持时改用车机 ADB（需授权）。挂出 P 挡时播放器关闭，iPhone 改为只放声音；读不到挡位时也只放声音。视频由车机自己联网下载，车机需要能上网。点一下画面显示返回 CarPlay、播放/暂停、后退/前进 10 秒和进度条；播放器打开时，方向盘的播放/暂停键控制播放器，上一曲/下一曲改为后退/前进 10 秒。Apple TV+ 等加密视频无法播放。改动后 CarPlay 会重新连接。移植自 DiPlay。</string>
+    <string name="video_back_to_carplay">返回 CarPlay</string>
+    <string name="video_play">播放</string>
+    <string name="video_pause">暂停</string>
+    <string name="video_cannot_play">这个视频无法在车机上播放。Apple TV+ 等加密视频需要获得苹果授权的接收端。</string>
 </resources>

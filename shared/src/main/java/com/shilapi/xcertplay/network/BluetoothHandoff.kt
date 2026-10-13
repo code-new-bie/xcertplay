@@ -13,29 +13,11 @@ import android.os.SystemClock
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Which of the iPhone's classic Bluetooth links wireless CarPlay turns off. */
-object BluetoothHandoffSettings {
+/** Where the handoff keeps what it needs to undo: the saved priorities and the iPhone's address. */
+internal object BluetoothHandoffStore {
     private const val PREFS = "xcertplay_bluetooth_handoff"
-    private const val KEY_CALLS = "disconnect_calls"
-    private const val KEY_AUDIO = "disconnect_audio"
 
-    /** Hands-free (HFP): calls go through CarPlay and the stock phone shows no popup. */
-    fun callsEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_CALLS, true)
-
-    fun setCallsEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_CALLS, enabled).apply()
-        BluetoothHandoff.shared(context).settingsChanged()
-    }
-
-    /** Bluetooth audio (A2DP): music goes through CarPlay instead of Bluetooth. */
-    fun audioEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AUDIO, true)
-
-    fun setAudioEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_AUDIO, enabled).apply()
-        BluetoothHandoff.shared(context).settingsChanged()
-    }
-
-    internal fun prefs(context: Context) =
+    fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
 
@@ -61,7 +43,7 @@ class BluetoothHandoff private constructor(context: Context) {
     }
 
     private val app = context.applicationContext
-    private val prefs = BluetoothHandoffSettings.prefs(app)
+    private val prefs = BluetoothHandoffStore.prefs(app)
     private val handler = Handler(Looper.getMainLooper())
     private val adapter = runCatching {
         app.getSystemService(BluetoothManager::class.java)?.adapter
@@ -192,10 +174,10 @@ class BluetoothHandoff private constructor(context: Context) {
     }
 
     /**
-     * Turns off the iPhone's HFP when [calls] and A2DP when [audio] until released; a link no
-     * longer wanted is restored. Cancels a pending delayed release.
+     * Turns off the iPhone's HFP (calls) and A2DP (music) links until released. Cancels a pending
+     * delayed release.
      */
-    fun hold(address: String, calls: Boolean, audio: Boolean) {
+    fun hold(address: String) {
         handler.post {
             handler.removeCallbacks(delayedRelease)
             val normalized = address.trim().uppercase()
@@ -207,44 +189,20 @@ class BluetoothHandoff private constructor(context: Context) {
             target = normalized
             releasePending = false
             registerReceiver()
-            applyLinks(normalized, wanted(calls, audio), allowNewHolds = true)
+            applyLinks(normalized, allowNewHolds = true)
         }
     }
 
-    /**
-     * A Bluetooth setting changed: it applies at once, as the Wi-Fi search setting does. A link
-     * switched off is restored now; a link switched on is turned off while a session runs. After
-     * the session ended only restoring applies, so the pending delayed release still happens.
-     */
-    fun settingsChanged() {
-        handler.post {
-            val address = target ?: return@post
-            val wanted = wanted(BluetoothHandoffSettings.callsEnabled(app), BluetoothHandoffSettings.audioEnabled(app))
-            report("Bluetooth handoff settings changed: calls=${Link.CALLS in wanted} audio=${Link.AUDIO in wanted}")
-            applyLinks(address, wanted, allowNewHolds = !releasePending)
-        }
-    }
-
-    private fun wanted(calls: Boolean, audio: Boolean): Set<Link> = buildSet {
-        if (calls) add(Link.CALLS)
-        if (audio) add(Link.AUDIO)
-    }
-
-    private fun applyLinks(address: String, wanted: Set<Link>, allowNewHolds: Boolean) {
+    private fun applyLinks(address: String, allowNewHolds: Boolean) {
         for (link in Link.values()) {
             when {
-                link in wanted && link in held -> report("${link.label} to $address still off for CarPlay")
-                link in wanted && allowNewHolds -> {
+                link in held -> report("${link.label} to $address still off for CarPlay")
+                allowNewHolds -> {
                     held += link
                     guards.getValue(link).reset()
                     withProxy(link) { profile -> if (link in held) turnOff(link, profile, address) }
                 }
-                link in wanted -> report("${link.label} to $address stays connected until the next CarPlay session")
-                link in held -> {
-                    held -= link
-                    restoreLink(link, address)
-                }
-                else -> report("${link.label} to $address left connected (setting off)")
+                else -> report("${link.label} to $address stays connected until the next CarPlay session")
             }
         }
     }
@@ -438,7 +396,7 @@ class BluetoothHandoff private constructor(context: Context) {
 
         /** Whether an earlier run left an iPhone link off; reads only the saved state. */
         fun hasLeftover(context: Context): Boolean {
-            val prefs = BluetoothHandoffSettings.prefs(context)
+            val prefs = BluetoothHandoffStore.prefs(context)
             return prefs.all.keys.any { it.startsWith(PRIORITY_KEY_PREFIX) }
         }
     }

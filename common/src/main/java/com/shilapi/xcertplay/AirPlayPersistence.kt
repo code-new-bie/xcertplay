@@ -3,12 +3,9 @@ package com.shilapi.xcertplay
 import android.content.Context
 import android.os.Build
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
-import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeBasis
 import com.shilapi.xcertplay.airplay.CarPlayDisplayScale
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.PairingStore
-import com.shilapi.xcertplay.airplay.SafeAreaCodec
-import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.media.MainMediaAudioBuffer
 import com.shilapi.xcertplay.media.MicrophoneGain
 import com.shilapi.xcertplay.media.NavigationAudioBuffer
@@ -62,13 +59,12 @@ object AirPlayPersistence {
     private const val KEY_MORE_GESTURES_TO_SETTINGS = "more_gestures_to_settings"
     private const val KEY_KEEP_SESSION_ON_WINDOW_SHRINK = "keep_session_on_window_shrink"
     private const val KEY_TURN_WITHOUT_RECONNECT = "turn_without_reconnect"
+    private const val KEY_DOCK_POSITION = "dock_position"
     private const val KEY_MANUFACTURER = "manufacturer"
     private const val KEY_MODEL = "model"
     private const val KEY_VEHICLE_NAME = "vehicle_name"
-    private const val KEY_HEAD_UNIT_BLUETOOTH_ADDRESS = "head_unit_bluetooth_address"
     private const val KEY_FPS = "display_fps"
     private const val KEY_WIDTH_PHYSICAL_MM = "display_width_physical_mm"
-    private const val KEY_PHYSICAL_SIZE_BASIS = "display_physical_size_basis"
     private const val KEY_MAX_DETECTED_WIDTH = "display_max_detected_width"
     private const val KEY_MAX_DETECTED_HEIGHT = "display_max_detected_height"
     private const val KEY_NORMAL_WINDOW_WIDTH = "display_normal_window_width"
@@ -79,7 +75,6 @@ object AirPlayPersistence {
     private const val KEY_RIGHT_HAND_DRIVE = "right_hand_drive"
     private const val KEY_HIDE_TOP_BAR = "hide_top_bar"
     private const val KEY_HIDE_BOTTOM_BAR = "hide_bottom_bar"
-    private const val KEY_SAFE_AREA_DRAW_OUTSIDE = "safe_area_draw_outside"
     private const val KEY_AUTO_START_ON_BOOT = "auto_start_on_boot"
     private const val KEY_LOCATION_REPORTING_ENABLED = "location_reporting_enabled"
     private const val KEY_MFI_TARGET = "mfi_target"
@@ -88,7 +83,6 @@ object AirPlayPersistence {
     private const val KEY_REMOTE_MFI_TOKEN = "remote_mfi_token"
     private const val KEY_LOCAL_MFI_CERTIFICATE_URI = "local_mfi_certificate_uri"
     private const val KEY_LOCAL_MFI_PRIVATE_KEY_URI = "local_mfi_private_key_uri"
-    private const val SAFE_AREA_KEY_PREFIX = "safe_area_"
     private const val CUSTOM_ICON_FILE = "airplay-icon.png"
 
     // BYD build defaults; sent to the iPhone in iAP2 identification and AirPlay /info.
@@ -446,14 +440,25 @@ object AirPlayPersistence {
             .apply()
     }
 
-    /** A square canvas with both orientations, so a turning screen keeps the session. */
+    /** A square canvas with both orientations, so a turning screen keeps the session; on by default. */
     fun loadTurnWithoutReconnect(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_TURN_WITHOUT_RECONNECT, false)
+            .getBoolean(KEY_TURN_WITHOUT_RECONNECT, true)
 
     fun saveTurnWithoutReconnect(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_TURN_WITHOUT_RECONNECT, enabled)
+            .apply()
+    }
+
+    /** Where CarPlay puts its dock (see CarPlayDockPosition); automatic by default. */
+    internal fun loadDockPosition(context: Context): CarPlayDockPosition = CarPlayDockPosition.of(
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_DOCK_POSITION, null),
+    )
+
+    internal fun saveDockPosition(context: Context, position: CarPlayDockPosition) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_DOCK_POSITION, position.id)
             .apply()
     }
 
@@ -507,19 +512,6 @@ object AirPlayPersistence {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VEHICLE_NAME, null),
         ).orEmpty()
 
-    /** The head unit's real Bluetooth address read through ADB, or null. */
-    fun loadHeadUnitBluetoothAddress(context: Context): String? = AccessoryIds.realBluetoothAddress(
-        listOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS, null)),
-    )
-
-    /** Saves a real address, or clears it for null and placeholder addresses. */
-    fun saveHeadUnitBluetoothAddress(context: Context, address: String?) {
-        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-        val real = AccessoryIds.realBluetoothAddress(listOf(address))
-        if (real == null) editor.remove(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS) else editor.putString(KEY_HEAD_UNIT_BLUETOOTH_ADDRESS, real)
-        editor.apply()
-    }
-
     fun loadWifiP2pChannel(context: Context): Int = P2pChannelPreference.sanitize(
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_WIFI_P2P_CHANNEL, P2pChannelPreference.AUTOMATIC),
@@ -563,19 +555,6 @@ object AirPlayPersistence {
                 KEY_WIDTH_PHYSICAL_MM,
                 AirPlayDisplaySettings.sanitizeWidthPhysicalMm(widthPhysicalMm),
             )
-            .apply()
-    }
-
-    fun loadPhysicalSizeBasis(context: Context): AirPlayPhysicalSizeBasis {
-        val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_PHYSICAL_SIZE_BASIS, null)
-        return AirPlayPhysicalSizeBasis.entries.firstOrNull { it.name == stored }
-            ?: AirPlayDisplaySettings.DEFAULT_PHYSICAL_SIZE_BASIS
-    }
-
-    fun savePhysicalSizeBasis(context: Context, basis: AirPlayPhysicalSizeBasis) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_PHYSICAL_SIZE_BASIS, basis.name)
             .apply()
     }
 
@@ -648,56 +627,6 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_HIDE_BOTTOM_BAR, hide)
             .apply()
-    }
-
-    fun loadSafeAreaDrawOutside(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_SAFE_AREA_DRAW_OUTSIDE, true)
-
-    fun saveSafeAreaDrawOutside(context: Context, drawOutside: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_SAFE_AREA_DRAW_OUTSIDE, drawOutside)
-            .apply()
-    }
-
-    fun loadSafeAreaRect(context: Context, widthPixels: Int, heightPixels: Int): SafeAreaRect? {
-        require(widthPixels > 0 && heightPixels > 0) { "Activity dimensions must be positive" }
-        return SafeAreaCodec.decode(
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(safeAreaKey(widthPixels, heightPixels), null),
-        )
-    }
-
-    fun saveSafeAreaRect(
-        context: Context,
-        activityWidthPixels: Int,
-        activityHeightPixels: Int,
-        rect: SafeAreaRect,
-        commit: Boolean = false,
-    ) {
-        require(activityWidthPixels > 0 && activityHeightPixels > 0) {
-            "Activity dimensions must be positive"
-        }
-        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(
-                safeAreaKey(activityWidthPixels, activityHeightPixels),
-                SafeAreaCodec.encode(rect.clampTo(activityWidthPixels, activityHeightPixels)),
-            )
-        if (commit) editor.commit() else editor.apply()
-    }
-
-    fun clearSafeAreaRect(
-        context: Context,
-        activityWidthPixels: Int,
-        activityHeightPixels: Int,
-        commit: Boolean = false,
-    ) {
-        require(activityWidthPixels > 0 && activityHeightPixels > 0) {
-            "Activity dimensions must be positive"
-        }
-        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .remove(safeAreaKey(activityWidthPixels, activityHeightPixels))
-        if (commit) editor.commit() else editor.apply()
     }
 
     fun loadCustomAirPlayIconFile(context: Context): File? =
@@ -814,7 +743,4 @@ object AirPlayPersistence {
             substring(index * 2, index * 2 + 2).toInt(16).toByte()
         }
     }
-
-    private fun safeAreaKey(widthPixels: Int, heightPixels: Int): String =
-        "$SAFE_AREA_KEY_PREFIX${widthPixels}x$heightPixels"
 }

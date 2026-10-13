@@ -6,6 +6,11 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Also declared by :shared; the car video player logs whether the head unit is online. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- BYD DiLink: a normal permission (protectionLevel 0) for reading the gear in the app, without
+         ADB; video in car plays only in P. Unknown permissions are ignored on other head units. -->
+    <uses-permission android:name="android.permission.BYDAUTO_GEARBOX_COMMON" />
 
     <!-- Android 10 head units: direct file reads for local MFi documents (ignored on later versions). -->
     <application android:requestLegacyExternalStorage="true">
@@ -41,6 +46,12 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
         </activity>
+
+        <activity
+            android:name="com.shilapi.xcertplay.CarPlayVideoActivity"
+            android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:theme="@style/Theme.Xcertplay" />
 
         <activity
             android:name="com.shilapi.xcertplay.MainActivity"

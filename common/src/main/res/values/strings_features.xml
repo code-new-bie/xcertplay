@@ -18,12 +18,14 @@
     <string name="turn_without_reconnect_label">Keep CarPlay connected when the screen turns (experimental)</string>
     <string name="turn_without_reconnect_desc">Use a square canvas so CarPlay turns with the screen without reconnecting</string>
     <string name="turn_without_reconnect_note">When on, CarPlay connects with a square canvas (1920×1920 on a Song PLUS) holding a landscape and a portrait area; when the screen turns, the iPhone moves CarPlay to the matching area without reconnecting. A square is heavier to decode and send and may drop frames, and the custom safe area does not apply. If the long side exceeds 1920 or the head unit\'s decoder cannot take the square, the plain canvas is used. Applies on the next connection.</string>
+    <string name="dock_position_label">CarPlay dock position</string>
+    <string name="dock_position_automatic">Automatic</string>
+    <string name="dock_position_driver_side">Driver\'s side</string>
+    <string name="dock_position_bottom">Bottom</string>
+    <string name="dock_position_note">Where CarPlay puts its app dock. Automatic: on the driver\'s side of a landscape screen and at the bottom of a portrait one, also with \"Keep CarPlay connected when the screen turns\" on. The driver\'s side follows the right-hand-drive setting. Changing this reconnects CarPlay.</string>
 
     <!-- BYD -->
     <string name="byd_settings_header">BYD</string>
-    <string name="byd_hide_call_label">Hide stock call popups (experimental)</string>
-    <string name="byd_hide_call_desc">Dismiss the BYD call popup while connected CarPlay is on screen</string>
-    <string name="byd_hide_call_note">While connected CarPlay is on screen, use the stock HiCar interface to dismiss call popups. No ADB required. A popup may briefly appear before closing. With "Disconnect iPhone Bluetooth during CarPlay" on, popups normally do not appear at all. Turn off to restore the stock call interface.</string>
     <string name="byd_vehicle_data_title">Vehicle data (DiLink 4)</string>
     <string name="byd_vehicle_speed_label">Vehicle speed and gear for tunnel navigation</string>
     <string name="byd_vehicle_speed_note">Read-only BYD vehicle data when the iPhone requests it. Requires authorized network ADB and Location reporting.</string>
@@ -42,26 +44,12 @@
     <string name="byd_adb_unreachable">Cannot reach 127.0.0.1:5555. Enable network ADB on the head unit; a USB ADB connection alone does not enable this port.</string>
     <string name="byd_adb_unsupported">This debugging service requires a protocol xcertplay does not support. Use the Android 10 network ADB service.</string>
     <string name="byd_adb_failed">ADB check failed: %1$s</string>
-    <string name="byd_adb_note">Song lyrics on the cluster, call fan reduction, pausing Wi-Fi search, exiting CarPlay when the car is switched off, the head-unit Bluetooth address and vehicle data all need this first. The head unit may show a debugging authorization dialog; allow it. The result shows whether speed and battery can be read. Background use never asks for approval.</string>
+    <string name="byd_adb_note">Song lyrics on the cluster, call fan reduction, pausing Wi-Fi search, exiting CarPlay when the car is switched off and vehicle data all need this first. The head unit may show a debugging authorization dialog; allow it. The result shows whether speed and battery can be read. Background use never asks for approval.</string>
     <string name="byd_sub_adb">Head-unit ADB</string>
+    <string name="byd_sub_wireless">Wireless</string>
     <string name="byd_sub_call">Calls</string>
     <string name="byd_sub_cluster">Instrument cluster</string>
     <string name="byd_vehicle_data_note">Unavailable vehicle data is skipped while CarPlay continues. Changes apply on the next CarPlay connection.</string>
-    <string name="head_unit_bt_header">Head-unit Bluetooth address</string>
-    <string name="head_unit_bt_saved">Sent to the iPhone: %1$s (real address, read through ADB)</string>
-    <string name="head_unit_bt_system">Sent to the iPhone: %1$s (real address)</string>
-    <string name="head_unit_bt_generated">Sent to the iPhone: %1$s (generated; the real address has not been read)</string>
-    <string name="head_unit_bt_read">Read real address through ADB</string>
-    <string name="head_unit_bt_reading">Reading…</string>
-    <string name="head_unit_bt_clear">Clear</string>
-    <string name="head_unit_bt_read_ok">Read and saved %1$s. It is used from the next connection.</string>
-    <string name="head_unit_bt_read_empty">ADB is connected, but the head unit returned no valid Bluetooth address. Turn Bluetooth on and try again.</string>
-    <string name="head_unit_bt_note">The iPhone uses this address to recognise the car. Takes effect on the next connection; after changing it, forget this car on the iPhone and pair again.</string>
-    <string name="bluetooth_handoff_calls_label">Disconnect iPhone Bluetooth calls during CarPlay (recommended)</string>
-    <string name="bluetooth_handoff_calls_desc">Calls go through CarPlay; the stock phone shows no popup</string>
-    <string name="bluetooth_handoff_audio_label">Disconnect iPhone Bluetooth music during CarPlay</string>
-    <string name="bluetooth_handoff_audio_desc">Music goes through CarPlay instead of Bluetooth</string>
-    <string name="bluetooth_handoff_note">CarPlay asks the head unit to drop these Bluetooth links. If music over Wi-Fi stutters, raise the music buffer under Audio, or turn off the music option to keep music on Bluetooth (the iPhone then shows Bluetooth as its output). Both links are restored 15 s after CarPlay ends. Changes apply at once: turning an option off during a session restores that link right away. Turning the car off exits CarPlay and restores both links at once (needs head-unit ADB); anything left is restored in the background after the next power-on, or, with auto-start on, after 60 s if CarPlay has not connected.</string>
     <string name="wifi_scan_diag">Wi-Fi scan diagnostics</string>
     <string name="wifi_scan_diag_running">Reading…</string>
     <string name="wifi_scan_diag_note">Reads through ADB which apps and system services scan Wi-Fi, and writes it to the log. Frequent scans make Wi-Fi P2P stall. Export the logs afterwards.</string>
@@ -85,4 +73,12 @@
     <string name="cluster_song_label">Song and lyrics on the cluster</string>
     <string name="cluster_song_desc">CarPlay song in the instrument cluster\'s music card</string>
     <string name="cluster_song_note">Shows \"title — artist\" with play and pause; for lyrics, turn on car or Bluetooth lyrics in the music app (QQ Music, NetEase Cloud Music…), which puts the current line in the title. Written through the authorized ADB link; the card shows as \"other\" music source.</string>
+    <string name="byd_sub_video">Video</string>
+    <string name="video_while_parked_label">Video on the car screen while parked (experimental)</string>
+    <string name="video_while_parked_desc">iOS 27: video sent to CarPlay on the iPhone plays on the car screen in P</string>
+    <string name="video_while_parked_note">Needs an iPhone on iOS 27. Plays only in P: the gear is read through BYD\'s interface in the app, or through head-unit ADB (authorized) where that is unavailable. Shifting out of P closes the player and the iPhone goes on with audio only, as it does when the gear cannot be read. The head unit downloads the video itself, so it needs internet access. Tap the picture for Back to CarPlay, play/pause, 10 s back and forward and the time bar; while the player is open, the steering-wheel play/pause key drives it and next/previous skip 10 s. Protected video such as Apple TV+ cannot play. Changing this reconnects CarPlay. Ported from DiPlay.</string>
+    <string name="video_back_to_carplay">Back to CarPlay</string>
+    <string name="video_play">Play</string>
+    <string name="video_pause">Pause</string>
+    <string name="video_cannot_play">This video can\'t play on the car screen. Protected video, such as Apple TV+, needs a receiver licensed by Apple.</string>
 </resources>

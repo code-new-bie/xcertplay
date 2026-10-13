@@ -18,6 +18,15 @@ object AirPlayInfoPlist {
     private const val CARPLAY_AUDIO_FEATURES = 0x10004540a00L
     private val CARPLAY_FEATURES_NO_AUDIO = CARPLAY_FEATURES and CARPLAY_AUDIO_FEATURES.inv()
 
+    /**
+     * viewAreaStatusBarEdge values, as CarPlay Simulator's StatusBarEdge (automatic, bottom, driver)
+     * and as DiPlay saw them on a BYD Tang with iOS 27: 1 puts the dock at the bottom, 2 on the
+     * driver's side. Without the key the iPhone decides: the driver's side of a wide area, the
+     * bottom of a tall one, but always the bottom once more than one view area is declared.
+     */
+    const val DOCK_EDGE_BOTTOM = 1
+    const val DOCK_EDGE_DRIVER_SIDE = 2
+
     /** Short, so the UI change lands while the head unit's screen is still turning. */
     private const val VIEW_AREA_ANIMATION_MILLIS = 300
 
@@ -50,7 +59,7 @@ object AirPlayInfoPlist {
 
         val info = linkedMapOf<String, Any?>(
             "sourceVersion" to config.sourceVersion,
-            "features" to if (config.disableAudioOutput) CARPLAY_FEATURES_NO_AUDIO else CARPLAY_FEATURES,
+            "features" to legacyFeatures(config),
             "statusFlags" to 4L,
             "model" to config.model,
             "manufacturer" to config.manufacturer,
@@ -91,8 +100,15 @@ object AirPlayInfoPlist {
             }
         }
         if (config.hevc) info["hevcInfo"] = emptyMap<String, Any?>()
+        if (config.videoInCar) {
+            // The iPhone tears down a session that enables videoPlayback without this key.
+            info["videoPlaybackInfo"] = VideoInCar.info(legacyFeatures(config), VideoInCar.allowed)
+        }
         return info
     }
+
+    private fun legacyFeatures(config: AirPlayConfig): Long =
+        if (config.disableAudioOutput) CARPLAY_FEATURES_NO_AUDIO else CARPLAY_FEATURES
 
     private fun resource(resourceId: Int): Map<String, Any?> = linkedMapOf(
         "resourceID" to resourceId,
@@ -214,6 +230,7 @@ object AirPlayInfoPlist {
             "originYPixels" to area.originY,
         )
         return LinkedHashMap(rectangle).apply {
+            area.statusBarEdge?.let { put("viewAreaStatusBarEdge", it) }
             put("safeArea", LinkedHashMap(rectangle).apply { put("drawUIOutsideSafeArea", true) })
         }
     }
@@ -230,6 +247,7 @@ object AirPlayInfoPlist {
             "originXPixels" to view.left,
             "originYPixels" to view.top,
         )
+        display.statusBarEdge?.let { result["viewAreaStatusBarEdge"] = it }
         val safe = display.safeArea ?: AirPlayInsets()
         val safeArea = linkedMapOf<String, Any?>(
             "widthPixels" to (width - safe.left - safe.right),

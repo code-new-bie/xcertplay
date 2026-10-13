@@ -14,6 +14,8 @@ data class AirPlayViewArea(
     val originY: Int,
     val width: Int,
     val height: Int,
+    /** viewAreaStatusBarEdge: where CarPlay puts its dock; null lets the iPhone decide. */
+    val statusBarEdge: Int? = null,
 )
 
 /** One display advertised to the phone in /info. */
@@ -34,6 +36,8 @@ data class AirPlayDisplayConfig(
      */
     val viewAreas: List<AirPlayViewArea>? = null,
     val initialViewArea: Int = 0,
+    /** viewAreaStatusBarEdge of the single view area (no [viewAreas]); null lets the iPhone decide. */
+    val statusBarEdge: Int? = null,
 )
 
 /** One OEM homescreen icon. */
@@ -62,4 +66,6 @@ data class AirPlayConfig(
     val model: String = "xcertplay",
     val oemLabel: String = "xcertplay",
     val icons: List<AirPlayIcon> = emptyList(),
+    /** Offer iOS 27 video in car (see VideoInCar); it plays only while the host allows it. */
+    val videoInCar: Boolean = false,
 )

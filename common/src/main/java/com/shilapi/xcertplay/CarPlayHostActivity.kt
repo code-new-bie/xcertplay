@@ -68,12 +68,10 @@ import com.shilapi.xcertplay.airplay.CarPlayDisplayScale
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlayIcon
-import com.shilapi.xcertplay.airplay.AirPlaySafeArea
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.CarPlayMediaEngine
 import com.shilapi.xcertplay.airplay.CarPlayVoiceKey
-import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.hud.BydClusterSongSettings
 import com.shilapi.xcertplay.hud.BydCallWindSettings
@@ -83,19 +81,16 @@ import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.adb.LocalAdb
 import com.shilapi.xcertplay.hud.BydBatteryProvider
-import com.shilapi.xcertplay.hud.BydCallUiSettings
 import com.shilapi.xcertplay.hud.BydVehicleAccess
 import com.shilapi.xcertplay.hud.BydVehicleSettings
 import com.shilapi.xcertplay.hud.BydWheelSpeedSource
 import com.shilapi.xcertplay.network.BluetoothHandoff
-import com.shilapi.xcertplay.network.BluetoothHandoffSettings
 import com.shilapi.xcertplay.network.IphoneHotspotMonitor
 import com.shilapi.xcertplay.network.P2pChannelPreference
 import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WifiScanPauseSettings
 import com.shilapi.xcertplay.transport.EvChargingConnectors
 import com.shilapi.xcertplay.transport.VehicleSpeedLocationProvider
-import com.shilapi.xcertplay.hud.BydCallUiSuppressor
 import com.shilapi.xcertplay.hud.BydSettingsAvailability
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
 import com.shilapi.xcertplay.media.CarPlayVideoLayout
@@ -138,8 +133,6 @@ import kotlin.concurrent.thread
  */
 class CarPlayHostActivity : ComponentActivity() {
     private data class SettingsBaseline(
-        val safeAreaSize: DisplaySize?,
-        val safeAreaRect: SafeAreaRect?,
         val customIconBytes: ByteArray?,
         val handshake: List<Any?>,
     )
@@ -370,11 +363,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotErrorView: TextView? = null
     private var iconPreviewView: ImageView? = null
     private var iconStatusView: TextView? = null
-    private var safeAreaSummaryView: TextView? = null
-    private var safeAreaEditor: View? = null
-    private var safeAreaEditorView: SafeAreaEditorView? = null
-    private var safeAreaEditSize: DisplaySize? = null
-    private var safeAreaEditorActive = false
     private var mediaMetricsOverlay: MediaMetricsOverlayView? = null
     private var mediaMetricsMonitor: MediaMetricsMonitor? = null
     private var externalActivityInProgress = false
@@ -391,6 +379,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private val retryStartAfterCameraWait = Runnable { maybeStartCarPlay() }
     private val bydHeadUnit by lazy { BydSettingsAvailability.available(this) }
     private val cameraLog: (String) -> Unit = { appendLog(it) }
+    private val videoLog: (String) -> Unit = { appendLog(it) }
     private val cameraChanged: (Boolean) -> Unit = { shown -> if (!shown) runOnUiThread { recordNormalWindow() } }
     private val vehiclePoweredOff: () -> Unit = { runOnUiThread { exitForVehiclePowerOff() } }
     private val scanPauseChanged: () -> Unit = { runOnUiThread { renderHome() } }
@@ -415,7 +404,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var audioPacketCaptureEnabled = false
     private var moreGesturesToSettings = false
     private var keepSessionOnWindowShrink = false
-    private var turnWithoutReconnect = false
+    private var turnWithoutReconnect = true
+    private var dockPosition = CarPlayDockPosition.AUTOMATIC
     private var sessionDisplay: CarPlaySessionDisplay? = null
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
@@ -423,13 +413,11 @@ class CarPlayHostActivity : ComponentActivity() {
     private var customVehicleName = ""
     private var fps = AirPlayDisplaySettings.DEFAULT_FPS
     private var widthPhysicalMm = AirPlayDisplaySettings.DEFAULT_WIDTH_PHYSICAL_MM
-    private var physicalSizeBasis = AirPlayDisplaySettings.DEFAULT_PHYSICAL_SIZE_BASIS
     private var maximumDetectedWidthPixels = 0
     private var maximumDetectedHeightPixels = 0
     private var rightHandDrive = false
     private var hideTopBar = true
     private var hideBottomBar = true
-    private var safeAreaDrawOutside = true
     private var locationReportingEnabled = false
     private var locationPermissionAvailable = false
     private var microphoneAvailable = false
@@ -477,8 +465,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private var edgeSettingsGestureEligible = false
     private val shuttingDown = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var carPlayPageVisible = false
-    private val bydCallUiSuppressor by lazy { BydCallUiSuppressor(applicationContext) }
     private val appearanceSync = CarPlayAppearanceSync(mainHandler, ::syncAirPlayDarkMode)
     private val teardownExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val airPlayCommandExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -584,7 +570,7 @@ class CarPlayHostActivity : ComponentActivity() {
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
                     if (menuOpen) {
-                        if (safeAreaEditorActive) closeSafeAreaEditor() else cancelSettingsEdits()
+                        cancelSettingsEdits()
                     } else {
                         // Keep this screen and its CarPlay video alive; reopening the app returns to it.
                         appendLog("Back pressed; opening the head-unit home screen")
@@ -605,6 +591,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (bydHeadUnit) {
             // Started before CarPlay so a session that begins in reverse can be sized correctly.
             BydCameraMonitor.log = cameraLog
+            CarPlayVideo.log = videoLog
             BydCameraMonitor.onChanged = cameraChanged
             BydCameraMonitor.onPowerOff = vehiclePoweredOff
             BydCameraMonitor.start(applicationContext)
@@ -645,13 +632,13 @@ class CarPlayHostActivity : ComponentActivity() {
         moreGesturesToSettings = AirPlayPersistence.loadMoreGesturesToSettings(this)
         keepSessionOnWindowShrink = AirPlayPersistence.loadKeepSessionOnWindowShrink(this)
         turnWithoutReconnect = AirPlayPersistence.loadTurnWithoutReconnect(this)
+        dockPosition = AirPlayPersistence.loadDockPosition(this)
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
         manufacturer = AirPlayPersistence.loadManufacturer(this)
         model = AirPlayPersistence.loadModel(this)
         customVehicleName = AirPlayPersistence.loadCustomVehicleName(this)
         fps = AirPlayPersistence.loadFps(this)
         widthPhysicalMm = AirPlayPersistence.loadWidthPhysicalMm(this)
-        physicalSizeBasis = AirPlayPersistence.loadPhysicalSizeBasis(this)
         AirPlayPersistence.loadMaximumDetectedDisplay(this).let { (width, height) ->
             maximumDetectedWidthPixels = width
             maximumDetectedHeightPixels = height
@@ -659,7 +646,6 @@ class CarPlayHostActivity : ComponentActivity() {
         rightHandDrive = AirPlayPersistence.loadRightHandDrive(this)
         hideTopBar = AirPlayPersistence.loadHideTopBar(this)
         hideBottomBar = AirPlayPersistence.loadHideBottomBar(this)
-        safeAreaDrawOutside = AirPlayPersistence.loadSafeAreaDrawOutside(this)
         locationReportingEnabled = AirPlayPersistence.loadLocationReportingEnabled(this)
         locationPermissionAvailable = hasFineLocationPermission()
         wirelessEnabled = AirPlayPersistence.loadWirelessEnabled(this)
@@ -752,19 +738,6 @@ class CarPlayHostActivity : ComponentActivity() {
         )
     }
 
-    override fun onStart() {
-        super.onStart()
-        carPlayPageVisible = true
-        updateBydCallUi()
-    }
-
-    private fun updateBydCallUi() {
-        bydCallUiSuppressor.updateUsage(
-            carPlayPageVisible && !menuOpen,
-            controller?.hasActiveAirPlaySession() == true,
-        )
-    }
-
     override fun onResume() {
         super.onResume()
         appearanceMonitor?.updateUiMode(applicationContext.resources.configuration.uiMode)
@@ -798,8 +771,6 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        carPlayPageVisible = false
-        updateBydCallUi()
         stopMicrophoneGainTest()
         channelPreview.stop()
         // The controller, USB/iAP2 link, and VPN attachment intentionally outlive the UI.
@@ -819,7 +790,6 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        bydCallUiSuppressor.close()
         channelPreview.close()
         appearanceMonitor?.stop()
         appearanceSync.stop()
@@ -828,6 +798,7 @@ class CarPlayHostActivity : ComponentActivity() {
         mainHandler.removeCallbacks(retryStartAfterCameraWait)
         // The reader keeps running for the next screen; it must not call back into this one.
         if (BydCameraMonitor.log === cameraLog) BydCameraMonitor.log = {}
+        if (CarPlayVideo.log === videoLog) CarPlayVideo.log = {}
         if (BydCameraMonitor.onChanged === cameraChanged) BydCameraMonitor.onChanged = {}
         if (BydCameraMonitor.onPowerOff === vehiclePoweredOff) BydCameraMonitor.onPowerOff = {}
         mainHandler.removeCallbacks(expireOldLogLines)
@@ -905,7 +876,6 @@ class CarPlayHostActivity : ComponentActivity() {
         statusParams.setMargins(dp(12), 0, dp(12), dp(12))
 
         val settings = buildSettingsMenu().apply { visibility = View.GONE }
-        val editor = buildSafeAreaEditor().apply { visibility = View.GONE }
 
         root.addView(video)
         root.addView(
@@ -930,13 +900,6 @@ class CarPlayHostActivity : ComponentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        root.addView(
-            editor,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
         root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
                 updateMediaMetricsOverlayLayout(right - left, bottom - top)
@@ -947,7 +910,6 @@ class CarPlayHostActivity : ComponentActivity() {
         disconnectedSettingsButton = home
         homeScreen = home
         settingsMenu = settings
-        safeAreaEditor = editor
         statusView = log
         statusScrollView = logScroll
         updateDebugOverlays()
@@ -1195,34 +1157,6 @@ class CarPlayHostActivity : ComponentActivity() {
             topMarginDp = 8,
         )
         addSetting(page, buildHotspotModeSection(), getString(R.string.hint_hotspot_mode))
-        addSetting(
-            page,
-            settingsSwitchRow(
-                label = getString(R.string.bluetooth_handoff_calls_label),
-                checked = BluetoothHandoffSettings.callsEnabled(this),
-                description = getString(R.string.bluetooth_handoff_calls_desc),
-            ) { checked -> BluetoothHandoffSettings.setCallsEnabled(this, checked) },
-        )
-        addSetting(
-            page,
-            settingsSwitchRow(
-                label = getString(R.string.bluetooth_handoff_audio_label),
-                checked = BluetoothHandoffSettings.audioEnabled(this),
-                description = getString(R.string.bluetooth_handoff_audio_desc),
-            ) { checked -> BluetoothHandoffSettings.setAudioEnabled(this, checked) },
-            getString(R.string.bluetooth_handoff_note),
-            topMarginDp = 12,
-        )
-        addSetting(
-            page,
-            settingsSwitchRow(
-                label = getString(R.string.wifi_scan_pause_label),
-                checked = WifiScanPauseSettings.enabled(this),
-                description = getString(R.string.wifi_scan_pause_desc),
-            ) { checked -> WifiScanPauseSettings.setEnabled(this, checked) },
-            getString(R.string.wifi_scan_pause_note),
-        )
-        scanPauseStatus()?.let { addHint(page, it) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             addSetting(
                 page,
@@ -1275,6 +1209,19 @@ class CarPlayHostActivity : ComponentActivity() {
         addSetting(page, buildIconSizeSection(), topMarginDp = 8)
         addSetting(page, buildResolutionSection(), getString(R.string.hint_resolution))
         addSetting(page, buildDrivingSideSection(), getString(R.string.hint_driving_side))
+        addSetting(
+            page,
+            settingsChoiceRow(
+                label = getString(R.string.dock_position_label),
+                options = listOf(
+                    CarPlayDockPosition.AUTOMATIC to getString(R.string.dock_position_automatic),
+                    CarPlayDockPosition.DRIVER_SIDE to getString(R.string.dock_position_driver_side),
+                    CarPlayDockPosition.BOTTOM to getString(R.string.dock_position_bottom),
+                ),
+                selected = dockPosition,
+            ) { position -> dockPosition = position },
+            getString(R.string.dock_position_note),
+        )
         addSetting(page, buildFullscreenSection())
     }
 
@@ -1406,19 +1353,20 @@ class CarPlayHostActivity : ComponentActivity() {
         addGroupHeader(page, getString(R.string.byd_settings_header))
         addSubHeader(page, getString(R.string.byd_sub_adb), topMarginDp = 12)
         addSetting(page, buildBydAdbCheckButton(), getString(R.string.byd_adb_note), topMarginDp = 10)
-        buildHeadUnitBluetoothSection(page)
 
-        addSubHeader(page, getString(R.string.byd_sub_call))
+        addSubHeader(page, getString(R.string.byd_sub_wireless))
         addSetting(
             page,
             settingsSwitchRow(
-                label = getString(R.string.byd_hide_call_label),
-                checked = BydCallUiSettings.enabled(this),
-                description = getString(R.string.byd_hide_call_desc),
-            ) { checked -> BydCallUiSettings.setEnabled(this, checked) },
-            getString(R.string.byd_hide_call_note),
-            topMarginDp = 10,
+                label = getString(R.string.wifi_scan_pause_label),
+                checked = WifiScanPauseSettings.enabled(this),
+                description = getString(R.string.wifi_scan_pause_desc),
+            ) { checked -> WifiScanPauseSettings.setEnabled(this, checked) },
+            getString(R.string.wifi_scan_pause_note),
         )
+        scanPauseStatus()?.let { addHint(page, it) }
+
+        addSubHeader(page, getString(R.string.byd_sub_call))
         addSetting(
             page,
             settingsSwitchRow(
@@ -1454,6 +1402,18 @@ class CarPlayHostActivity : ComponentActivity() {
             topMarginDp = 10,
         )
 
+        addSubHeader(page, getString(R.string.byd_sub_video))
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.video_while_parked_label),
+                checked = CarPlayVideoSettings.enabled(this),
+                description = getString(R.string.video_while_parked_desc),
+            ) { checked -> CarPlayVideoSettings.setEnabled(this, checked) },
+            getString(R.string.video_while_parked_note),
+            topMarginDp = 10,
+        )
+
         addSubHeader(page, getString(R.string.byd_vehicle_data_title))
         addSetting(page, buildBydVehicleDataSection(), getString(R.string.byd_vehicle_data_note), topMarginDp = 0)
     }
@@ -1461,66 +1421,6 @@ class CarPlayHostActivity : ComponentActivity() {
     /** A titled sub-section inside a group, such as the BYD group's ADB, calls and cluster parts. */
     private fun addSubHeader(page: LinearLayout, title: String, topMarginDp: Int = 28) =
         addSetting(page, menuText(title, 18f, Color.WHITE), topMarginDp = topMarginDp)
-
-    /** BYD group: reads the head unit's real Bluetooth address through ADB so the iPhone receives it. */
-    private fun buildHeadUnitBluetoothSection(page: LinearLayout) {
-        addSubHeader(page, getString(R.string.head_unit_bt_header))
-        val status = menuText("", 16f, Color.WHITE)
-        fun refreshStatus() {
-            val ids = AccessoryIds.of(this, airPlayIdentity)
-            status.text = when (ids.bluetoothSource) {
-                AccessoryIds.BluetoothSource.SAVED -> getString(R.string.head_unit_bt_saved, ids.bluetoothId)
-                AccessoryIds.BluetoothSource.SYSTEM -> getString(R.string.head_unit_bt_system, ids.bluetoothId)
-                AccessoryIds.BluetoothSource.DEVICE_ID -> getString(R.string.head_unit_bt_generated, ids.bluetoothId)
-            }
-        }
-        refreshStatus()
-        addSetting(page, status, topMarginDp = 8)
-        val readButton = Button(this).apply { text = getString(R.string.head_unit_bt_read) }
-        readButton.setOnClickListener {
-            readButton.isEnabled = false
-            readButton.text = getString(R.string.head_unit_bt_reading)
-            kotlin.concurrent.thread(name = "xcertplay-bt-address", isDaemon = true) {
-                val result = runCatching { AccessoryIds.readThroughAdb(applicationContext) }
-                runOnUiThread {
-                    readButton.isEnabled = true
-                    readButton.text = getString(R.string.head_unit_bt_read)
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    val message = result.fold({ (access, address) ->
-                        when (access) {
-                            LocalAdb.Access.READY -> if (address != null) {
-                                AirPlayPersistence.saveHeadUnitBluetoothAddress(this, address)
-                                appendLog("Head-unit Bluetooth address read through ADB: $address")
-                                getString(R.string.head_unit_bt_read_ok, address)
-                            } else {
-                                appendLog("Head-unit Bluetooth address: ADB returned no valid address")
-                                getString(R.string.head_unit_bt_read_empty)
-                            }
-                            LocalAdb.Access.NOT_APPROVED -> getString(R.string.byd_adb_not_approved)
-                            LocalAdb.Access.UNREACHABLE -> getString(R.string.byd_adb_unreachable)
-                            LocalAdb.Access.UNSUPPORTED -> getString(R.string.byd_adb_unsupported)
-                        }
-                    }, { getString(R.string.byd_adb_failed, it.javaClass.simpleName) })
-                    refreshStatus()
-                    AlertDialog.Builder(this).setTitle(R.string.head_unit_bt_header).setMessage(message)
-                        .setPositiveButton(android.R.string.ok, null).show()
-                }
-            }
-        }
-        addButton(page, readButton, null)
-        addButton(
-            page,
-            Button(this).apply {
-                text = getString(R.string.head_unit_bt_clear)
-                setOnClickListener {
-                    AirPlayPersistence.saveHeadUnitBluetoothAddress(this@CarPlayHostActivity, null)
-                    appendLog("Head-unit Bluetooth address cleared")
-                    refreshStatus()
-                }
-            },
-            getString(R.string.head_unit_bt_note),
-        )
-    }
 
     private fun buildAdvancedPage(page: LinearLayout) {
         addGroupHeader(page, getString(R.string.group_video))
@@ -1572,44 +1472,6 @@ class CarPlayHostActivity : ComponentActivity() {
             ),
             getString(R.string.hint_frame_rate),
         )
-
-        addGroupHeader(page, getString(R.string.group_display_size))
-        addSetting(
-            page,
-            settingsChoiceRow(
-                label = getString(R.string.physical_basis),
-                options = listOf(
-                    AirPlayPhysicalSizeBasis.WIDTH to getString(R.string.basis_width),
-                    AirPlayPhysicalSizeBasis.HEIGHT to getString(R.string.basis_height),
-                ),
-                selected = physicalSizeBasis,
-            ) { value ->
-                physicalSizeBasis = value
-                updateResolutionMenu()
-            },
-            topMarginDp = 12,
-        )
-        addSetting(
-            page,
-            buildStepSliderSection(
-                title = getString(R.string.physical_length),
-                values = (
-                    AirPlayDisplaySettings.MIN_WIDTH_PHYSICAL_MM..AirPlayDisplaySettings.MAX_WIDTH_PHYSICAL_MM
-                        step AirPlayDisplaySettings.WIDTH_PHYSICAL_MM_STEP
-                    ).toList(),
-                selectedValue = widthPhysicalMm,
-                label = { "$it mm" },
-                onValueChanged = { value ->
-                    widthPhysicalMm = value
-                    updateResolutionMenu()
-                },
-            ),
-            getString(R.string.hint_physical),
-            topMarginDp = 20,
-        )
-
-        addGroupHeader(page, getString(R.string.group_display_area))
-        addSetting(page, buildSafeAreaSection(), topMarginDp = 12)
 
         addGroupHeader(page, getString(R.string.group_identity))
         addSetting(
@@ -1716,7 +1578,6 @@ class CarPlayHostActivity : ComponentActivity() {
         val height = negotiated?.heightPixels ?: 0
         val icons = getString(
             when {
-                physicalSizeBasis != AirPlayPhysicalSizeBasis.WIDTH -> R.string.icon_size_custom_label
                 widthPhysicalMm == ICON_SIZE_LARGE_MM -> R.string.icon_size_large
                 widthPhysicalMm == ICON_SIZE_MEDIUM_MM -> R.string.icon_size_medium
                 widthPhysicalMm == ICON_SIZE_SMALL_MM -> R.string.icon_size_small
@@ -1743,9 +1604,7 @@ class CarPlayHostActivity : ComponentActivity() {
             orientation = RadioGroup.HORIZONTAL
             setPadding(0, dp(8), 0, 0)
         }
-        fun current(): Int? = widthPhysicalMm.takeIf {
-            physicalSizeBasis == AirPlayPhysicalSizeBasis.WIDTH && presets.any { (mm, _) -> mm == it }
-        }
+        fun current(): Int? = widthPhysicalMm.takeIf { presets.any { (mm, _) -> mm == it } }
         fun refreshNote() {
             val custom = current() == null
             customNote.visibility = if (custom) View.VISIBLE else View.GONE
@@ -1768,7 +1627,6 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         group.setOnCheckedChangeListener { radioGroup, checkedId ->
             val mm = radioGroup.findViewById<RadioButton>(checkedId)?.tag as? Int ?: return@setOnCheckedChangeListener
-            physicalSizeBasis = AirPlayPhysicalSizeBasis.WIDTH
             widthPhysicalMm = mm
             refreshNote()
             updateResolutionMenu()
@@ -1860,7 +1718,6 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveDisplayScaleTenths(this, displayScaleTenths)
         AirPlayPersistence.saveFps(this, fps)
         AirPlayPersistence.saveWidthPhysicalMm(this, widthPhysicalMm)
-        AirPlayPersistence.savePhysicalSizeBasis(this, physicalSizeBasis)
         AirPlayPersistence.saveHevcEnabled(this, hevcEnabled)
         AirPlayPersistence.saveHevcSoftwareDecoderEnabled(this, hevcSoftwareDecoderEnabled)
         AirPlayPersistence.saveManufacturer(this, manufacturer)
@@ -1872,14 +1729,13 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveMoreGesturesToSettings(this, moreGesturesToSettings)
         AirPlayPersistence.saveKeepSessionOnWindowShrink(this, keepSessionOnWindowShrink)
         AirPlayPersistence.saveTurnWithoutReconnect(this, turnWithoutReconnect)
+        AirPlayPersistence.saveDockPosition(this, dockPosition)
         AirPlayPersistence.saveRightHandDrive(this, rightHandDrive)
         AirPlayPersistence.saveHideTopBar(this, hideTopBar)
         AirPlayPersistence.saveHideBottomBar(this, hideBottomBar)
-        AirPlayPersistence.saveSafeAreaDrawOutside(this, safeAreaDrawOutside)
     }
 
     private fun captureSettingsBaseline(): SettingsBaseline {
-        val safeAreaSize = currentActivitySize()
         val customIconBytes = try {
             AirPlayPersistence.loadCustomAirPlayIconFile(this)?.readBytes()
         } catch (error: Exception) {
@@ -1887,10 +1743,6 @@ class CarPlayHostActivity : ComponentActivity() {
             null
         }
         return SettingsBaseline(
-            safeAreaSize = safeAreaSize,
-            safeAreaRect = safeAreaSize?.let {
-                AirPlayPersistence.loadSafeAreaRect(this, it.width, it.height)
-            },
             customIconBytes = customIconBytes,
             handshake = handshakeSettings(),
         )
@@ -1904,13 +1756,12 @@ class CarPlayHostActivity : ComponentActivity() {
         val size = currentActivitySize()
         return listOf(
             wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
-            localMfiCertificateUri, localMfiPrivateKeyUri, turnWithoutReconnect,
+            localMfiCertificateUri, localMfiPrivateKeyUri, turnWithoutReconnect, dockPosition,
             wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
             manualHotspotChannel, manualHotspotSecurity, wifiP2pChannel,
             locationReportingEnabled, customVehicleName, manufacturer, model,
-            displayScaleTenths, fps, widthPhysicalMm, physicalSizeBasis, hevcEnabled, hevcSoftwareDecoderEnabled,
-            rightHandDrive, hideTopBar, hideBottomBar, safeAreaDrawOutside,
-            size?.let { AirPlayPersistence.loadSafeAreaRect(this, it.width, it.height) },
+            displayScaleTenths, fps, widthPhysicalMm, hevcEnabled, hevcSoftwareDecoderEnabled,
+            rightHandDrive, hideTopBar, hideBottomBar,
             runCatching { AirPlayPersistence.loadCustomAirPlayIconFile(this)?.readBytes()?.contentHashCode() }
                 .getOrNull(),
             audioPacketCaptureEnabled,
@@ -1918,28 +1769,13 @@ class CarPlayHostActivity : ComponentActivity() {
             mainMediaAudioBufferDurationMs, navigationAudioBufferDurationMs, microphoneGainPercent,
             BydVehicleSettings.speedEnabled(this), BydVehicleSettings.batteryEnabled(this),
             BydVehicleSettings.dcChargingEnabled(this), BydVehicleSettings.capacityKwh(this),
+            CarPlayVideoSettings.enabled(this),
         )
     }
 
     private fun restoreSettingsBaseline() {
         val baseline = settingsBaseline ?: return
         loadPersistedSettings()
-        baseline.safeAreaSize?.let { size ->
-            baseline.safeAreaRect?.let { rect ->
-                AirPlayPersistence.saveSafeAreaRect(
-                    this,
-                    size.width,
-                    size.height,
-                    rect,
-                    commit = true,
-                )
-            } ?: AirPlayPersistence.clearSafeAreaRect(
-                this,
-                size.width,
-                size.height,
-                commit = true,
-            )
-        }
         try {
             baseline.customIconBytes?.let { bytes ->
                 AirPlayPersistence.saveCustomAirPlayIcon(this, bytes)
@@ -1956,7 +1792,6 @@ class CarPlayHostActivity : ComponentActivity() {
         syncMicrophoneGainControls()
         updateManualHotspotFields()
         updateAirPlayIconPreview()
-        updateSafeAreaSummary()
         updateHotspotStatusBlock()
         updateResolutionMenu()
         updateDebugOverlays()
@@ -3126,130 +2961,6 @@ class CarPlayHostActivity : ComponentActivity() {
         return section
     }
 
-    private fun buildSafeAreaSection(): View {
-        val section = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        section.addView(
-            menuText(getString(R.string.safe_area), 20f, MENU_SECONDARY),
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ),
-        )
-        val summary = menuText("", 15f, MENU_ACCENT)
-        section.addView(
-            summary,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(6) },
-        )
-        val buttons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        buttons.addView(
-            Button(this).apply {
-                text = getString(R.string.set)
-                isAllCaps = false
-                setOnClickListener { openSafeAreaEditor() }
-            },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        buttons.addView(
-            Button(this).apply {
-                text = getString(R.string.reset)
-                isAllCaps = false
-                setOnClickListener { resetSafeAreaForCurrentSize() }
-            },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dp(12)
-            },
-        )
-        section.addView(
-            buttons,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(10) },
-        )
-        section.addView(
-            settingsSwitchRow(
-                label = getString(R.string.draw_outside),
-                checked = safeAreaDrawOutside,
-                description = getString(R.string.draw_outside_desc),
-            ) { checked ->
-                safeAreaDrawOutside = checked
-                updateResolutionMenu()
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(12) },
-        )
-        safeAreaSummaryView = summary
-        updateSafeAreaSummary()
-        return section
-    }
-
-    private fun buildSafeAreaEditor(): View {
-        val overlay = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-            isClickable = true
-        }
-        val editor = SafeAreaEditorView(this)
-        overlay.addView(
-            editor,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-        overlay.addView(
-            menuText(getString(R.string.safe_area), 24f, Color.WHITE, bold = true).apply {
-                setPadding(dp(16), dp(12), dp(16), dp(8))
-            },
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.START,
-            ),
-        )
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(10), dp(16), dp(16))
-        }
-        controls.addView(
-            Button(this).apply {
-                text = getString(R.string.cancel)
-                isAllCaps = false
-                setOnClickListener { closeSafeAreaEditor() }
-            },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        controls.addView(
-            Button(this).apply {
-                text = getString(R.string.save)
-                isAllCaps = false
-                setOnClickListener { saveSafeAreaEditor() }
-            },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dp(12)
-            },
-        )
-        overlay.addView(
-            controls,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM,
-            ),
-        )
-        safeAreaEditorView = editor
-        return overlay
-    }
-
     private fun settingsInputRow(
         label: String,
         value: String,
@@ -3775,13 +3486,8 @@ class CarPlayHostActivity : ComponentActivity() {
             append(
                 getString(R.string.preview_detected_max, maximumDetectedWidthPixels, maximumDetectedHeightPixels),
             ).append('\n')
-            val basis = getString(
-                when (physicalSizeBasis) {
-                    AirPlayPhysicalSizeBasis.WIDTH -> R.string.preview_widest_width
-                    AirPlayPhysicalSizeBasis.HEIGHT -> R.string.preview_longest_height
-                },
-            )
-            append(getString(R.string.preview_physical_reference, basis, widthPhysicalMm)).append('\n')
+            append(getString(R.string.preview_physical_reference, getString(R.string.preview_widest_width), widthPhysicalMm))
+                .append('\n')
             native?.let { size ->
                 val physical = resolvePhysicalSize(size)
                 append(
@@ -3820,7 +3526,6 @@ class CarPlayHostActivity : ComponentActivity() {
                     ),
                 ).append('\n')
             }
-            append(safeAreaSummary())
         }
     }
 
@@ -3838,14 +3543,7 @@ class CarPlayHostActivity : ComponentActivity() {
             displayScaleTenths,
         )
         val display = scaledDisplay.copy(
-            safeArea = AirPlaySafeArea.toInsets(
-                mapping = AirPlayPersistence.loadSafeAreaRect(this, size.width, size.height),
-                activityWidthPixels = size.width,
-                activityHeightPixels = size.height,
-                displayWidthPixels = scaledDisplay.widthPixels,
-                displayHeightPixels = scaledDisplay.heightPixels,
-            ),
-            safeAreaDrawOutside = safeAreaDrawOutside,
+            statusBarEdge = dockPosition.singleAreaEdge,
         )
         val accessoryIds = AccessoryIds.of(this, airPlayIdentity)
         return AirPlayConfig(
@@ -3861,6 +3559,8 @@ class CarPlayHostActivity : ComponentActivity() {
             model = normalizedModel(),
             oemLabel = vehicleName(),
             icons = listOf(loadAirPlayIcon()),
+            // Played only in P, which the BYD camera monitor reads through ADB.
+            videoInCar = bydHeadUnit && CarPlayVideoSettings.enabled(this),
         )
     }
 
@@ -3891,7 +3591,9 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog(
             "Square canvas ${square.side}x${square.side} on ${decoder.decoder}: view areas " +
                 "${square.describe(CarPlaySquareCanvas.LANDSCAPE)} and ${square.describe(CarPlaySquareCanvas.PORTRAIT)}, " +
-                "starting in ${square.describe(square.initialArea)}",
+                "starting in ${square.describe(square.initialArea)}; dock ${dockPosition.id} " +
+                "(landscape edge ${dockPosition.squareAreaEdge(portrait = false)}, " +
+                "portrait edge ${dockPosition.squareAreaEdge(portrait = true)})",
         )
         return display.copy(
             widthPixels = square.side,
@@ -3899,7 +3601,9 @@ class CarPlayHostActivity : ComponentActivity() {
             widthPhysicalMm = physicalMm,
             heightPhysicalMm = physicalMm,
             safeArea = null,
-            viewAreas = square.areas,
+            viewAreas = square.areas.mapIndexed { index, area ->
+                area.copy(statusBarEdge = dockPosition.squareAreaEdge(portrait = index == CarPlaySquareCanvas.PORTRAIT))
+            },
             initialViewArea = square.initialArea,
         )
     }
@@ -3934,8 +3638,11 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun defaultAirPlayIconBytes(): ByteArray =
-        // Shown in CarPlay's app list as the "back to the car" button.
-        resources.openRawResource(R.raw.ic_car_home).use { it.readBytes() }
+        // Shown in CarPlay's app list as the "back to the car" button. The icon goes to the iPhone when
+        // the session starts, so it follows the appearance at that moment, not a later change.
+        resources.openRawResource(defaultAirPlayIconResource()).use { it.readBytes() }
+
+    private fun defaultAirPlayIconResource(): Int = if (darkMode) R.raw.ic_car_home_dark else R.raw.ic_car_home
 
     private fun updateAirPlayIconPreview() {
         val preview = iconPreviewView ?: return
@@ -3947,7 +3654,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 AirPlayPersistence.clearCustomAirPlayIcon(this)
             }
         }
-        val bitmap = customBitmap ?: BitmapFactory.decodeResource(resources, R.raw.ic_car_home)
+        val bitmap = customBitmap ?: BitmapFactory.decodeResource(resources, defaultAirPlayIconResource())
         preview.setImageBitmap(bitmap)
         iconStatusView?.text =
             if (customBitmap != null) getString(R.string.icon_custom) else getString(R.string.icon_default)
@@ -3968,85 +3675,8 @@ class CarPlayHostActivity : ComponentActivity() {
             maximumWidthPixels = maxOf(maximumDetectedWidthPixels, size.width),
             maximumHeightPixels = maxOf(maximumDetectedHeightPixels, size.height),
             referenceMillimeters = widthPhysicalMm,
-            basis = physicalSizeBasis,
+            basis = AirPlayPhysicalSizeBasis.WIDTH,
         )
-
-    private fun safeAreaSummary(): String {
-        val size = currentActivitySize() ?: return getString(R.string.safe_area_waiting)
-        val mapping = AirPlayPersistence.loadSafeAreaRect(this, size.width, size.height)
-        return if (mapping == null) {
-            getString(R.string.safe_area_full, size.width, size.height)
-        } else {
-            getString(
-                R.string.safe_area_custom,
-                mapping.width,
-                mapping.height,
-                mapping.left,
-                mapping.top,
-                size.width,
-                size.height,
-            )
-        }
-    }
-
-    private fun updateSafeAreaSummary() {
-        safeAreaSummaryView?.text = safeAreaSummary()
-    }
-
-    private fun openSafeAreaEditor() {
-        val size = currentActivitySize()
-        if (size == null) {
-            appendLog("Safe area editor is unavailable before display layout")
-            return
-        }
-        val editorView = safeAreaEditorView ?: return
-        val initial = AirPlayPersistence.loadSafeAreaRect(this, size.width, size.height)
-            ?: AirPlaySafeArea.default(size.width, size.height)
-        safeAreaEditSize = size
-        safeAreaEditorActive = true
-        // Keep the current activity size; changing system bars here would remap the safe area.
-        settingsMenu?.visibility = View.GONE
-        safeAreaEditor?.visibility = View.VISIBLE
-        editorView.setRect(initial, size.width, size.height)
-        appendLog(
-            "Safe area editor opened for ${size.width}x${size.height}; " +
-                "drag the four boundaries",
-        )
-    }
-
-    private fun closeSafeAreaEditor() {
-        if (!safeAreaEditorActive) return
-        safeAreaEditorActive = false
-        safeAreaEditSize = null
-        safeAreaEditor?.visibility = View.GONE
-        settingsMenu?.visibility = View.VISIBLE
-        updateSafeAreaSummary()
-        updateResolutionMenu()
-        appendLog("Safe area editor closed")
-    }
-
-    private fun saveSafeAreaEditor() {
-        val size = safeAreaEditSize ?: currentActivitySize() ?: return
-        val rect = safeAreaEditorView?.currentRectForSource() ?: return
-        AirPlayPersistence.saveSafeAreaRect(this, size.width, size.height, rect)
-        appendLog(
-            "Safe area saved for ${size.width}x${size.height}: " +
-                "${rect.width}x${rect.height} at (${rect.left}, ${rect.top})",
-        )
-        closeSafeAreaEditor()
-    }
-
-    private fun resetSafeAreaForCurrentSize() {
-        val size = currentActivitySize()
-        if (size == null) {
-            appendLog("Safe area reset is unavailable before display layout")
-            return
-        }
-        AirPlayPersistence.clearSafeAreaRect(this, size.width, size.height)
-        updateSafeAreaSummary()
-        updateResolutionMenu()
-        appendLog("Safe area reset to full screen for ${size.width}x${size.height}")
-    }
 
     private fun refreshDisplaySizeAfterLayout() {
         videoView?.post {
@@ -4100,7 +3730,6 @@ class CarPlayHostActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     appearanceSync.start(session)
-                    updateBydCallUi()
                     homeStep = ConnectionStep.CARPLAY
                     homeFailureFresh = false
                     renderHome()
@@ -4113,7 +3742,6 @@ class CarPlayHostActivity : ComponentActivity() {
                 runOnUiThread {
                     appearanceSync.end(session)
                     if (controller?.hasActiveAirPlaySession() != true) appearanceSync.stop()
-                    updateBydCallUi()
                     if (menuOpen && sessionKeptForSettings && controllerGeneration == restartGeneration) {
                         connectionLostWhileSettingsOpen = true
                     }
@@ -4188,7 +3816,6 @@ class CarPlayHostActivity : ComponentActivity() {
             return false
         }
         controller = snapshot.controller
-        updateBydCallUi()
         sink = snapshot.sink
         snapshot.sink.setMediaMetricsMonitor(mediaMetricsMonitor)
         if (snapshot.width > 0 && snapshot.height > 0) {
@@ -4275,7 +3902,8 @@ class CarPlayHostActivity : ComponentActivity() {
                 "decoder=${if (airPlayConfig.hevc && hevcSoftwareDecoderEnabled) "software" else "hardware"} " +
                 "microphone=${airPlayConfig.microphone} " +
                 "location=${if (config.locationReportingEnabled) "enabled" else "disabled"} " +
-                "mfi=${mfiTargetLabel(config.mfiTarget)}",
+                "mfi=${mfiTargetLabel(config.mfiTarget)} " +
+                "videoInCar=${airPlayConfig.videoInCar} dock=${dockPosition.id}",
         )
         Log.i(
             TAG,
@@ -4315,6 +3943,8 @@ class CarPlayHostActivity : ComponentActivity() {
             vehicleStatusProvider = vehicleStatusProvider,
         )
         controller = next
+        // Before start(): the controller reads the gear for it from the start.
+        if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
         val square = airPlayConfig.main.viewAreas?.takeIf { it.size > 1 }?.let {
             CarPlaySquareCanvas(airPlayConfig.main.widthPixels, it, airPlayConfig.main.initialViewArea)
         }
@@ -4639,7 +4269,6 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayBackgroundSession.clear(oldController)
         sessionDisplay = null
         controller = null
-        updateBydCallUi()
         sink = null
         teardownExecutor.execute {
             oldController?.close()
@@ -4662,7 +4291,6 @@ class CarPlayHostActivity : ComponentActivity() {
         if (sessionKeptForSettings) {
             // Release any held touch; the settings page now covers CarPlay.
             controller?.sendTouch(emptyList())
-            updateBydCallUi()
             updateHotspotStatusBlock()
         } else {
             resetHandshakeForSettings()
@@ -4705,7 +4333,6 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayBackgroundSession.clear(oldController)
         sessionDisplay = null
         controller = null
-        updateBydCallUi()
         sink = null
         activeScreenStreamTypes.clear()
         setConnectionStage(getString(R.string.stage_reconnect_settings))
@@ -4785,7 +4412,6 @@ class CarPlayHostActivity : ComponentActivity() {
         gestureOverlay?.visibility = View.VISIBLE
         updateDebugOverlays()
         clearScreenLogs()
-        updateBydCallUi()
         appendLog("$prefix; CarPlay session kept")
     }
 
@@ -4853,7 +4479,6 @@ class CarPlayHostActivity : ComponentActivity() {
         CarPlayBackgroundSession.clear(oldController)
         sessionDisplay = null
         controller = null
-        updateBydCallUi()
         sink = null
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
         val shutdownStartedMs = SystemClock.elapsedRealtime()
@@ -5255,7 +4880,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 mediaMetricsOverlayLayoutParams(root.width, root.height),
             )
         }
-        overlay.visibility = if (!menuOpen && !safeAreaEditorActive) View.VISIBLE else View.GONE
+        overlay.visibility = if (!menuOpen) View.VISIBLE else View.GONE
         updateMediaMetricsOverlayLayout(root.width, root.height)
     }
 

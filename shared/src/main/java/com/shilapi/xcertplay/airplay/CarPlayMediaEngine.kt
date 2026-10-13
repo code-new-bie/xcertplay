@@ -68,6 +68,8 @@ class CarPlayMediaEngine(
     private val audioCaptures = ConcurrentHashMap<StreamKey, AudioPacketCapture>()
     private val pendingIapTunnels = ConcurrentHashMap<AirPlaySession, PendingIapTunnel>()
     @Volatile private var iapTunnelHandler: ((BlockingDuplexByteStream) -> Boolean)? = null
+    private val videoSettingsChannels = java.util.concurrent.ConcurrentHashMap<AirPlaySession, VideoSettingsChannel>()
+    @Volatile private var nextRemoteControlStreamId = FIRST_REMOTE_CONTROL_STREAM_ID
 
     override fun setIapTunnelHandler(handler: ((BlockingDuplexByteStream) -> Boolean)?) {
         iapTunnelHandler = handler
@@ -187,6 +189,7 @@ class CarPlayMediaEngine(
 
     override fun onDataStream(session: AirPlaySession, stream: Map<String, Any?>): Map<String, Any?>? {
         val uuid = (stream["clientTypeUUID"] as? String)?.uppercase() ?: return null
+        if (session.videoInCar) videoDataStream(session, uuid, stream)?.let { return it }
         if (uuid != IAP_DATASTREAM_UUID) return null
         val shared = session.sharedSecret ?: return null
         val seed = unsignedPlistDecimal(stream["seed"]) ?: return null
@@ -302,6 +305,36 @@ class CarPlayMediaEngine(
         return linkedMapOf("streams" to streams)
     }
 
+    /**
+     * Video in car: the settings channel gets its own encrypted socket; the remote control sessions that
+     * carry playback have none (controlType 1), their messages arrive as commands with X-Apple-StreamID.
+     */
+    private fun videoDataStream(session: AirPlaySession, uuid: String, stream: Map<String, Any?>): Map<String, Any?>? {
+        if (uuid in VideoInCar.REMOTE_CONTROL_UUIDS && (stream["controlType"] as? Number)?.toInt() == 1) {
+            val streamId = nextRemoteControlStreamId++
+            session.logTrace("video remote-control stream accepted uuid=$uuid streamID=$streamId")
+            return linkedMapOf("type" to STREAM_TYPE_DATA, "streamID" to streamId)
+        }
+        if (uuid != VideoInCar.SETTINGS_CHANNEL_UUID) return null
+        val shared = session.sharedSecret ?: return null
+        val seed = unsignedPlistDecimal(stream["seed"]) ?: return null
+        fun key(label: String) = AirPlayCrypto.hkdfSha512(
+            shared, "DataStream-Salt$seed".toByteArray(Charsets.US_ASCII), label.toByteArray(Charsets.US_ASCII), 32,
+        )
+        val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY)) { session.logDebug(it) }
+        // Bound like the iAP tunnel: any address over Wi-Fi, the session's own address on USB.
+        val bindAddress = if (session.isWireless) null else session.localAddress
+        val port = channel.listen(bindAddress ?: InetAddress.getByName("::"))
+        videoSettingsChannels.put(session, channel)?.close()
+        session.logTrace("video settings stream listening port=$port")
+        return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to VIDEO_SETTINGS_STREAM_ID, "dataPort" to port)
+            .apply {
+                stream["streamConnectionID"]?.let { connectionId ->
+                    this["streamConnectionID"] = unsignedPlistInteger(connectionId)
+                }
+            }
+    }
+
     override fun onTeardown(session: AirPlaySession, type: Int) {
         if (type == STREAM_TYPE_DATA) clearPendingIapTunnel(session)
         streams.keys.filter { it.session === session && it.type == type }.forEach { logAudioEnd(it, "iPhone TEARDOWN") }
@@ -325,6 +358,7 @@ class CarPlayMediaEngine(
     }
 
     override fun onSessionClosed(session: AirPlaySession) {
+        videoSettingsChannels.remove(session)?.close()
         clearPendingIapTunnel(session)
         streams.keys.filter { it.session === session }.forEach { logAudioEnd(it, "CarPlay session closed") }
         (pendingMicrophone.keys + startedMicrophone)
@@ -446,6 +480,8 @@ class CarPlayMediaEngine(
         const val STREAM_TYPE_DATA = 130
         const val DATASTREAM_OUTPUT_KEY = "DataStream-Output-Encryption-Key"
         const val DATASTREAM_INPUT_KEY = "DataStream-Input-Encryption-Key"
+        private const val VIDEO_SETTINGS_STREAM_ID = 2L
+        private const val FIRST_REMOTE_CONTROL_STREAM_ID = 3L
         const val IAP_DATASTREAM_UUID = "E9459FD0-BCAD-4C45-820F-1E72447EF2F2"
     }
 }

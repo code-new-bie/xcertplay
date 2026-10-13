@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/shilapi/xcertplay/refs/heads/master/asset/xcertplay_small.png" width="180" height="180" alt="xcertplay icon" />
 <h1><strong><font size="6">xcertplay for BYD</font></strong></h1>
   <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
-  <p>A wireless CarPlay receiver for BYD DiLink head units, based on the original <a href="https://github.com/shilapi/xcertplay">xcertplay</a> 1.3.3.</p>
+  <p>A wireless CarPlay receiver for BYD DiLink head units, based on the original <a href="https://github.com/shilapi/xcertplay">xcertplay</a>, followed up to 1.4.0 by picking its fixes (see <a href="docs/UPSTREAM.md">the upstream record</a>, in Chinese).</p>
 </div>
 
 This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Android 10). It adds BYD head-unit features and fixes on top of the original and translates the interface into Simplified Chinese. For the original features, MFi connection options, and build requirements, see [Original project](#original-project) at the end.
@@ -30,22 +30,23 @@ This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Androi
 
 | Feature | Where | Default | Needs ADB |
 | --- | --- | --- | --- |
-| Disconnect iPhone Bluetooth calls during CarPlay (recommended): calls go through CarPlay and the stock phone shows no popup | Connection | On | No |
-| Disconnect iPhone Bluetooth music during CarPlay: music goes through CarPlay instead of Bluetooth | Connection | On | No |
-| Pause head-unit Wi-Fi search during CarPlay (recommended), and restrict Gaode and Baidu network location scans, to reduce stutter | Connection | On | Yes |
+| The iPhone's Bluetooth calls and Bluetooth music are disconnected during CarPlay and restored afterwards: calls and music go only through CarPlay and the stock phone shows no popup (no setting) | Automatic | — | No |
+| Pause head-unit Wi-Fi search during CarPlay (recommended), and restrict Gaode and Baidu network location scans, to reduce stutter | Vehicle → BYD → Wireless | On | Yes |
 | Auto-start on boot | Connection | Off | No |
 | Keep CarPlay connected while the reversing or 360 camera is shown | Automatic | — | Yes |
-| Keep CarPlay connected when the screen turns, with the picture turning too (experimental): connects with a square canvas, 1920×1920 on a Song PLUS; the custom safe area does not apply | Advanced | Off | No |
+| Keep CarPlay connected when the screen turns, with the picture turning too (experimental): connects with a square canvas, 1920×1920 on a Song PLUS | Advanced | On | No |
+| CarPlay dock position: automatic (driver's side in landscape, bottom in portrait), driver's side or bottom | Display | Automatic | No |
+| Video on the car screen while parked (iOS 27, experimental): video sent to CarPlay on the iPhone plays on the car screen in P, and only its audio goes on once you shift out of P; the head unit downloads the video itself, and protected video such as Apple TV+ cannot play; ported from DiPlay | Vehicle → BYD → Video | Off | Yes |
 | Exit CarPlay when the car is switched off and undo the head-unit changes | Automatic | — | Yes |
-| Hide stock call popups (experimental) | Vehicle → BYD → Calls | Off | No |
 | Lower AC fan during CarPlay calls, to level 1–3, restored when the call ends | Vehicle → BYD → Calls | Off | Yes |
 | Song on the instrument cluster; with "car lyrics" on in the music app, the current lyric line | Vehicle → BYD → Instrument cluster | Off | Yes |
 | Vehicle speed and gear for tunnel navigation (also needs "Report location to iPhone") | Vehicle → BYD → Vehicle data | Off | Yes |
 | Electric battery and range for Apple Maps (experimental) | Vehicle → BYD → Vehicle data | Off | Yes |
-| Read the head unit's real Bluetooth address and send it to the iPhone | Vehicle → BYD → Head-unit ADB | Manual | Yes |
 | Report location to iPhone: head-unit positioning with speed and satellite data | Vehicle | Off | No |
 | Separate head-unit audio channels for media, navigation, and calls, with a test tone | Sound | Automatic | No |
 | Steering-wheel buttons control playback; long-press the voice button for Siri | Automatic | — | No |
+| Custom AirPlay icon for the return-to-car button; the default icon (the BYD logo) switches to a dark-grey version in dark mode, chosen by the appearance when CarPlay connects | Advanced | Default icon | No |
+| Manufacturer and model: BYD / Song PLUS by default and rarely worth changing; after a change, forget this car on the iPhone and pair again | Advanced | BYD / Song PLUS | No |
 
 ## What CarPlay changes on the head unit
 

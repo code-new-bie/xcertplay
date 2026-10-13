@@ -24,10 +24,6 @@
     <string name="advanced_mapping_desc">按 CarPlay 音频类型路由 AAOS 音频总线</string>
     <string name="resolution">画面清晰度</string>
     <string name="frame_rate">帧率</string>
-    <string name="physical_basis">尺寸基准</string>
-    <string name="basis_width">按最大宽度</string>
-    <string name="basis_height">按最大高度</string>
-    <string name="physical_length">参考长度</string>
     <string name="hevc_desc">HEVC H.265 视频传输</string>
     <string name="hevc_sw">软件视频解码</string>
     <string name="hevc_sw_desc">仅在硬件解码出现绿屏、花屏时开启</string>
@@ -109,13 +105,7 @@
     <string name="hide_top_desc">隐藏状态栏</string>
     <string name="hide_bottom">隐藏底部栏</string>
     <string name="hide_bottom_desc">隐藏导航栏</string>
-    <string name="safe_area">CarPlay 显示区域</string>
-    <string name="set">设置</string>
-    <string name="reset">重置</string>
-    <string name="draw_outside">在安全区域外绘制</string>
-    <string name="draw_outside_desc">允许 CarPlay 界面显示在安全区域之外</string>
     <string name="cancel">取消</string>
-    <string name="save">保存</string>
 
     <!-- Wi-Fi 会话 -->
     <string name="wifi_session">无线热点方式</string>
@@ -175,7 +165,6 @@
     <string name="preview_detected_max">检测到的最大尺寸：%1$d x %2$d px</string>
     <string name="preview_physical_reference">物理尺寸参考：%1$s = %2$d mm</string>
     <string name="preview_widest_width">最大宽度</string>
-    <string name="preview_longest_height">最大高度</string>
     <string name="preview_physical_size">CarPlay 物理尺寸：%1$s x %2$s mm</string>
     <string name="preview_driving_side">驾驶位：%1$s</string>
     <string name="preview_right">右舵</string>
@@ -188,9 +177,6 @@
     <string name="preview_audio_mapping">音频通道映射：%1$s</string>
     <string name="preview_aaos_buses">AAOS 总线</string>
     <string name="preview_mobile_compatible">手机兼容</string>
-    <string name="safe_area_waiting">安全区域：等待获取窗口尺寸</string>
-    <string name="safe_area_full">安全区域：全屏 %1$d x %2$d</string>
-    <string name="safe_area_custom">安全区域：%1$d x %2$d，位于 (%3$d, %4$d)，窗口 %5$d x %6$d</string>
 
     <!-- 连接阶段 -->
     <string name="stage_preparing">正在准备 CarPlay</string>
@@ -262,10 +248,7 @@
     <string name="hint_vehicle_name">显示在 iPhone 的车辆列表和 CarPlay 返回按钮上。留空则使用车机蓝牙名。</string>
     <string name="hint_bt_settings">配对或管理 iPhone。</string>
     <string name="hint_frame_rate">车机解码吃力时可调低。</string>
-    <string name="hint_physical">图标大小的精细调整。在「显示」中选择大/中/小会覆盖这里的值。</string>
     <string name="group_video">视频</string>
-    <string name="group_display_size">显示尺寸</string>
-    <string name="group_display_area">显示区域</string>
     <string name="group_audio_routing">音频路由</string>
     <string name="group_identity">身份</string>
     <string name="group_other">其他</string>

@@ -21,6 +21,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import com.shilapi.xcertplay.airplay.VideoPlaybackDelivery
+import com.shilapi.xcertplay.airplay.VideoInCar
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayDeviceInfo
@@ -47,7 +49,6 @@ import com.shilapi.xcertplay.mfi.MfiAuthenticationClient
 import com.shilapi.xcertplay.mfi.MfiAuthenticator
 import com.shilapi.xcertplay.mfi.RemoteMfiAuthenticationClient
 import com.shilapi.xcertplay.network.BluetoothHandoff
-import com.shilapi.xcertplay.network.BluetoothHandoffSettings
 import com.shilapi.xcertplay.network.CarPlayBonjour
 import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.network.LocalOnlyHotspotManager
@@ -257,6 +258,14 @@ class CarPlayController(
         }
     }
 
+    /** Video in car; set before [start] to offer it to the iPhone (with AirPlayConfig.videoInCar). */
+    @Volatile var videoListener: CarPlayVideoListener? = null
+    @Volatile private var videoGate: VideoInCarGate? = null
+
+    /** Answers the iPhone on a video in car remote control session; a network write, any thread. */
+    fun sendVideoMessage(streamId: Long, message: Map<String, Any?>): Boolean =
+        activeSession?.sendRemoteControlMessage(streamId, message) ?: false
+
     private val sessionListener = object : AirPlaySessionListener {
         override fun onSessionActive(session: AirPlaySession) {
             // Lock order: this controller, then the module's own lock. The modules started here
@@ -280,17 +289,22 @@ class CarPlayController(
                 session.close()
                 return
             }
+            // The gear may have changed since /info.
+            if (videoListener != null) {
+                val delivery = session.setVideoPlaybackAllowed(VideoInCar.allowed)
+                debugLog("video in car session allowed=${VideoInCar.allowed} delivery=$delivery")
+            }
             debugLog(
                 "AirPlay session active controller=${session.controllerId ?: "unknown"} " +
                     "peer=${session.host} session=${session.diagnosticId} elapsedMs=${SystemClock.elapsedRealtime()} " +
-                    "bluetoothCallsOff=${BluetoothHandoffSettings.callsEnabled(appContext)} " +
-                    "bluetoothAudioOff=${BluetoothHandoffSettings.audioEnabled(appContext)} " +
                     "wifiSearchPause=${WifiScanPauseSettings.enabled(appContext)}",
             )
             uiListener?.onSessionActive(session)
         }
 
         override fun onSessionEnded(session: AirPlaySession) {
+            val wasActive = synchronized(this@CarPlayController) { activeSession === session }
+            if (wasActive) videoListener?.onVideoSessionEnded()
             synchronized(this@CarPlayController) {
                 if (activeSession === session) {
                     BydCallWindTest.cancel("CarPlay session ended")
@@ -332,6 +346,15 @@ class CarPlayController(
                 )
             }.onFailure { debugLog("Car home screen could not open: ${it.javaClass.simpleName}") }
             uiListener?.onHostUiRequested(session)
+        }
+
+        override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {
+            if (activeSession === session) videoListener?.onVideoMessage(streamId, message)
+        }
+
+        override fun onVideoPlaybackUiRequested(session: AirPlaySession) {
+            debugLog("CarPlay requested the car's video player")
+            if (activeSession === session) videoListener?.onVideoUiRequested()
         }
 
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
@@ -410,7 +433,32 @@ class CarPlayController(
         synchronized(this) {
             if (closed) return
         }
-        CarPlayMediaSessionBridge.attach(appContext, this, ::sendMediaRemoteCommand)
+        // While the car's video player is open the steering-wheel keys drive it instead of the iPhone.
+        CarPlayMediaSessionBridge.attach(appContext, this) { command ->
+            if (videoListener?.onMediaKey(command) == true) {
+                debugLog("Media key $command -> car video player")
+                true
+            } else {
+                sendMediaRemoteCommand(command)
+            }
+        }
+        videoListener?.let { listener ->
+            videoGate = VideoInCarGate(
+                readParked = listener::readParked,
+                onChanged = { allowed ->
+                    val delivery = activeSession?.setVideoPlaybackAllowed(allowed)
+                        ?: VideoPlaybackDelivery.QUEUED
+                    debugLog("video in car allowed=$allowed delivery=$delivery")
+                    listener.onVideoAllowedChanged(allowed)
+                },
+                onObserved = { parked ->
+                    debugLog("video in car gear=${when (parked) { true -> "P"; false -> "not-P"; null -> "unknown" }}")
+                },
+            ).also { gate ->
+                gate.start()
+                listener.watchGear { gate.refresh() }
+            }
+        }
         if (config.transport == CarPlayTransport.WIRED) {
             permissionCloseable = iphoneHost.registerPermissionReceiver(::onIphonePermission)
             attachCloseable = iphoneHost.registerAttachReceiver(::onIphoneAttached)
@@ -558,6 +606,10 @@ class CarPlayController(
             closed = true
         }
         closeBestEffort("Wi-Fi performance lock") { wirelessPerformanceLock.release() }
+        closeBestEffort("video in car") {
+            videoListener?.watchGear(null)
+            videoGate?.close()
+        }
         closeBestEffort("call wind test") {
             BydCallWindTest.cancel("controller closed")
             BydCallWindTest.clearCall(this)
@@ -1639,11 +1691,7 @@ class CarPlayController(
         }
         synchronized(this) {
             if (closed) return
-            bluetoothHandoff.hold(
-                iphoneAddress,
-                calls = BluetoothHandoffSettings.callsEnabled(appContext),
-                audio = BluetoothHandoffSettings.audioEnabled(appContext),
-            )
+            bluetoothHandoff.hold(iphoneAddress)
         }
     }
 

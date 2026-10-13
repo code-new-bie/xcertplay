@@ -32,6 +32,10 @@ interface AirPlaySessionListener {
     fun onDeviceInfo(session: AirPlaySession, info: AirPlayDeviceInfo) {}
     fun onHostUiRequested(session: AirPlaySession) {}
     fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {}
+    /** Video in car: a playback message on a remote control session (X-Apple-StreamID). */
+    fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {}
+    /** Video in car: requestUI "videoplayback:", the iPhone asks the car to show its video player. */
+    fun onVideoPlaybackUiRequested(session: AirPlaySession) {}
     fun onDebugLog(message: String) {}
 }
 
@@ -93,6 +97,15 @@ class AirPlaySession(
         get() = (socket.remoteSocketAddress as? InetSocketAddress)?.address
     val controllerId: String? get() = pairVerify.verifiedControllerId
     val sharedSecret: ByteArray? get() = pairVerify.shared?.copyOf()
+    val videoInCar: Boolean get() = config.videoInCar
+    private val videoPlaybackAvailability = VideoPlaybackAvailability { allowed ->
+        sendCommand(
+            linkedMapOf(
+                "type" to "setVideoPlaybackAllowed",
+                "params" to linkedMapOf("videoPlaybackAllowed" to allowed),
+            ),
+        )
+    }
 
     fun syncedNtp(): BigInteger = ntp.syncedNtp()
 
@@ -123,16 +136,36 @@ class AirPlaySession(
         sendCommandLocked(command)
     }
 
-    private fun sendCommandLocked(command: Map<String, Any?>): Boolean {
+    /**
+     * A message on a video in car remote control session, framed like the iPhone's own: POST /command
+     * with X-Apple-StreamID and {params: {data: bplist(message)}}.
+     */
+    fun sendRemoteControlMessage(streamId: Long, message: Map<String, Any?>): Boolean = synchronized(eventWriteLock) {
+        sendCommandLocked(
+            linkedMapOf("params" to linkedMapOf("data" to BplistCodec.encode(message))),
+            "X-Apple-StreamID: $streamId\r\n",
+            // A playing video answers playbackInfo every second; tracing each would flood the log.
+            traced = false,
+        )
+    }
+
+    /**
+     * Video in car: retains whether video may play now and sends the latest value once SETUP has
+     * enabled video and the event channel is ready. An iPhone without the feature gets no command.
+     */
+    internal fun setVideoPlaybackAllowed(allowed: Boolean): VideoPlaybackDelivery =
+        videoPlaybackAvailability.setDesired(allowed)
+
+    private fun sendCommandLocked(command: Map<String, Any?>, extraHeaders: String = "", traced: Boolean = true): Boolean {
         val socket = eventSocket ?: return false
         val cipher = eventCipher ?: return false
         eventCseq++
         val body = BplistCodec.encode(command)
-        val head = "POST /command RTSP/1.0\r\n" +
+        val head = "POST /command RTSP/1.0\r\n" + extraHeaders +
             "Content-Type: $PLIST_CONTENT_TYPE\r\n" +
             "Content-Length: ${body.size}\r\n" +
             "CSeq: $eventCseq\r\n\r\n"
-        trace("airplay event tx headers=$head bodyHex=${body.toHex()}")
+        if (traced) trace("airplay event tx headers=$head bodyHex=${body.toHex()}")
         return try {
             val bytes = cipher.encrypt(head.toByteArray(Charsets.US_ASCII) + body)
             val output = socket.getOutputStream()
@@ -374,6 +407,10 @@ class AirPlaySession(
                     "airplay /info audio=${if (config.wirelessAudio) "wireless PCM+Opus" else "wired PCM"} " +
                         "microphone=${config.microphone}",
                 )
+                debugLog(
+                    "airplay /info videoInCar=${config.videoInCar} " +
+                        "videoPlaybackAllowed=${if (config.videoInCar) VideoInCar.allowed else "not-offered"}",
+                )
                 debugLog("airplay /info displays=${info["displays"]}")
                 RtspMessage.Response(
                     headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
@@ -456,11 +493,10 @@ class AirPlaySession(
         if (dict["keepAliveLowPower"] == true || dict["keepAliveLowPower"] == 1L) {
             response["keepAlivePort"] = openKeepAlive()
         }
-        val features = mutableListOf<String>()
-        if (config.hevc) features.add("hevc")
-        features.add("iAPChannel")
-        features.add("viewAreas")
-        if (config.cluster != null) features.add("altScreen")
+        val features = setupEnabledFeatures(config, dict["features"] as? List<*>)
+        val videoPlaybackEnabled = VideoInCar.FEATURE in features
+        val videoDelivery = videoPlaybackAvailability.setFeatureEnabled(videoPlaybackEnabled)
+        debugLog("airplay video playback negotiated=$videoPlaybackEnabled availability=$videoDelivery")
         response["enabledFeatures"] = features
         return RtspMessage.Response(
             headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
@@ -522,6 +558,15 @@ class AirPlaySession(
         }
         val type = string(body["type"])
         val params = asMap(body["params"]) ?: emptyMap()
+        // Video in car: the iPhone asks for playbackInfo every second while a video plays, so these
+        // are not logged one by one; the car's player logs what matters.
+        val streamId = request.headers["x-apple-streamid"]?.toLongOrNull()
+        val data = params["data"] as? ByteArray
+        if (streamId != null && data != null) {
+            runCatching { asMap(BplistCodec.decode(data)) }.getOrNull()
+                ?.let { listener.onRemoteControlMessage(this, streamId, it) }
+            return RtspMessage.Response(status = 200)
+        }
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
         if (type == "modesChanged") {
             val resources = (params["resources"] as? List<*>)
@@ -537,31 +582,32 @@ class AirPlaySession(
                 debugLog(it)
             }
         }
-        if (type == "requestUI") listener.onHostUiRequested(this)
+        if (type == "requestUI" && string(params["url"]) == VideoInCar.UI_URL) {
+            listener.onVideoPlaybackUiRequested(this)
+        } else if (type == "requestUI") {
+            listener.onHostUiRequested(this)
+        }
         listener.onCommand(this, type, params)
         return RtspMessage.Response(status = 200)
     }
 
     private fun handleTeardown(request: RtspMessage.Request): RtspMessage.Response {
-        var decodedBody: Any? = null
-        val types = try {
-            val decoded = BplistCodec.decode(request.body)
-            decodedBody = decoded
-            val dict = asMap(decoded)
-            (dict?.get("streams") as? List<*>)
-                ?.mapNotNull { entry -> long(asMap(entry)?.get("type"))?.toInt() }
-                ?: emptyList()
+        val decodedBody = try {
+            BplistCodec.decode(request.body)
         } catch (_: Exception) {
-            emptyList()
+            null
         }
+        // Null names no stream: the whole session. Video in car's data streams are left out, so a
+        // TEARDOWN of only those closes nothing here and keeps the iAP tunnel.
+        val types = teardownStreamTypes(decodedBody)
 
         debugLog(
-            "airplay TEARDOWN types=$types activeBefore=$activeStreams " +
+            "airplay TEARDOWN types=${types ?: "all"} activeBefore=$activeStreams " +
                 "body=${request.body.size} bytes payload=$decodedBody",
         )
         trace("airplay TEARDOWN raw${request.body.size}Hex=${request.body.toHex()}")
 
-        if (types.isEmpty()) {
+        if (types == null) {
             activeStreams.toList().forEach { media.onTeardown(this, it) }
             activeStreams.clear()
         } else {
@@ -607,6 +653,8 @@ class AirPlaySession(
     }
 
     private fun teardown() {
+        videoPlaybackAvailability.setEventReady(false)
+        videoPlaybackAvailability.setFeatureEnabled(false)
         ntp.close()
         safeClose(keepAliveSocket)
         keepAliveSocket = null
@@ -650,6 +698,8 @@ class AirPlaySession(
             synchronized(eventWriteLock) {
                 sendPendingNightModeLocked()
             }
+            val videoDelivery = videoPlaybackAvailability.setEventReady(true)
+            if (config.videoInCar) debugLog("airplay video event ready availability=$videoDelivery")
             runEventRead(socket)
         } catch (error: Exception) {
             if (!closed.get()) {
@@ -702,6 +752,7 @@ class AirPlaySession(
             if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
+            videoPlaybackAvailability.setEventReady(false)
             if (eventSocket === socket) eventSocket = null
             eventCipher = null
             safeClose(socket)
@@ -732,6 +783,32 @@ class AirPlaySession(
         const val EVENT_READY_POLL_MILLIS = 25L
         const val NANOS_PER_MILLISECOND = 1_000_000L
     }
+}
+
+/** The features SETUP enables; video in car only when configured and the iPhone [proposed] it. */
+internal fun setupEnabledFeatures(config: AirPlayConfig, proposed: List<*>?): List<String> {
+    val features = mutableListOf<String>()
+    if (config.hevc) features.add("hevc")
+    features.add("iAPChannel")
+    features.add("viewAreas")
+    if (config.cluster != null) features.add("altScreen")
+    if (config.videoInCar && proposed.orEmpty().contains(VideoInCar.FEATURE)) features.add(VideoInCar.FEATURE)
+    return features
+}
+
+/**
+ * The stream types a TEARDOWN body closes, or null when it names none (the whole session). Several
+ * type-130 streams can be open, the iAP tunnel (streamID 1) and video in car's data streams; tearing
+ * down one of the latter must not close the iAP tunnel.
+ */
+internal fun teardownStreamTypes(body: Any?): List<Int>? {
+    val entries = ((body as? Map<*, *>)?.get("streams") as? List<*>).orEmpty().mapNotNull { entry ->
+        val stream = entry as? Map<*, *> ?: return@mapNotNull null
+        val type = (stream["type"] as? Number)?.toInt() ?: return@mapNotNull null
+        type to (stream["streamID"] as? Number)?.toLong()
+    }
+    if (entries.isEmpty()) return null
+    return entries.filterNot { (type, streamId) -> type == 130 && streamId != null && streamId != 1L }.map { it.first }
 }
 
 internal fun safeClose(closeable: Closeable?) {
