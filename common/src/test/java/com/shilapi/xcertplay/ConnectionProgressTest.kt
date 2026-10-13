@@ -44,6 +44,8 @@ class ConnectionProgressTest {
             "Could not establish WIFI_P2P hotspot: Wi-Fi P2P createGroup failed: Wi-Fi P2P is busy" to FailureKind.WIFI_P2P,
             "Wi-Fi P2P could not form a 5 GHz group; try LocalOnlyHotspot" to FailureKind.WIFI_P2P,
             "Could not establish LOCAL_ONLY_HOTSPOT hotspot: LocalOnlyHotspot stopped while starting" to FailureKind.HOTSPOT,
+            "Could not use the existing Wi-Fi: Existing Wi-Fi is not connected or has no usable address" to FailureKind.EXISTING_WIFI,
+            "Could not use the existing Wi-Fi: Configured Wi-Fi does not match the connected network" to FailureKind.EXISTING_WIFI,
             "Bluetooth is not enabled" to FailureKind.BLUETOOTH_OFF,
             "No bonded PHONE_SMART devices found; pair an iPhone and retry" to FailureKind.NO_PAIRED_IPHONE,
             "Could not connect RFCOMM to 14:1A:97:73:B3:F6" to FailureKind.NO_PAIRED_IPHONE,

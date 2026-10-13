@@ -14,6 +14,7 @@ internal enum class FailureKind {
     NO_PAIRED_IPHONE,
     WIFI_P2P,
     HOTSPOT,
+    EXISTING_WIFI,
     USB,
     TIMEOUT,
     OTHER,
@@ -58,6 +59,7 @@ internal object ConnectionProgress {
         val text = message.lowercase()
         return when {
             "wifi_p2p" in text || "wi-fi p2p" in text || "5 ghz group" in text -> FailureKind.WIFI_P2P
+            "existing wi-fi" in text -> FailureKind.EXISTING_WIFI
             "hotspot" in text -> FailureKind.HOTSPOT
             "bluetooth is not enabled" in text || "bluetooth adapter is unavailable" in text ->
                 FailureKind.BLUETOOTH_OFF

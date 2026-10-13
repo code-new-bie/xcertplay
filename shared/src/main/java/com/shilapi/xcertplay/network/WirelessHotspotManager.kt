@@ -8,6 +8,7 @@ enum class WirelessHotspotBackend(val label: String) {
     WIFI_P2P("Wi-Fi P2P"),
     LOCAL_ONLY_HOTSPOT("LocalOnlyHotspot"),
     MANUAL_HOTSPOT("Manual hotspot"),
+    EXISTING_WIFI("Existing Wi-Fi / Same LAN"),
 }
 
 /** The live Wi-Fi credentials and interface details for one wireless CarPlay hotspot. */
@@ -22,6 +23,10 @@ class WirelessHotspotInfo(
     val hostAddress: InetAddress?,
     val bandLabel: String,
     val backend: WirelessHotspotBackend,
+    /** Addresses on the selected interface that discovery must publish; the host address comes first. */
+    val hostAddresses: List<InetAddress> = listOfNotNull(hostAddress),
+    /** The access point's own address, an optional hint for the iPhone in 0x5703. */
+    val accessPointBssid: ByteArray? = null,
 ) {
     override fun toString(): String =
         "WirelessHotspotInfo(backend=${backend.label}, ssid='$ssid', " +

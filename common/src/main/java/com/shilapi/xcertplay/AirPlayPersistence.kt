@@ -47,6 +47,8 @@ object AirPlayPersistence {
     private const val KEY_MICROPHONE_GAIN_PERCENT = "microphone_gain_percent"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
     private const val KEY_WIRELESS_HOTSPOT_MODE = "wireless_hotspot_mode"
+    private const val KEY_EXISTING_WIFI_SSID = "existing_wifi_ssid"
+    private const val KEY_EXISTING_WIFI_PASSPHRASE = "existing_wifi_passphrase"
     private const val KEY_MANUAL_HOTSPOT_SSID = "manual_hotspot_ssid"
     private const val KEY_MANUAL_HOTSPOT_PASSPHRASE = "manual_hotspot_passphrase"
     private const val KEY_MANUAL_HOTSPOT_BAND = "manual_hotspot_band"
@@ -324,6 +326,29 @@ object AirPlayPersistence {
     fun saveWirelessHotspotMode(context: Context, mode: WirelessHotspotMode) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_WIRELESS_HOTSPOT_MODE, mode.name)
+            .apply()
+    }
+
+    /** The router or portable Wi-Fi of the same-LAN mode, kept apart from the car-hotspot settings. */
+    fun loadExistingWifiSsid(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_EXISTING_WIFI_SSID, null)
+            .orEmpty()
+
+    fun saveExistingWifiSsid(context: Context, ssid: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_EXISTING_WIFI_SSID, ssid)
+            .apply()
+    }
+
+    fun loadExistingWifiPassphrase(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_EXISTING_WIFI_PASSPHRASE, null)
+            .orEmpty()
+
+    fun saveExistingWifiPassphrase(context: Context, passphrase: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_EXISTING_WIFI_PASSPHRASE, passphrase)
             .apply()
     }
 

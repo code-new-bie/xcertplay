@@ -262,4 +262,12 @@
     <string name="wifi_p2p_channel_value">信道 %1$d · %2$d MHz</string>
     <string name="hint_wifi_p2p_channel">仅对 Wi-Fi P2P 生效；系统本地热点和手动热点由系统决定信道。自动模式下，若车机已连接 Wi-Fi，会与其使用同一信道。指定的信道会优先尝试，车机拒绝时退回自动；若车机自身 Wi-Fi 在其他信道上，无线网卡需要来回切换，可能反而卡顿。下次连接生效。固定信道还能让重连更快，因为 iPhone 能在同一信道上找到车机。</string>
     <string name="exit_app_running">正在退出…</string>
+    <string name="hotspot_mode_existing_wifi">现有 Wi-Fi / 同一局域网</string>
+    <string name="existing_wifi_ssid">Wi-Fi 名称 (SSID)</string>
+    <string name="existing_wifi_password">Wi-Fi 密码</string>
+    <string name="existing_wifi_hint">先在系统设置里让车机和 iPhone 连上同一个路由器或随身 Wi-Fi，再在这里填写它的准确名称和密码；开放网络密码留空。只支持开放和 WPA2 网络。路由器要允许两台设备互相访问并放行多播 DNS。不会创建热点，车机一直连在这个网络上。</string>
+    <string name="err_wifi_name_required">必须填写 Wi-Fi 名称</string>
+    <string name="err_wifi_name_length">Wi-Fi 名称不能超过 32 个 UTF-8 字节</string>
+    <string name="err_wifi_password_length">Wi-Fi 密码必须留空（开放网络）或为 8-63 个字符</string>
+    <string name="stage_checking_wifi">正在检查 Wi-Fi 连接</string>
 </resources>

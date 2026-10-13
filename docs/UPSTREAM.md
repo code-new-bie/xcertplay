@@ -65,6 +65,7 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 
 | 功能 | DiPlay 上游提交 | 本分支 | 说明 |
 | --- | --- | --- | --- |
+| 现有 Wi-Fi / 同一局域网 | `31b8dfcd`、`0b31720b`、`f6bfea43`、`ebbcb647`、`d729cd89`（2026-10-04 至 10-07，作者 Dlochon，DiPlay 0.2.18 内） | 2026-10-13，未提交 | 移植了 `ExistingWifiManager`、地址选择、0x5703 的 AP BSSID、JmDNS 版 Bonjour、设置页选项和测试。没有移植双栈监听（`AirPlayPortSelector.bindAll`、`CarPlayVpnService` 的多监听）：本分支无线监听本来就绑 `::`。DiPlay 把所有无线模式都改成 JmDNS，本分支只让新模式用，P2P、本地热点、手动热点继续用系统 NSD，因为它们已在宋 PLUS 上验证过 |
 | iOS 27 停车看视频 | DiPlay 0.2.8 的视频提交 | `docs/handoff` 第 24 节 | 见上 |
 
 ## 上游开发分支（还没合入上游 `master`）

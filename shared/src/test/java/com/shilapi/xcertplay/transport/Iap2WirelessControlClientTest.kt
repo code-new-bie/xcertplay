@@ -23,6 +23,38 @@ class Iap2WirelessControlClientTest {
     }
 
     @Test
+    fun accessPointAddressIsAnOptionalHintInTheWifiConfiguration() {
+        val bssid = byteArrayOf(0xaa.toByte(), 0xbb.toByte(), 0xcc.toByte(), 0xdd.toByte(), 0xee.toByte(), 0xff.toByte())
+        val withHint = Iap2WirelessControlClient.accessoryWiFiConfiguration(endpoint(accessPointBssid = bssid))
+        val expected = Iap2WirelessMessages.accessoryWiFiConfiguration(
+            ssid = "LIVI",
+            passphrase = "secret123",
+            channel = 36,
+            securityType = Iap2WirelessSecurity.WPA3_TRANSITION.wireValue,
+            bssid = bssid,
+        )
+
+        assertEquals(expected.encodedFrame().hex(), withHint.encodedFrame().hex())
+        assertTrue(withHint.encodedFrame().hex().length > Iap2WirelessControlClient.accessoryWiFiConfiguration(endpoint()).encodedFrame().hex().length)
+    }
+
+    @Test
+    fun accessPointAddressDoesNotChangeTheStartSessionReply() {
+        val bssid = byteArrayOf(1, 2, 3, 4, 5, 6)
+        assertEquals(
+            Iap2WirelessControlClient.carPlayStartSession(endpoint()).encodedFrame().hex(),
+            Iap2WirelessControlClient.carPlayStartSession(endpoint(accessPointBssid = bssid)).encodedFrame().hex(),
+        )
+    }
+
+    @Test
+    fun accessPointAddressMustHaveSixBytes() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            endpoint(accessPointBssid = byteArrayOf(1, 2, 3))
+        }
+    }
+
+    @Test
     fun carPlayStartSessionMatchesLiviWirelessVector() {
         val frame = Iap2WirelessControlClient.carPlayStartSession(endpoint())
 
@@ -147,7 +179,7 @@ class Iap2WirelessControlClientTest {
         }
     }
 
-    private fun endpoint(): Iap2WirelessCarPlayEndpoint = Iap2WirelessCarPlayEndpoint(
+    private fun endpoint(accessPointBssid: ByteArray? = null): Iap2WirelessCarPlayEndpoint = Iap2WirelessCarPlayEndpoint(
         ssid = "LIVI",
         passphrase = "secret123",
         channel = 36,
@@ -157,6 +189,7 @@ class Iap2WirelessControlClientTest {
         deviceIdentifier = "dev-1",
         publicKey = "aabbcc",
         sourceVersion = "1.0",
+        accessPointBssid = accessPointBssid,
     )
 
     private fun u16Values(bytes: ByteArray): List<Int> =

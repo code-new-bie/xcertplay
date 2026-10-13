@@ -51,12 +51,14 @@ import com.shilapi.xcertplay.mfi.RemoteMfiAuthenticationClient
 import com.shilapi.xcertplay.network.BluetoothHandoff
 import com.shilapi.xcertplay.network.CarPlayBonjour
 import com.shilapi.xcertplay.network.CarPlayVpnService
+import com.shilapi.xcertplay.network.ExistingWifiManager
 import com.shilapi.xcertplay.network.LocalOnlyHotspotManager
 import com.shilapi.xcertplay.network.ManualHotspotManager
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
 import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WifiScanPauseSettings
 import com.shilapi.xcertplay.network.WirelessActivityLog
+import com.shilapi.xcertplay.network.WirelessHotspotBackend
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.network.WirelessHotspotManager
 import com.shilapi.xcertplay.network.WirelessPerformanceLock
@@ -1085,7 +1087,9 @@ class CarPlayController(
                     "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
                     "frequency=${hotspotInfo.frequencyMHz?.toString() ?: "unknown"}MHz",
             )
-            wifiScanPause.pause()
+            // The head unit's own search only runs while it is not joined, and on a shared LAN it is
+            // joined; pausing the connectivity manager would also stop it rejoining a dropped router.
+            if (hotspotInfo.backend != WirelessHotspotBackend.EXISTING_WIFI) wifiScanPause.pause()
             onStatus(
                 CarPlayStatus.HotspotReady(
                     ssid = hotspotInfo.ssid,
@@ -1146,11 +1150,18 @@ class CarPlayController(
                 config = wirelessAirPlayConfig,
                 identity = identity,
                 advertisedHost = hostAddress.hostAddress,
+                // A shared LAN has the iPhone on either address family, so JmDNS publishes on the
+                // chosen interface's every address; the hotspot modes keep the proven system NSD.
+                useInterfaceMdns = hotspotInfo.backend == WirelessHotspotBackend.EXISTING_WIFI,
                 onEvent = { event -> debugLog("wireless bonjour: $event") },
+                additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
             )
             bonjour = bonjourClient
             bonjourClient.start()
-            debugLog("wireless Bonjour services started")
+            debugLog(
+                "wireless Bonjour services started mdns=" +
+                    "${if (bonjourClient.publishedFamilies == "none") "system" else bonjourClient.publishedFamilies}",
+            )
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
                 return
@@ -1174,6 +1185,7 @@ class CarPlayController(
                 deviceIdentifier = deviceIdentifier,
                 publicKey = identity.publicKeyHex,
                 sourceVersion = airPlayConfig.sourceVersion,
+                accessPointBssid = hotspotInfo.accessPointBssid,
             )
             wirelessIdentification = identification
             wirelessAirPlayEndpoint = endpoint
@@ -1722,6 +1734,18 @@ class CarPlayController(
                     )
                 }
             WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> LocalOnlyHotspotManager(appContext, ::debugLog)
+            WirelessHotspotMode.EXISTING_WIFI -> ExistingWifiManager(
+                context = appContext,
+                ssid = config.existingWifiSsid,
+                passphrase = config.existingWifiPassphrase,
+                onDiagnostic = ::debugLog,
+                // The router connection dropped or changed address: the iPhone's endpoint is stale.
+                onNetworkChanged = {
+                    synchronized(lifecycleLock) {
+                        if (!isStaleWirelessRun(generation)) restartWireless()
+                    }
+                },
+            )
             WirelessHotspotMode.MANUAL -> ManualHotspotManager(
                 context = appContext,
                 ssid = config.manualHotspotSsid
@@ -1745,8 +1769,11 @@ class CarPlayController(
             closeBestEffort(hotspotMode.name) { manager.close() }
             if (isStaleWirelessRun(generation)) throw failure
             throw IOException(
-                "Could not establish ${hotspotMode.name} hotspot: " +
-                    (failure.message ?: failure.javaClass.simpleName),
+                (if (hotspotMode == WirelessHotspotMode.EXISTING_WIFI) {
+                    "Could not use the existing Wi-Fi: "
+                } else {
+                    "Could not establish ${hotspotMode.name} hotspot: "
+                }) + (failure.message ?: failure.javaClass.simpleName),
                 failure,
             )
         }

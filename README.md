@@ -33,6 +33,7 @@ This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Androi
 | The iPhone's Bluetooth calls and Bluetooth music are disconnected during CarPlay and restored afterwards: calls and music go only through CarPlay and the stock phone shows no popup (no setting) | Automatic | — | No |
 | Pause head-unit Wi-Fi search during CarPlay (recommended), and restrict Gaode and Baidu network location scans, to reduce stutter | Vehicle → BYD → Wireless | On | Yes |
 | Auto-start on boot | Connection | Off | No |
+| A new connection method, "Existing Wi-Fi / same LAN": the head unit and the iPhone join the same router or portable Wi-Fi and the head unit creates no hotspot, so there is no channel switching to stutter on and the head unit stays online (video in the car needs that); enter that Wi-Fi's name and password in Settings; only open and WPA2 networks work, and the router must let the devices reach each other and pass mDNS; ported from DiPlay | Connection → Connection method | Off | No |
 | Keep CarPlay connected while the reversing or 360 camera is shown | Automatic | — | Yes |
 | Keep CarPlay connected when the screen turns, with the picture turning too (experimental): connects with a square canvas, 1920×1920 on a Song PLUS | Advanced | On | No |
 | CarPlay dock position: automatic (driver's side in landscape, bottom in portrait), driver's side or bottom | Display | Automatic | No |

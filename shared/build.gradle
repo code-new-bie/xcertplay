@@ -38,6 +38,7 @@ dependencies {
     implementation libs.androidx.media3.container
     implementation libs.bouncycastle
     implementation libs.concentus
+    implementation libs.jmdns
     testImplementation libs.junit
     testImplementation 'org.robolectric:robolectric:4.17'
 }

@@ -41,4 +41,5 @@
     <string name="home_notice_scan_failed">暂停车机 Wi-Fi 搜索失败，无线 CarPlay 可能周期性卡顿（约每 10 秒一次），详见日志。</string>
     <string name="home_notice_iphone_hotspot">车机正连着 iPhone 个人热点%1$s，无线 CarPlay 可能卡顿。建议关闭 iPhone 的个人热点。</string>
     <string name="home_notice_hotspot_name">（“%1$s”）</string>
+    <string name="failure_existing_wifi">无法使用现有 Wi-Fi。请确认车机和 iPhone 连在同一个 Wi-Fi，这里填的名称和密码与它一致，并且路由器允许设备互相访问。</string>
 </resources>

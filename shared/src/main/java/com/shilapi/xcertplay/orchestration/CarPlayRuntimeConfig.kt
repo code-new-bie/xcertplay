@@ -21,6 +21,7 @@ enum class WirelessHotspotMode {
     WIFI_P2P,
     LOCAL_ONLY_HOTSPOT,
     MANUAL,
+    EXISTING_WIFI,
 }
 
 enum class ManualHotspotBand {
@@ -65,6 +66,9 @@ class CarPlayRuntimeConfig(
     /** Wi-Fi P2P group channel ([com.shilapi.xcertplay.network.P2pChannelPreference]); 0 is automatic. */
     val wifiP2pChannel: Int = 0,
     val manualHotspotSecurity: ManualHotspotSecurity = ManualHotspotSecurity.WPA2,
+    /** The router or portable Wi-Fi the head unit is already connected to; see [ExistingWifiValidation]. */
+    val existingWifiSsid: String = "",
+    val existingWifiPassphrase: String = "",
     val locationReportingEnabled: Boolean = false,
 ) {
     init {
@@ -115,6 +119,11 @@ class CarPlayRuntimeConfig(
         }
         require(localMfiPrivateKeyUri?.contains('\u0000') != true) {
             "Local MFi private-key URI must not contain U+0000"
+        }
+        if (wirelessHotspotMode == WirelessHotspotMode.EXISTING_WIFI) {
+            require(ExistingWifiValidation.error(existingWifiSsid, existingWifiPassphrase) == null) {
+                "Existing Wi-Fi requires an SSID of at most 32 UTF-8 bytes and an empty (open) or 8-63 character password"
+            }
         }
         if (wirelessHotspotMode == WirelessHotspotMode.MANUAL) {
             val ssid = manualHotspotSsid

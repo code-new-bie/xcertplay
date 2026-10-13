@@ -252,13 +252,17 @@ class Iap2WirelessControlClient(
         private const val MAX_POST_TRANSPORT_WIFI_CONFIGURATION_SENDS = 2
         private const val NANOS_PER_MILLISECOND = 1_000_000L
 
-        /** Reference-compatible 0x5703 body. BSSID is omitted when the platform does not expose it. */
+        /**
+         * Reference-compatible 0x5703 body. The BSSID is only the optional access-point hint of a shared
+         * LAN; it is omitted when the platform does not expose it and never carries the receiver identity.
+         */
         fun accessoryWiFiConfiguration(endpoint: Iap2WirelessCarPlayEndpoint): Iap2Frame =
             Iap2WirelessMessages.accessoryWiFiConfiguration(
                 ssid = endpoint.ssid,
                 passphrase = endpoint.passphrase,
                 channel = endpoint.channel,
                 securityType = endpoint.security.wireValue,
+                bssid = endpoint.accessPointBssid,
             )
 
         /** Wireless 0x4301 reply carrying the receiver address, port and pairing identity. */
@@ -321,10 +325,13 @@ class Iap2WirelessCarPlayEndpoint(
     val deviceIdentifier: String,
     val publicKey: String,
     val sourceVersion: String,
+    accessPointBssid: ByteArray? = null,
 ) {
     val ipAddresses: List<String> = ipAddresses.toList()
+    val accessPointBssid: ByteArray? = accessPointBssid?.copyOf()
 
     init {
+        require(accessPointBssid == null || accessPointBssid.size == 6) { "AP address must contain six bytes" }
         require(ssid.isNotBlank()) { "ssid is required and must not be blank" }
         require('\u0000' !in ssid) { "ssid must not contain U+0000" }
         require('\u0000' !in passphrase) { "passphrase must not contain U+0000" }
