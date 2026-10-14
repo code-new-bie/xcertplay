@@ -84,11 +84,7 @@ object CarPlayBonjourProtocol {
         require('\r' !in unbracketedHost && '\n' !in unbracketedHost) {
             "host must not contain a line break"
         }
-        val receiverDeviceId = deviceId.replace(":", "")
-        require(receiverDeviceId.isNotEmpty()) { "deviceId must contain a hexadecimal value" }
-        require('\r' !in receiverDeviceId && '\n' !in receiverDeviceId) {
-            "deviceId must not contain a line break"
-        }
+        val receiverDeviceId = macAddressToDecimal(deviceId)
         val hostHeader = if (':' in unbracketedHost) {
             "[$unbracketedHost]:$port"
         } else {
@@ -100,6 +96,14 @@ object CarPlayBonjourProtocol {
             "AirPlay-Receiver-Device-ID: $receiverDeviceId\r\n" +
             "Connection: close\r\n" +
             "\r\n"
+    }
+
+    private fun macAddressToDecimal(value: String): String {
+        val hexadecimal = value.replace(":", "")
+        require(hexadecimal.length == 12 && hexadecimal.all { it.digitToIntOrNull(16) != null }) {
+            "deviceId must contain exactly 12 hexadecimal digits"
+        }
+        return hexadecimal.toLong(16).toString()
     }
 }
 
@@ -544,8 +548,10 @@ class CarPlayBonjour(
         }
         try {
             // NSD keeps the one published source address; interface mDNS matches the target's family.
+            // A source of the other family can never be bound (upstream 2b76c3c).
             val source = if (useInterfaceMdns) sourceAddressFor(address) else localAdvertisedAddress
-            source?.let { socket.bind(InetSocketAddress(it, 0)) }
+            source?.takeIf { (it is Inet4Address) == (address is Inet4Address) }
+                ?.let { socket.bind(InetSocketAddress(it, 0)) }
             socket.connect(InetSocketAddress(address, port), CONNECT_TIMEOUT_MILLIS)
             socket.soTimeout = READ_TIMEOUT_MILLIS
             val host = address.hostAddress

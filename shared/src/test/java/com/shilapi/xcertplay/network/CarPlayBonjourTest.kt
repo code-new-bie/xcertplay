@@ -44,7 +44,7 @@ class CarPlayBonjourTest {
             "GET /ctrl-int/1/connect HTTP/1.1\r\n" +
                 "Host: [fe80::1]:7000\r\n" +
                 "User-Agent: AirPlay/366.0\r\n" +
-                "AirPlay-Receiver-Device-ID: 020000000002\r\n" +
+                "AirPlay-Receiver-Device-ID: 2199023255554\r\n" +
                 "Connection: close\r\n" +
                 "\r\n",
             CarPlayBonjourProtocol.connectProbeRequest(
@@ -55,4 +55,35 @@ class CarPlayBonjourTest {
             ),
         )
     }
+
+    @Test
+    fun connectProbeRequestConvertsAlphabeticHexDeviceIdToDecimal() {
+        assertEquals(
+            "244837814094590",
+            receiverDeviceIdHeader("de:ad:be:ef:ca:fe"),
+        )
+    }
+
+    @Test
+    fun connectProbeRequestConvertsMaximumDeviceIdAsUnsigned48BitValue() {
+        assertEquals(
+            "281474976710655",
+            receiverDeviceIdHeader("ff:ff:ff:ff:ff:ff"),
+        )
+    }
+
+    @Test
+    fun connectProbeRequestAcceptsDeviceIdWithoutColons() {
+        assertEquals("244837814094590", receiverDeviceIdHeader("deadbeefcafe"))
+    }
+
+    private fun receiverDeviceIdHeader(deviceId: String): String =
+        CarPlayBonjourProtocol.connectProbeRequest(
+            host = "192.168.1.1",
+            port = 7000,
+            sourceVersion = "366.0",
+            deviceId = deviceId,
+        ).split("\r\n")
+            .single { it.startsWith("AirPlay-Receiver-Device-ID: ") }
+            .substringAfter(": ")
 }
