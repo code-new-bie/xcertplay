@@ -92,6 +92,7 @@ import com.shilapi.xcertplay.transport.LinuxI2cTransport
 import com.shilapi.xcertplay.transport.LockdownCarKitClient
 import com.shilapi.xcertplay.transport.LockdownPairingClient
 import com.shilapi.xcertplay.transport.LockdownPairRecord
+import com.shilapi.xcertplay.transport.LockdownPairRejection
 import com.shilapi.xcertplay.transport.NcmFunctionDiscovery
 import com.shilapi.xcertplay.transport.NcmUsbBridge
 import java.io.Closeable
@@ -1614,8 +1615,12 @@ class CarPlayController(
             val carkit = try {
                 carKitClient.open(pairRecord, config.label)
             } catch (error: Throwable) {
-                if (!isInvalidPairRecord(error)) throw error
-                debugLog("saved Lockdown pair record rejected; pairing again")
+                // A saved record the iPhone no longer accepts is replaced by pairing again, which shows
+                // "Trust This Computer?" on the iPhone. Before, only InvalidPairRecord was recognised,
+                // and InvalidHostID retried the same record forever. A record just made is not retried.
+                val rejection = LockdownPairRejection.of(error)
+                if (savedPairRecord == null || rejection == null) throw error
+                debugLog("saved Lockdown pair record rejected error=$rejection; clearing and pairing again")
                 clearPairRecord()
                 pairRecord = pairNewRecord(pairingClient)
                 carKitClient.open(pairRecord, config.label)
@@ -1687,15 +1692,6 @@ class CarPlayController(
             totalTimeoutMillis = PAIR_TIMEOUT_MILLIS,
             isCancelled = { closed },
         ).pairRecord.also(savePairRecord)
-
-    private fun isInvalidPairRecord(error: Throwable): Boolean {
-        var cause: Throwable? = error
-        while (cause != null) {
-            if (cause.message?.contains("InvalidPairRecord", ignoreCase = true) == true) return true
-            cause = cause.cause
-        }
-        return false
-    }
 
     /**
      * disableBluetooth asks the accessory to drop its classic Bluetooth links to the iPhone, so

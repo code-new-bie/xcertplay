@@ -72,6 +72,7 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | 建热点前先检查蓝牙 | `2d2f0ec8`（PR 679，DiPlay 0.2.19） | 2026-10-14，未提交 | 蓝牙关着时不再先建 P2P 组再拆掉；本分支只移植了检查，没有移植 DiPlay 的提示文字 |
 | 16/24 kHz Opus 的 RTP 时钟 | PR 644、547 | 只加了测量，未改行为 | 本分支注释认为 Opus 时钟固定 48 kHz，DiPlay 实测相反。新日志 `Audio RTP clock … measuredHz= feedbackHz=` 记录实测值，等通话或 Siri 日志再决定 |
 | 检查更新 | 参考 PR 413、488、593（DiPlay 0.2.15–0.2.18）的做法，代码是本分支自己写的 | 2026-10-14，未提交 | 同样每天查一次、首页提示、点了才下载、用 SHA-256 校验。不同：本分支经车机 ADB 执行 `pm install` 安装，不弹系统安装器（DiPlay 遇到过车机安装器打不开）；没有 ADB 时把安装包放进“下载/xcertplay”，用文件管理器装 |
+| 有线连接 InvalidHostID 时重新配对 | DiPlay 当前代码的 `rejectedPairRecordError` | 2026-10-14，未提交 | 本分支原来只认 InvalidPairRecord，InvalidHostID 会一直用旧记录重试；改写为 `LockdownPairRejection` |
 
 ## 上游开发分支（还没合入上游 `master`）
 
