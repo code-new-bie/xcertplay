@@ -67,6 +67,10 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | --- | --- | --- | --- |
 | 现有 Wi-Fi / 同一局域网 | `31b8dfcd`、`0b31720b`、`f6bfea43`、`ebbcb647`、`d729cd89`（2026-10-04 至 10-07，作者 Dlochon，DiPlay 0.2.18 内） | 2026-10-13，未提交 | 移植了 `ExistingWifiManager`、地址选择、0x5703 的 AP BSSID、JmDNS 版 Bonjour、设置页选项和测试。没有移植双栈监听（`AirPlayPortSelector.bindAll`、`CarPlayVpnService` 的多监听）：本分支无线监听本来就绑 `::`。DiPlay 把所有无线模式都改成 JmDNS，本分支只让新模式用，P2P、本地热点、手动热点继续用系统 NSD，因为它们已在宋 PLUS 上验证过 |
 | iOS 27 停车看视频 | DiPlay 0.2.8 的视频提交 | `docs/handoff` 第 24 节 | 见上 |
+| 音频解码器输入：先排空再取，最多等 100 ms | `daffd2de`、`7d974f42`（PR 618、644，DiPlay 0.2.18、0.2.19） | 2026-10-14，未提交 | 原来只等 10 ms 就丢包。DiPlay 0.2.18 用 500 ms 出过问题（issue 649），所以照 0.2.19 的 100 ms。本分支另加了统计：`Audio stats` 的 `decoderDropped`、`decoderStalls`、`decoderStallMaxMs` |
+| GPS 航向未知时留空 | PR 109（DiPlay 0.2.9） | 2026-10-14，未提交 | 原来写 `0.00`，等于说车头朝正北 |
+| 建热点前先检查蓝牙 | `2d2f0ec8`（PR 679，DiPlay 0.2.19） | 2026-10-14，未提交 | 蓝牙关着时不再先建 P2P 组再拆掉；本分支只移植了检查，没有移植 DiPlay 的提示文字 |
+| 16/24 kHz Opus 的 RTP 时钟 | PR 644、547 | 只加了测量，未改行为 | 本分支注释认为 Opus 时钟固定 48 kHz，DiPlay 实测相反。新日志 `Audio RTP clock … measuredHz= feedbackHz=` 记录实测值，等通话或 Siri 日志再决定 |
 
 ## 上游开发分支（还没合入上游 `master`）
 

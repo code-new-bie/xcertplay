@@ -713,6 +713,12 @@ private class AudioRenderer(
     private var firstInputQueuedLogged = false
     private var inputQueued = 0
     private var inputDropped = 0
+    // Feeds that found every decoder input buffer taken, and the longest such wait: per stats line,
+    // and for the whole stream.
+    private var inputStalls = 0
+    private var inputStallMaxNs = 0L
+    private var inputStallMaxTotalNs = 0L
+    private val rtpClock = if (format.codec == AudioCodecKind.OPUS) RtpClockProbe() else null
     private var outputBuffers = 0
     private var firstPcmLogged = false
     private var trackBytesPerFrame = 0
@@ -840,7 +846,7 @@ private class AudioRenderer(
     private fun framesToMs(frames: Long): Long = frames.coerceAtLeast(0L) * 1_000L / format.sampleRate
 
     /** Buffer level, packet counts and underruns; written every [STATS_INTERVAL_MS] and at the end. */
-    private fun reportStats(label: String) {
+    private fun reportStats(label: String, final: Boolean = false) {
         val track = track
         val bufferedMs = if (track != null && trackBytesPerFrame > 0) {
             framesToMs(totalBytesWritten / trackBytesPerFrame - playbackHeadFrames(track))
@@ -848,8 +854,18 @@ private class AudioRenderer(
             0L
         }
         val underruns = track?.let { runCatching { it.underrunCount }.getOrNull() } ?: reportedUnderruns
+        // `dropped` counts packets the queue gave up to bound latency; `decoderDropped` those the
+        // decoder had no input buffer for, which the queue figures cannot show.
+        val decoder = if (format.codec == AudioCodecKind.LPCM) {
+            ""
+        } else {
+            val stallMaxNs = if (final) inputStallMaxTotalNs else inputStallMaxNs
+            " decoderDropped=$inputDropped decoderStalls=$inputStalls decoderStallMaxMs=${stallMaxNs / NANOS_PER_MILLI}"
+        }
         report("$label type=${format.payloadType} audioType=${format.audioType} bufferedMs=$bufferedMs " +
-            "queuedMs=${queue.queuedMs} ${sequence.describe()} dropped=${droppedPackets.get()} underruns=$underruns")
+            "queuedMs=${queue.queuedMs} ${sequence.describe()} dropped=${droppedPackets.get()} underruns=$underruns" +
+            decoder)
+        inputStallMaxNs = 0L
     }
 
     private fun report(message: String) {
@@ -1091,9 +1107,23 @@ private class AudioRenderer(
                     }
                     return
                 }
+                noteRtpClock(rtp, packet.sample)
                 feedCodec(accessUnit, timestampUs)
             }
         }
+    }
+
+    /** Once per Opus stream: the clock its RTP timestamps count at, beside the one /feedback assumes. */
+    private fun noteRtpClock(rtp: ByteArray, sample: Int) {
+        val probe = rtpClock ?: return
+        val sequence = ((rtp[2].toInt() and 0xff) shl 8) or (rtp[3].toInt() and 0xff)
+        val measuredHz = probe.onPacket(
+            sequence = sequence,
+            timestamp = sample.toLong() and UINT32_MASK,
+            durationUs = AudioPacketDuration.opusUs(rtp, RTP_HEADER_BYTES),
+        ) ?: return
+        report("Audio RTP clock type=${format.payloadType} audioType=${format.audioType} codec=${format.codec} " +
+            "measuredHz=$measuredHz feedbackHz=${format.sampleRate}")
     }
 
     private fun sampleTimestampUs(sample: Int): Long =
@@ -1101,15 +1131,27 @@ private class AudioRenderer(
 
     private fun feedCodec(payload: ByteArray, presentationTimeUs: Long) {
         val codec = codec ?: return
-        val index = codec.dequeueInputBuffer(INPUT_TIMEOUT_US)
+        // While a blocking track write holds this thread, decoded output can fill up and the decoder
+        // then keeps every input buffer. Waiting 10 ms once and dropping the packet cut about 21 ms
+        // of music each time (DiPlay #381, every 10-20 s on a DiLink 3.0), so drain and ask again,
+        // but for 100 ms at most: DiPlay's first 500 ms let a slowed decoder fall ever further behind
+        // and the track underran every few seconds (DiPlay #649).
+        val acquired = DecoderInputPump.acquire(
+            running = { running },
+            drain = { drainCodec(codec) },
+            dequeue = { codec.dequeueInputBuffer(INPUT_TIMEOUT_US) },
+            timeoutNs = AUDIO_INPUT_WAIT_NS,
+        )
+        noteInputStall(acquired.stalledNs)
+        val index = acquired.index
         if (index < 0) {
+            // A renderer that is shutting down gives up at once; that is not a dropped packet.
+            if (!running) return
             inputDropped++
             if (inputDropped == 1) {
-                Log.w(
-                    TAG,
-                    "audio decoder input unavailable codec=${format.codec} " +
-                        "queued=$inputQueued dropped=$inputDropped",
-                )
+                report("Audio decoder input unavailable type=${format.payloadType} audioType=${format.audioType} " +
+                    "codec=${format.codec} stalledMs=${acquired.stalledNs / NANOS_PER_MILLI} queued=$inputQueued; " +
+                    "packet dropped")
             }
             return
         }
@@ -1132,6 +1174,13 @@ private class AudioRenderer(
             inputDropped++
         }
         drainCodec(codec)
+    }
+
+    private fun noteInputStall(stalledNs: Long) {
+        if (stalledNs <= 0L) return
+        inputStalls++
+        if (stalledNs > inputStallMaxNs) inputStallMaxNs = stalledNs
+        if (stalledNs > inputStallMaxTotalNs) inputStallMaxTotalNs = stalledNs
     }
 
     private fun drainCodec(codec: MediaCodec) {
@@ -1301,7 +1350,7 @@ private class AudioRenderer(
 
     @Synchronized
     private fun release() {
-        if (sequence.received > 0) runCatching { reportStats("Audio stream final stats") }
+        if (sequence.received > 0) runCatching { reportStats("Audio stream final stats", final = true) }
         val codec = codec
         this.codec = null
         if (codec != null) {
@@ -1344,6 +1393,9 @@ private class AudioRenderer(
         const val OPUS_CODEC_DELAY_NANOS = 6_500_000L
         const val OPUS_SEEK_PRE_ROLL_NANOS = 80_000_000L
         const val INPUT_TIMEOUT_US = 10_000L
+        /** The longest a packet waits for a decoder input buffer before it is dropped. */
+        const val AUDIO_INPUT_WAIT_NS = 100_000_000L
+        const val RTP_HEADER_BYTES = 12
         /** Audio waiting for the output; covers creating the output (about 1.2 s seen on a BYD head unit). */
         const val MAX_QUEUED_MS = 2_000L
         const val MICROS_PER_MILLI = 1_000L

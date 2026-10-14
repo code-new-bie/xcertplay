@@ -1061,6 +1061,11 @@ class CarPlayController(
 
             val mfi = mfiSession?.client
                 ?: throw IOException("MFi coprocessor client is unavailable")
+            // Wireless CarPlay starts over Bluetooth. Find a radio that is off before creating a
+            // hotspot or Wi-Fi Direct group that every retry would only tear down again (DiPlay #679).
+            // The check after the hotspot stays: the radio can be switched off meanwhile.
+            if (bluetoothAdapter == null) throw IOException("Bluetooth adapter is unavailable")
+            if (!bluetoothAdapter.isEnabled) throw IOException("Bluetooth is not enabled")
             val hotspotInfo = startWirelessHotspot(generation, mfi)
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
