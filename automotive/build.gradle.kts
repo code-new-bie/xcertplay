@@ -20,6 +20,9 @@ android {
         targetSdk = 37
         versionCode = 1400
         versionName = releaseVersionName ?: "1.4.0"
+        // The in-app updater checks only release builds, and installs this module's own asset.
+        resValue("bool", "update_release_build", (releaseVersionName != null).toString())
+        resValue("string", "update_asset_prefix", "xcertplay-automotive-")
 
     }
 
@@ -54,6 +57,7 @@ android {
     }
     buildFeatures {
         compose = true
+        resValues = true
     }
 }
 

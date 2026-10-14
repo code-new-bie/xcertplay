@@ -115,6 +115,13 @@ import com.shilapi.xcertplay.orchestration.isManualHotspotChannelCompatible
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import com.shilapi.xcertplay.transport.Iap2LocationProvider
 import com.shilapi.xcertplay.transport.UsbDeviceId
+import com.shilapi.xcertplay.update.ReleaseVersion
+import com.shilapi.xcertplay.update.UpdateCatalog
+import com.shilapi.xcertplay.update.UpdateClient
+import com.shilapi.xcertplay.update.UpdateInstaller
+import com.shilapi.xcertplay.update.UpdateRelease
+import com.shilapi.xcertplay.update.UpdateSchedule
+import com.shilapi.xcertplay.update.UpdateStore
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
@@ -361,6 +368,16 @@ class CarPlayHostActivity : ComponentActivity() {
     private var stageStatusView: TextView? = null
     private var resolutionValueView: TextView? = null
     private var resolutionPreviewView: TextView? = null
+    private val updateStore by lazy { UpdateStore(applicationContext) }
+    private val updateCheck = Runnable { checkForUpdate() }
+    /** Checking or downloading: one update action at a time. */
+    private var updateBusy = false
+    /** What the update is doing now ("Checking", "Downloading 40%"); null when idle. */
+    private var updateProgress: String? = null
+    /** Why the last started install did not take, for the home screen; cleared by a new check. */
+    private var updateInstallFailure: String? = null
+    private var updateStatusView: TextView? = null
+    private var updateActionButton: Button? = null
     private var hotspotStatusView: TextView? = null
     private var manualHotspotFields: View? = null
     private var existingWifiFields: View? = null
@@ -595,6 +612,8 @@ class CarPlayHostActivity : ComponentActivity() {
             "Host started; launch=${CarPlayHostLaunch.source(intent)}; MFI target=${mfiTargetLabel(mfiTarget)}; " +
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
+        reportUpdateOutcome()
+        scheduleUpdateCheck()
         if (bydHeadUnit) {
             // Started before CarPlay so a session that begins in reverse can be sized correctly.
             BydCameraMonitor.log = cameraLog
@@ -805,6 +824,7 @@ class CarPlayHostActivity : ComponentActivity() {
         stopMicrophoneGainTest()
         mainHandler.removeCallbacks(applyDisplaySize)
         mainHandler.removeCallbacks(retryStartAfterCameraWait)
+        mainHandler.removeCallbacks(updateCheck)
         // The reader keeps running for the next screen; it must not call back into this one.
         if (BydCameraMonitor.log === cameraLog) BydCameraMonitor.log = {}
         if (CarPlayVideo.log === videoLog) CarPlayVideo.log = {}
@@ -876,6 +896,7 @@ class CarPlayHostActivity : ComponentActivity() {
             onBluetoothSettings = ::openSystemBluetoothSettings,
             onReconnect = ::reconnectFromHome,
             onUseLocalHotspot = ::useLocalHotspotFromHome,
+            onUpdate = ::confirmUpdate,
         )
         val statusParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -1529,6 +1550,260 @@ class CarPlayHostActivity : ComponentActivity() {
             ) { checked -> turnWithoutReconnect = checked },
             getString(R.string.turn_without_reconnect_note),
         )
+
+        addGroupHeader(page, getString(R.string.group_update))
+        val version = getString(R.string.update_current_version, currentVersionName()) +
+            if (updateReleaseBuild()) "" else getString(R.string.update_local_build)
+        addSetting(page, menuText(version, 16f, MENU_SECONDARY), topMarginDp = 12)
+        if (updateReleaseBuild()) {
+            addSetting(
+                page,
+                settingsSwitchRow(
+                    label = getString(R.string.update_auto_check),
+                    checked = updateStore.autoCheck,
+                    description = getString(R.string.update_auto_check_desc),
+                ) { checked ->
+                    // Not a connection setting: it takes effect at once, without Save.
+                    if (updateStore.autoCheck == checked) return@settingsSwitchRow
+                    updateStore.autoCheck = checked
+                    appendLog("Automatic update check ${if (checked) "enabled" else "disabled"}")
+                    scheduleUpdateCheck(firstDelayMs = 0L)
+                },
+                topMarginDp = 12,
+            )
+        }
+        val status = menuText("", 15f, MENU_SECONDARY).apply { setLineSpacing(0f, 1.2f) }
+        addSetting(page, status, topMarginDp = 12)
+        val action = Button(this).apply { setOnClickListener { onUpdateAction() } }
+        addButton(page, action, getString(R.string.update_note), topMarginDp = 12)
+        updateStatusView = status
+        updateActionButton = action
+        refreshUpdateViews()
+    }
+
+    /** Release builds come from a tag; local builds are not checked automatically. */
+    private fun updateReleaseBuild(): Boolean = resources.getBoolean(R.bool.update_release_build)
+
+    private fun currentVersionName(): String =
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+
+    private fun updateClient(): UpdateClient =
+        UpdateClient(getString(R.string.update_asset_prefix), "xcertplay-byd/${currentVersionName()}")
+
+    /** The release to offer: the last one found, when it is newer than this build. */
+    private fun availableUpdate(): UpdateRelease? {
+        val latest = updateStore.latest ?: return null
+        val current = ReleaseVersion.parse(currentVersionName()) ?: return latest
+        return latest.takeIf { it.version > current }
+    }
+
+    private fun homeUpdateLabel(): String? {
+        val release = availableUpdate() ?: return null
+        return updateProgress.takeIf { updateBusy } ?: getString(R.string.update_home_button, release.tag)
+    }
+
+    /** Checks shortly after start, then whenever the next check is due, while the app runs. */
+    private fun scheduleUpdateCheck(firstDelayMs: Long = UpdateSchedule.FIRST_CHECK_DELAY_MS) {
+        mainHandler.removeCallbacks(updateCheck)
+        if (!updateReleaseBuild() || !updateStore.autoCheck) return
+        val wait = UpdateSchedule.delayUntilDue(
+            System.currentTimeMillis(), updateStore.lastSuccessMs, updateStore.lastAttemptMs,
+        )
+        mainHandler.postDelayed(updateCheck, maxOf(firstDelayMs, wait))
+    }
+
+    private fun checkForUpdate() {
+        if (updateBusy || shuttingDown.get()) return
+        updateBusy = true
+        updateProgress = getString(R.string.update_checking)
+        refreshUpdateViews()
+        val client = updateClient()
+        updateStore.recordAttempt(System.currentTimeMillis())
+        thread(name = "xcertplay-update-check", isDaemon = true) {
+            val result = runCatching { client.fetchLatest() }
+            runOnUiThread {
+                updateBusy = false
+                updateProgress = null
+                val now = System.currentTimeMillis()
+                result.fold(
+                    { release ->
+                        updateStore.recordSuccess(now, release)
+                        updateInstallFailure = null
+                        appendLog(
+                            "Update check: latest=${release?.tag ?: "none"} current=${currentVersionName()} " +
+                                "offered=${availableUpdate()?.tag ?: "no"}",
+                        )
+                    },
+                    { error ->
+                        val reason = error.message ?: error.javaClass.simpleName
+                        updateStore.recordFailure(now, reason)
+                        appendLog("Update check failed: $reason")
+                    },
+                )
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                refreshUpdateViews()
+                renderHome()
+                scheduleUpdateCheck(firstDelayMs = 0L)
+            }
+        }
+    }
+
+    private fun onUpdateAction() {
+        if (updateBusy) return
+        if (availableUpdate() != null) confirmUpdate() else checkForUpdate()
+    }
+
+    private fun confirmUpdate() {
+        if (updateBusy) return
+        val release = availableUpdate() ?: return
+        val sizeMb = ((release.apkSize + 999_999L) / 1_000_000L).toInt()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_confirm_title, release.tag))
+            .setMessage(getString(R.string.update_confirm_message, UpdateCatalog.summary(release.notes), sizeMb))
+            .setPositiveButton(R.string.update_confirm_ok) { _, _ -> downloadAndInstall(release) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Downloads and checks the APK while CarPlay keeps running, then starts the install over the
+     * head unit's ADB and exits the app the normal way, which restores Bluetooth, the Wi-Fi search
+     * and app permissions first. Without ADB the APK stays in Download/xcertplay for a file manager.
+     */
+    private fun downloadAndInstall(release: UpdateRelease) {
+        if (updateBusy) return
+        updateBusy = true
+        updateInstallFailure = null
+        updateProgress = getString(R.string.update_downloading, 0)
+        refreshUpdateViews()
+        renderHome()
+        appendLog("Update: downloading ${release.tag} (${release.apkSize} bytes)")
+        val client = updateClient()
+        thread(name = "xcertplay-update-install", isDaemon = true) {
+            var shownPercent = -1
+            val path = runCatching {
+                UpdateInstaller.download(
+                    applicationContext,
+                    client,
+                    release,
+                    onProgress = { bytes ->
+                        val percent = (bytes * 100 / release.apkSize).toInt()
+                        if (percent != shownPercent) {
+                            shownPercent = percent
+                            runOnUiThread { showUpdateProgress(getString(R.string.update_downloading, percent)) }
+                        }
+                    },
+                    cancelled = { shuttingDown.get() },
+                ).let { apk ->
+                    // Checked in this app's cache: on Android 10 the app cannot open Download by path.
+                    UpdateInstaller.verify(applicationContext, apk, release)
+                    UpdateInstaller.publish(applicationContext, apk, release)
+                }
+            }.getOrElse { error ->
+                runOnUiThread { finishUpdateWithError(error) }
+                return@thread
+            }
+            runOnUiThread { appendLog("Update: ${release.apkName} saved and verified at $path") }
+            val access = runCatching {
+                UpdateInstaller.installOverAdb(applicationContext, path) { updateStore.pendingInstall = release.tag }
+            }.getOrElse { error ->
+                updateStore.pendingInstall = null
+                runOnUiThread { finishUpdateWithError(error) }
+                return@thread
+            }
+            runOnUiThread {
+                if (access == LocalAdb.Access.READY) {
+                    appendLog("Update: installing ${release.tag} over ADB; exiting so it can replace this app")
+                    showUpdateProgress(getString(R.string.update_installing, release.tag))
+                    exitApplication("update install")
+                } else {
+                    updateBusy = false
+                    updateProgress = null
+                    appendLog("Update: ADB $access; ${release.apkName} left in Download/${UpdateInstaller.FOLDER}")
+                    refreshUpdateViews()
+                    renderHome()
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.update_confirm_title, release.tag))
+                        .setMessage(getString(R.string.update_saved_no_adb, adbAccessLabel(access), release.apkName))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun showUpdateProgress(text: String) {
+        updateProgress = text
+        if (isFinishing || isDestroyed) return
+        refreshUpdateViews()
+        renderHome()
+    }
+
+    private fun finishUpdateWithError(error: Throwable) {
+        updateBusy = false
+        updateProgress = null
+        val reason = error.message ?: error.javaClass.simpleName
+        appendLog("Update failed: $reason")
+        if (isFinishing || isDestroyed) return
+        refreshUpdateViews()
+        renderHome()
+        AlertDialog.Builder(this)
+            .setMessage(getString(R.string.update_failed, reason))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun adbAccessLabel(access: LocalAdb.Access): String = getString(
+        when (access) {
+            LocalAdb.Access.NOT_APPROVED -> R.string.byd_adb_not_approved
+            LocalAdb.Access.UNSUPPORTED -> R.string.byd_adb_unsupported
+            else -> R.string.byd_adb_unreachable
+        },
+    )
+
+    /** After an update install: says in the log whether it took, and why not when it did not. */
+    private fun reportUpdateOutcome() {
+        val expected = updateStore.pendingInstall ?: return
+        updateStore.pendingInstall = null
+        val current = currentVersionName()
+        if (current == expected) {
+            appendLog("Update: now running $current")
+            return
+        }
+        thread(name = "xcertplay-update-log", isDaemon = true) {
+            val log = runCatching { UpdateInstaller.readInstallLog(applicationContext) }.getOrNull()
+                ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(" | ")?.take(300)
+            runOnUiThread {
+                appendLog("Update to $expected did not install; still $current; pm: ${log ?: "log unavailable"}")
+                updateInstallFailure = getString(R.string.update_install_failed_notice, expected, log ?: "-")
+                if (!isFinishing && !isDestroyed) renderHome()
+            }
+        }
+    }
+
+    private fun refreshUpdateViews() {
+        val available = availableUpdate()
+        updateStatusView?.text = when {
+            updateProgress != null -> updateProgress
+            available != null -> getString(R.string.update_available, available.tag) + "\n" +
+                UpdateCatalog.summary(available.notes)
+            updateStore.lastError != null && updateStore.lastAttemptMs > updateStore.lastSuccessMs ->
+                getString(R.string.update_check_failed, updateStore.lastError)
+            updateStore.lastSuccessMs > 0 -> getString(
+                R.string.update_up_to_date,
+                SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(updateStore.lastSuccessMs)),
+            )
+            else -> getString(R.string.update_never_checked)
+        }
+        updateActionButton?.apply {
+            isEnabled = !updateBusy
+            text = if (available != null) {
+                getString(R.string.update_install, available.tag)
+            } else {
+                getString(R.string.update_check_now)
+            }
+        }
     }
 
     private fun buildDiagnosticsPage(page: LinearLayout) {
@@ -4801,7 +5076,9 @@ class CarPlayHostActivity : ComponentActivity() {
                 },
                 showUseLocalHotspot = failureKind == FailureKind.WIFI_P2P && wirelessEnabled &&
                     wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P,
-                notices = if (wirelessEnabled) wirelessNotices() else emptyList(),
+                notices = (if (wirelessEnabled) wirelessNotices() else emptyList()) + listOfNotNull(updateInstallFailure),
+                update = homeUpdateLabel(),
+                updateEnabled = !updateBusy,
             ),
         )
     }

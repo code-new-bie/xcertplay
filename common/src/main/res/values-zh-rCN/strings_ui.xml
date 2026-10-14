@@ -270,4 +270,26 @@
     <string name="err_wifi_name_length">Wi-Fi 名称不能超过 32 个 UTF-8 字节</string>
     <string name="err_wifi_password_length">Wi-Fi 密码必须留空（开放网络）或为 8-63 个字符</string>
     <string name="stage_checking_wifi">正在检查 Wi-Fi 连接</string>
+    <string name="group_update">更新</string>
+    <string name="update_current_version">当前版本：%1$s</string>
+    <string name="update_local_build">（本地测试版，不自动检查）</string>
+    <string name="update_auto_check">自动检查更新</string>
+    <string name="update_auto_check_desc">每天在 GitHub 上查一次有没有新版本，有就在首页提示。不点就不会下载或安装。</string>
+    <string name="update_note">安装要用车机 ADB（车辆 → 比亚迪 → 车机 ADB）：会断开 CarPlay、退出应用，装好后应用自动重新打开。没有 ADB 时，安装包存到“下载/xcertplay”，用文件管理器打开安装。</string>
+    <string name="update_check_now">检查更新</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_never_checked">还没有检查过。</string>
+    <string name="update_up_to_date">已是最新版本（%1$s 检查）。</string>
+    <string name="update_check_failed">检查更新失败：%1$s</string>
+    <string name="update_available">有新版本 %1$s：</string>
+    <string name="update_install">下载并安装 %1$s</string>
+    <string name="update_home_button">更新到 %1$s</string>
+    <string name="update_downloading">正在下载更新：%1$d%%</string>
+    <string name="update_installing">正在安装 %1$s：CarPlay 会断开，装好后应用自动重新打开</string>
+    <string name="update_confirm_title">更新到 %1$s</string>
+    <string name="update_confirm_message">%1$s\n\n要下载约 %2$d MB。下载好后会断开 CarPlay、退出应用并安装，装好后应用自动重新打开。设置和 iPhone 配对都会保留。</string>
+    <string name="update_confirm_ok">下载并安装</string>
+    <string name="update_saved_no_adb">无法自动安装：%1$s\n\n安装包已保存为“下载/xcertplay/%2$s”，请用文件管理器打开安装。</string>
+    <string name="update_failed">更新失败：%1$s</string>
+    <string name="update_install_failed_notice">更新到 %1$s 没有装上：%2$s</string>
 </resources>

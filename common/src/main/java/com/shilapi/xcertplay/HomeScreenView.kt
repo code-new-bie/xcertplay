@@ -26,6 +26,9 @@ internal data class HomeModel(
     val showUseLocalHotspot: Boolean,
     /** Conditions that make wireless CarPlay stutter, shown under the connection mode. */
     val notices: List<String> = emptyList(),
+    /** The update button's label; null hides it. */
+    val update: String? = null,
+    val updateEnabled: Boolean = true,
 )
 
 internal data class HomeStep(val title: String, val detail: String?, val state: StepState)
@@ -42,6 +45,7 @@ internal class HomeScreenView(
     onBluetoothSettings: () -> Unit,
     onReconnect: () -> Unit,
     onUseLocalHotspot: () -> Unit,
+    onUpdate: () -> Unit,
 ) : FrameLayout(context) {
     private val density = resources.displayMetrics.density
     private val spinner = ProgressBar(context).apply {
@@ -68,6 +72,7 @@ internal class HomeScreenView(
     private val adviceView = text(17f, Color.WHITE, bold = true)
     private val reasonView = text(13f, SECONDARY)
     private val useLocalHotspotButton = button(context.getString(R.string.home_use_local_hotspot), primary = false)
+    private val updateButton = button("", primary = false).apply { visibility = View.GONE }
 
     init {
         setBackgroundColor(BACKGROUND)
@@ -87,6 +92,8 @@ internal class HomeScreenView(
             addView(hintView, wrap().apply { topMargin = dp(10) })
             addView(modeView, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(18) })
             addView(noticeView, wrap().apply { topMargin = dp(14) })
+            addView(updateButton.apply { setOnClickListener { onUpdate() } },
+                LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(16) })
         }
 
         failureCard.addView(adviceView, wrap())
@@ -144,6 +151,9 @@ internal class HomeScreenView(
         modeView.text = model.modeLabel
         noticeView.text = model.notices.joinToString("\n\n")
         noticeView.visibility = if (model.notices.isEmpty()) View.GONE else View.VISIBLE
+        updateButton.text = model.update.orEmpty()
+        updateButton.isEnabled = model.updateEnabled
+        updateButton.visibility = if (model.update == null) View.GONE else View.VISIBLE
         spinner.visibility = if (model.failure == null) View.VISIBLE else View.INVISIBLE
         stepsView.removeAllViews()
         model.steps.forEachIndexed { index, step ->

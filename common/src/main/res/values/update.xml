@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A build from a release tag; the app modules set it from -PreleaseVersionName. -->
+    <bool name="update_release_build">false</bool>
+    <!-- The release asset this build installs: xcertplay-<flavour>-<tag>.apk. -->
+    <string name="update_asset_prefix" translatable="false">xcertplay-mobile-</string>
+</resources>
