@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.hud
 
 import android.content.Context
+import android.content.pm.PackageManager
 import java.io.Closeable
 
 /**
@@ -12,6 +13,7 @@ import java.io.Closeable
 object BydGearSource {
     private const val GEARBOX = "android.hardware.bydauto.gearbox.BYDAutoGearboxDevice"
     private const val READ_GEAR = "getGearboxAutoModeType"
+    private const val PERMISSION = "android.permission.BYDAUTO_GEARBOX_COMMON"
 
     /** Where the source is logged; the current host screen sets it. */
     @Volatile
@@ -22,6 +24,7 @@ object BydGearSource {
     @Volatile private var device: BydSdkDevice? = null
     private var events: Closeable? = null
     private var source: String? = null
+    private var readFailure: String? = null
 
     /** Opens the SDK's gearbox device once; later calls do nothing. */
     @Synchronized
@@ -31,10 +34,17 @@ object BydGearSource {
         BydSdkDevice.open(context, GEARBOX)
             .onSuccess { opened ->
                 device = opened
-                events = opened.listen { onChange() }
+                val listening = opened.tryListen { onChange() }
+                events = listening.getOrNull()
+                // Why a read or a listener fails is the point of this line: the refusal of the car's
+                // service, a missing method and a permission that was not granted look alike otherwise.
+                val gear = opened.tryReadInt(READ_GEAR)
+                    .fold({ it.toString() }, { "unreadable (${BydSdkDevice.describe(it)})" })
+                val changes = listening.fold({ "registered" }, { "unavailable (${BydSdkDevice.describe(it)})" })
+                val granted = context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
                 report(
-                    "Gear: BYD SDK opened in the app, gear=${opened.readInt(READ_GEAR) ?: "unreadable"}, " +
-                        "change events ${if (events != null) "registered" else "unavailable"}",
+                    "Gear: BYD SDK opened in the app, gear=$gear, change events $changes, " +
+                        "permission ${if (granted) "granted" else "not granted"}",
                 )
             }
             .onFailure { report("Gear: BYD SDK unavailable in the app (${it.javaClass.simpleName}: ${it.message}); using ADB") }
@@ -47,7 +57,7 @@ object BydGearSource {
 
     /** True in P, false in another gear, null when neither the SDK nor ADB gives a gear. */
     fun parked(): Boolean? {
-        val direct = device?.readInt(READ_GEAR)?.let(BydGear::parked)
+        val direct = device?.let(::readParked)
         val parked = direct ?: BydCameraMonitor.parked()
         noteSource(
             when {
@@ -57,6 +67,29 @@ object BydGearSource {
             },
         )
         return parked
+    }
+
+    /** The SDK's reading as parked or not; null, and why in the log, when it gives no gear. */
+    private fun readParked(device: BydSdkDevice): Boolean? {
+        val read = device.tryReadInt(READ_GEAR)
+        val value = read.getOrNull()
+        val parked = value?.let(BydGear::parked)
+        noteReadFailure(
+            when {
+                parked != null -> null
+                value != null -> "returned $value, which is not a gear"
+                else -> BydSdkDevice.describe(checkNotNull(read.exceptionOrNull()))
+            },
+        )
+        return parked
+    }
+
+    /** Logs a new reason the SDK gives no gear, once; a reading that works clears it. */
+    @Synchronized
+    private fun noteReadFailure(reason: String?) {
+        if (reason == readFailure) return
+        readFailure = reason
+        if (reason != null) report("Gear: BYD SDK gives no gear ($reason)")
     }
 
     @Synchronized
