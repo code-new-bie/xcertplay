@@ -33,6 +33,8 @@ internal object UpdateInstaller {
     /** The folder the log export uses too. */
     const val FOLDER = "xcertplay"
     const val LOG_PATH = "/data/local/tmp/xcertplay-update.log"
+    /** pm installs this copy: Android 10's system_server may not open an APK in shared storage. */
+    const val STAGED_APK = "/data/local/tmp/xcertplay-update.apk"
     /** How long the install waits for this app to finish exiting before it replaces it anyway. */
     const val EXIT_WAIT_SECONDS = 30
     private const val CACHE_FOLDER = "update"
@@ -43,10 +45,13 @@ internal object UpdateInstaller {
     const val BYD_FILE_MANAGER = "com.byd.filemanager"
     private const val APK_MIME = "application/vnd.android.package-archive"
     private const val OLD_APKS = "xcertplay-%.apk"
+    /** How long the app waits for the script's first line before it gives up on the install. */
+    private const val START_CONFIRM_MILLIS = 3_000L
 
     private val SAFE_PACKAGE = Regex("^[A-Za-z0-9_.]+$")
     private val SAFE_COMPONENT = Regex("^[A-Za-z0-9_.]+/[A-Za-z0-9_.]+$")
     private val SAFE_PATH = Regex("^/[A-Za-z0-9_./ ()+-]+$")
+    private val SAFE_TOKEN = Regex("^[0-9]+$")
 
     /** Downloads [release] into this app's cache and checks its SHA-256; returns the file. */
     fun download(
@@ -139,44 +144,70 @@ internal object UpdateInstaller {
         context.packageManager.getLaunchIntentForPackage(BYD_FILE_MANAGER)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     /**
-     * The shell command that installs [apkPath] and opens the app again. It runs detached, so it
-     * survives the end of this app's ADB connection, and waits until this app has exited (Bluetooth,
-     * Wi-Fi search and app permissions restored) before `pm install` replaces it.
+     * The shell command that installs [apkPath] and opens the app again, writing each step to
+     * [LOG_PATH] (see [UpdateInstallRecord]). It waits until this app has exited (Bluetooth, Wi-Fi
+     * search and app permissions restored) before `pm install` replaces it; after 30 s it installs
+     * anyway.
+     *
+     * Two things kept it from ever installing (1.4.0-byd.12 to 16), both seen on an Android 10
+     * emulator: adbd hangs up the job when its shell session ends, and `nohup` set its own SIGHUP
+     * handling too late, so the script never ran; the shell now ignores SIGHUP before it starts the
+     * job. And system_server may not open an APK in shared storage ("Unable to open file …
+     * Consider using a file under /data/local/tmp/"), so pm installs a copy there.
      */
-    fun installCommand(packageName: String, apkPath: String, launchComponent: String): String {
+    fun installCommand(packageName: String, apkPath: String, launchComponent: String, token: String): String {
         require(SAFE_PACKAGE.matches(packageName)) { "Unexpected package name: $packageName" }
         require(SAFE_PATH.matches(apkPath)) { "Unexpected APK path: $apkPath" }
         require(SAFE_COMPONENT.matches(launchComponent)) { "Unexpected launch component: $launchComponent" }
-        val script = "i=0; while [ \$i -lt $EXIT_WAIT_SECONDS ] && pidof $packageName >/dev/null; " +
+        require(SAFE_TOKEN.matches(token)) { "Unexpected token: $token" }
+        val mark = UpdateInstallRecord.MARK
+        val script = "echo \"$mark started $token \$(date +%H:%M:%S)\" >$LOG_PATH; " +
+            "i=0; while [ \$i -lt $EXIT_WAIT_SECONDS ] && pidof $packageName >/dev/null; " +
             "do sleep 1; i=\$((i+1)); done; " +
-            "pm install -r -t \"$apkPath\" >$LOG_PATH 2>&1; " +
-            "am start -n $launchComponent >>$LOG_PATH 2>&1"
-        return "nohup sh -c '$script' >/dev/null 2>&1 &"
+            "echo \"$mark app exited after \${i}s\" >>$LOG_PATH; " +
+            "if cp \"$apkPath\" $STAGED_APK; then echo \"$mark installing\" >>$LOG_PATH; " +
+            "pm install -r -t $STAGED_APK >>$LOG_PATH 2>&1; echo \"$mark pm exit=\$?\" >>$LOG_PATH; " +
+            "else echo \"$mark copy failed\" >>$LOG_PATH; fi; rm -f $STAGED_APK; " +
+            "am start -n $launchComponent >>$LOG_PATH 2>&1; " +
+            "echo \"$mark done \$(date +%H:%M:%S)\" >>$LOG_PATH"
+        return "trap '' HUP; sh -c '$script' </dev/null >/dev/null 2>&1 &"
     }
 
+    /** How starting the install over ADB went; nothing was started unless [started]. */
+    class AdbInstall(val access: LocalAdb.Access, val started: Boolean)
+
     /**
-     * Starts the install over the head unit's ADB. Returns the ADB access state; anything but
-     * READY means nothing was started. [beforeInstall] runs just before the command is sent.
+     * Starts the install over the head unit's ADB and waits until the script has written its first
+     * line, so the app exits only when something will replace it. [beforeInstall] runs just before
+     * the command is sent.
      */
-    fun installOverAdb(context: Context, apkPath: String, beforeInstall: () -> Unit): LocalAdb.Access {
+    fun installOverAdb(context: Context, apkPath: String, beforeInstall: () -> Unit): AdbInstall {
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?.component?.flattenToShortString()
             ?: throw IOException("This app has no launcher activity to open after the update")
-        val command = installCommand(context.packageName, apkPath, launch)
+        val token = System.currentTimeMillis().toString()
+        val command = installCommand(context.packageName, apkPath, launch, token)
         LocalAdb(AdbKeys.load(context)).use { adb ->
             val access = adb.connect(mayAsk = false)
-            if (access != LocalAdb.Access.READY) return access
+            if (access != LocalAdb.Access.READY) return AdbInstall(access, started = false)
             beforeInstall()
             adb.shell(command) ?: throw IOException("The head unit's ADB did not run the install command")
-            return access
+            val deadline = System.nanoTime() + START_CONFIRM_MILLIS * 1_000_000
+            while (true) {
+                if (UpdateInstallRecord.parse(adb.shell("cat $LOG_PATH 2>/dev/null")).token == token) {
+                    return AdbInstall(access, started = true)
+                }
+                if (System.nanoTime() > deadline) return AdbInstall(access, started = false)
+                Thread.sleep(200)
+            }
         }
     }
 
-    /** What `pm install` printed for the last update, read over ADB; null when it cannot be read. */
-    fun readInstallLog(context: Context): String? =
+    /** The install script's record of the last update, read over ADB; null when it cannot be read. */
+    fun readInstallRecord(context: Context): UpdateInstallRecord? =
         LocalAdb(AdbKeys.load(context)).use { adb ->
             if (adb.connect(mayAsk = false) != LocalAdb.Access.READY) return null
-            adb.shell("cat $LOG_PATH 2>/dev/null")
+            adb.shell("cat $LOG_PATH 2>/dev/null")?.let(UpdateInstallRecord::parse)
         }
 
     @RequiresApi(Build.VERSION_CODES.Q)

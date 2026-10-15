@@ -61,7 +61,8 @@ internal object UpdateCatalog {
     /** The "new in this release" part of the notes, short enough for a settings page. */
     fun summary(notes: String, maxLines: Int = 8): String {
         val lines = notes.replace("\r\n", "\n").lines()
-        val start = lines.indexOfFirst { it.startsWith("### 本版新增") || it.startsWith("### New in") }
+        // Notes have used "本版新增", "本版修复" and "本版改动（相比 …）" for this section.
+        val start = lines.indexOfFirst { it.startsWith("### 本版") || it.startsWith("### New in") }
         val section = if (start < 0) lines else lines.drop(start + 1).takeWhile { !it.startsWith("### ") }
         return section.map { it.trim() }
             .filter { it.isNotEmpty() }

@@ -294,6 +294,12 @@
     <string name="update_open_file_manager">打开文件管理器</string>
     <string name="update_try_installer">试试系统安装</string>
     <string name="update_installer_unavailable">系统安装界面打不开：%1$s</string>
+    <string name="update_installing_notice">正在安装 %1$s，请稍等：装好后应用会自动重新打开。</string>
+    <string name="update_adb_install_not_started">经车机 ADB 的安装没能启动</string>
+    <string name="update_record_unreadable">读不到安装记录（车机 ADB 不可用）</string>
+    <string name="update_record_missing">安装命令没有执行（没有安装记录）</string>
+    <string name="update_record_still_running">3 分钟后仍在安装</string>
+    <string name="update_record_installed_old">系统说安装成功，但运行的仍是 %1$s</string>
     <string name="update_failed">更新失败：%1$s</string>
     <string name="update_install_failed_notice">更新到 %1$s 没有装上：%2$s</string>
 </resources>

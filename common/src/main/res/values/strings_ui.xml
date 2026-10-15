@@ -294,6 +294,12 @@
     <string name="update_open_file_manager">Open file manager</string>
     <string name="update_try_installer">Try the system installer</string>
     <string name="update_installer_unavailable">The system installer did not open: %1$s</string>
+    <string name="update_installing_notice">Installing %1$s: please wait; the app opens again by itself when it is done.</string>
+    <string name="update_adb_install_not_started">the install over the head unit\'s ADB did not start</string>
+    <string name="update_record_unreadable">its record cannot be read (the head unit\'s ADB is not available)</string>
+    <string name="update_record_missing">the install command did not run (no record)</string>
+    <string name="update_record_still_running">it was still installing after 3 minutes</string>
+    <string name="update_record_installed_old">pm reported success, but %1$s is still running</string>
     <string name="update_failed">The update failed: %1$s</string>
     <string name="update_install_failed_notice">The update to %1$s did not install: %2$s</string>
 </resources>

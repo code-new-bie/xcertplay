@@ -69,5 +69,9 @@ class UpdateCatalogTest {
         val notes = UpdateCatalog.parse(release(), "xcertplay-mobile-")!!.notes
         assertEquals("音乐：修复\nGPS", UpdateCatalog.summary(notes))
         assertEquals("a\nb", UpdateCatalog.summary("- a\n- b\n- c", maxLines = 2))
+        // Later notes call it "本版修复" or "本版改动（相比 …）".
+        val later = "## 1.4.0-byd.16\n### 安装\n- 安装说明\n### 本版改动（相比 1.4.0-byd.15）\n- **有线**\n  - 改了读法\n" +
+            "### 相比原版的改动\n- 别的"
+        assertEquals("有线\n改了读法", UpdateCatalog.summary(later))
     }
 }

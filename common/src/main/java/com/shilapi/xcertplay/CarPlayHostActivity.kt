@@ -118,6 +118,7 @@ import com.shilapi.xcertplay.transport.UsbDeviceId
 import com.shilapi.xcertplay.update.ReleaseVersion
 import com.shilapi.xcertplay.update.UpdateCatalog
 import com.shilapi.xcertplay.update.UpdateClient
+import com.shilapi.xcertplay.update.UpdateInstallRecord
 import com.shilapi.xcertplay.update.UpdateInstaller
 import com.shilapi.xcertplay.update.UpdateRelease
 import com.shilapi.xcertplay.update.UpdateSchedule
@@ -1705,17 +1706,17 @@ class CarPlayHostActivity : ComponentActivity() {
                 return@thread
             }
             runOnUiThread { appendLog("Update: ${release.apkName} saved and verified at $path") }
-            val access = runCatching {
+            val install = runCatching {
                 UpdateInstaller.installOverAdb(applicationContext, path) { updateStore.pendingInstall = release.tag }
             }.getOrElse { error ->
                 updateStore.pendingInstall = null
                 runOnUiThread { finishUpdateWithError(error) }
                 return@thread
             }
-            // pm installs the Download copy; the cached one is kept only for the system installer.
-            if (access == LocalAdb.Access.READY) apk.delete()
+            // pm installs a copy of the Download file; the cached one is kept only for the system installer.
+            if (install.started) apk.delete() else updateStore.pendingInstall = null
             runOnUiThread {
-                if (access == LocalAdb.Access.READY) {
+                if (install.started) {
                     appendLog("Update: installing ${release.tag} over ADB; exiting so it can replace this app")
                     showUpdateProgress(getString(R.string.update_installing, release.tag))
                     exitApplication("update install")
@@ -1724,7 +1725,13 @@ class CarPlayHostActivity : ComponentActivity() {
                     updateProgress = null
                     refreshUpdateViews()
                     renderHome()
-                    installWithoutAdb(release, apk, access)
+                    val reason = if (install.access == LocalAdb.Access.READY) {
+                        appendLog("Update: the install over ADB did not start; no record from the install script")
+                        getString(R.string.update_adb_install_not_started)
+                    } else {
+                        adbAccessLabel(install.access)
+                    }
+                    installWithoutAdb(release, apk, reason)
                 }
             }
         }
@@ -1736,10 +1743,10 @@ class CarPlayHostActivity : ComponentActivity() {
      * cannot allow that ("not supported"), so there the driver chooses BYD's file manager, a system
      * app the installer does not question, or tries the installer all the same.
      */
-    private fun installWithoutAdb(release: UpdateRelease, apk: File, access: LocalAdb.Access) {
+    private fun installWithoutAdb(release: UpdateRelease, apk: File, reason: String) {
         val allowed = UpdateInstaller.mayOpenInstaller(applicationContext)
         appendLog(
-            "Update: ADB $access; may open the system installer: $allowed; " +
+            "Update: not over ADB ($reason); may open the system installer: $allowed; " +
                 "${release.apkName} also saved in Download/${UpdateInstaller.FOLDER}",
         )
         if (isFinishing || isDestroyed) return
@@ -1752,7 +1759,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val message = if (fileManager != null) R.string.update_saved_open_files else R.string.update_saved_no_adb
         val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.update_confirm_title, release.tag))
-            .setMessage(getString(message, adbAccessLabel(access), release.apkName))
+            .setMessage(getString(message, reason, release.apkName))
             // Stays in CarPlay: on BYD the installer is likely to refuse.
             .setNeutralButton(R.string.update_try_installer) { _, _ -> openSystemInstaller(release, apk) }
             .setNegativeButton(android.R.string.cancel, null)
@@ -1820,22 +1827,47 @@ class CarPlayHostActivity : ComponentActivity() {
         },
     )
 
-    /** After an update install: says in the log whether it took, and why not when it did not. */
-    private fun reportUpdateOutcome() {
+    /**
+     * After an update install: says whether it took, from the install script's record. Opened again
+     * while the script is still installing, the app says so and looks again every 10 s; pm ends
+     * this app when it replaces it, and the script opens the new version.
+     */
+    private fun reportUpdateOutcome(attempt: Int = 0) {
         val expected = updateStore.pendingInstall ?: return
-        updateStore.pendingInstall = null
         val current = currentVersionName()
         if (current == expected) {
+            updateStore.pendingInstall = null
+            updateInstallFailure = null
             appendLog("Update: now running $current")
             return
         }
         thread(name = "xcertplay-update-log", isDaemon = true) {
-            val log = runCatching { UpdateInstaller.readInstallLog(applicationContext) }.getOrNull()
-                ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(" | ")?.take(300)
+            val record = runCatching { UpdateInstaller.readInstallRecord(applicationContext) }.getOrNull()
             runOnUiThread {
-                appendLog("Update to $expected did not install; still $current; pm: ${log ?: "log unavailable"}")
-                updateInstallFailure = getString(R.string.update_install_failed_notice, expected, log ?: "-")
-                if (!isFinishing && !isDestroyed) renderHome()
+                if (isFinishing || isDestroyed || updateStore.pendingInstall != expected) return@runOnUiThread
+                val state = record?.state
+                if (state == UpdateInstallRecord.State.RUNNING && attempt < INSTALL_RECHECKS) {
+                    if (attempt == 0) appendLog("Update: $expected is still installing; ${record.summary()}")
+                    updateInstallFailure = getString(R.string.update_installing_notice, expected)
+                    renderHome()
+                    mainHandler.postDelayed({ reportUpdateOutcome(attempt + 1) }, INSTALL_RECHECK_MILLIS)
+                    return@runOnUiThread
+                }
+                updateStore.pendingInstall = null
+                val reason = when (state) {
+                    null -> getString(R.string.update_record_unreadable)
+                    UpdateInstallRecord.State.NOT_STARTED -> getString(R.string.update_record_missing)
+                    UpdateInstallRecord.State.RUNNING -> getString(R.string.update_record_still_running)
+                    UpdateInstallRecord.State.FAILED -> record.failure()
+                    // pm said Success, yet this is still the old version.
+                    UpdateInstallRecord.State.INSTALLED -> getString(R.string.update_record_installed_old, current)
+                }
+                appendLog(
+                    "Update to $expected did not install; still $current; reason: $reason; " +
+                        "record: ${record?.summary() ?: "unreadable"}",
+                )
+                updateInstallFailure = getString(R.string.update_install_failed_notice, expected, reason)
+                renderHome()
             }
         }
     }
@@ -5470,6 +5502,9 @@ class CarPlayHostActivity : ComponentActivity() {
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
+        /** An install opened again early is looked at again this often, for up to 3 minutes. */
+        const val INSTALL_RECHECK_MILLIS = 10_000L
+        const val INSTALL_RECHECKS = 18
         const val EXIT_CLOSE_TIMEOUT_MILLIS = 8_000L
         const val EXIT_RESTORE_TIMEOUT_MILLIS = 5_000L
         const val REASON_VEHICLE_OFF = "vehicle switched off"
