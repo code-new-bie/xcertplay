@@ -95,6 +95,10 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | iOS 27 有线：上一个回复的尾巴后面跟着 VERSION 回复 | `19649861`（DiPlay 0.2.20，issue 100） | 2026-10-15，未提交 | 原样移植，连同 3 个测试 |
 | 车机音频时钟和 iPhone 不一致 | `dfd7c3d6`（DiPlay 0.2.20，issue 610） | 只加了测量，未改行为 | Audio stats 行新增 `sendHz playHz clockDiffPct clockWindowSec`（`AudioClockDrift`）。DiPlay 的做法是微调播放速度（`MediaClockTrim`），等实测宋 PLUS 有偏差再决定 |
 | 没有 ADB 时用系统安装器装更新 | `aa7cd204`（PR 593，DiPlay 0.2.18） | 2026-10-15，未提交 | 照 DiPlay：`FileProvider` 交给系统安装器，能装 APK 的应用不止一个时让用户选。不同：本分支仍先用车机 ADB；只在系统已允许本应用安装时直接打开（DiPlay 不预先检查），否则让用户选比亚迪文件管理器或照样试系统安装器；直接打开前先正常退出 CarPlay |
+| 有线：USB 网卡（NCM）读数据改为异步请求，状态通知改为短查询 | DiPlay 最早公开的代码里就有（注释：`bulkTransfer` 等待时锁住数组，挡住 ART 垃圾回收，画面和声音约卡 0.8 秒） | 2026-10-15，未提交 | 本分支的 `NcmUsbBridge` 是原版未改过的，读数据和状态通知都用 `bulkTransfer`，状态线程每次等 1 秒；整份换成 DiPlay 的 `NcmUsbBridge`，加 `UsbRequestQueue`、`UsbReadQueuePolicy` |
+| 有线：NCM 补位字节、按端点包长、坏数据块跳到下一个、接口设置重试 | `515bc9ec`、`5a5b5328`（DiPlay issue 565、558、518） | 2026-10-15，未提交 | 随上一行整份带上；跳过时会话日志有 `NCM resynchronized after …` |
+| 有线：iPhone 接收第一帧前 NCM 写入只等 20 ms | `817ff3fa` 的一部分（DiPlay issue 634、335、301） | 2026-10-15，未提交 | 原来每次等 2 秒，拖慢 iAP2 握手；会话日志有 `NCM bulk-out ready after N dropped frames` |
+| 有线：USBMUX 读在超时那一刻完成时不断线 | `1c93dc9b`（DiPlay issue 610、301） | 2026-10-15，未提交 | 只换了 `IphoneUsbHost.kt` 里的 `Iap2UsbSession`；DiPlay 在这个文件里的驱动分离、USB 配置切换等没有拿 |
 
 DiPlay 已查看到 `969f8714`（0.2.20，2026-10-15）。
 
