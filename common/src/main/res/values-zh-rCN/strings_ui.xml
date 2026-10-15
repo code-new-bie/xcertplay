@@ -275,7 +275,7 @@
     <string name="update_local_build">（本地测试版，不自动检查）</string>
     <string name="update_auto_check">自动检查更新</string>
     <string name="update_auto_check_desc">每天在 GitHub 上查一次有没有新版本，有就在首页提示。不点就不会下载或安装。</string>
-    <string name="update_note">安装要用车机 ADB（车辆 → 比亚迪 → 车机 ADB）：会断开 CarPlay、退出应用，装好后应用自动重新打开。没有 ADB 时，安装包存到“下载/xcertplay”，用文件管理器打开安装。</string>
+    <string name="update_note">有车机 ADB（车辆 → 比亚迪 → 车机 ADB）时直接安装：会断开 CarPlay、退出应用，装好后应用自动重新打开。没有 ADB 时，系统允许的话打开系统安装界面；不允许时安装包存到“下载/xcertplay”，用比亚迪文件管理器安装。</string>
     <string name="update_check_now">检查更新</string>
     <string name="update_checking">正在检查更新…</string>
     <string name="update_never_checked">还没有检查过。</string>
@@ -287,9 +287,13 @@
     <string name="update_downloading">正在下载更新：%1$d%%</string>
     <string name="update_installing">正在安装 %1$s：CarPlay 会断开，装好后应用自动重新打开</string>
     <string name="update_confirm_title">更新到 %1$s</string>
-    <string name="update_confirm_message">%1$s\n\n要下载约 %2$d MB。下载好后会断开 CarPlay、退出应用并安装，装好后应用自动重新打开。设置和 iPhone 配对都会保留。</string>
+    <string name="update_confirm_message">%1$s\n\n要下载约 %2$d MB。有车机 ADB 时，下载好后会断开 CarPlay、退出应用并安装，装好后应用自动重新打开；没有 ADB 时，用系统安装界面或文件管理器安装。设置和 iPhone 配对都会保留。</string>
     <string name="update_confirm_ok">下载并安装</string>
     <string name="update_saved_no_adb">无法自动安装：%1$s\n\n安装包已保存为“下载/xcertplay/%2$s”，请用文件管理器打开安装。</string>
+    <string name="update_saved_open_files">无法自动安装：%1$s\n\n系统不允许本应用直接打开安装界面，比亚迪设置里也没有这个开关。安装包已保存为“下载/xcertplay/%2$s”。\n\n点“打开文件管理器”会先退出 CarPlay，然后在文件管理器里找到它安装。也可以点“试试系统安装”。</string>
+    <string name="update_open_file_manager">打开文件管理器</string>
+    <string name="update_try_installer">试试系统安装</string>
+    <string name="update_installer_unavailable">系统安装界面打不开：%1$s</string>
     <string name="update_failed">更新失败：%1$s</string>
     <string name="update_install_failed_notice">更新到 %1$s 没有装上：%2$s</string>
 </resources>

@@ -94,6 +94,7 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | 音频线程优先级 | `656577fe`（DiPlay 0.2.20，issue 737：开 360 摄像头时音频包晚到 45–138 ms） | 2026-10-15，未提交 | 音频接收、播放和麦克风线程用 `THREAD_PRIORITY_AUDIO`；视频照原版 `1836c27` 用 `THREAD_PRIORITY_DISPLAY` |
 | iOS 27 有线：上一个回复的尾巴后面跟着 VERSION 回复 | `19649861`（DiPlay 0.2.20，issue 100） | 2026-10-15，未提交 | 原样移植，连同 3 个测试 |
 | 车机音频时钟和 iPhone 不一致 | `dfd7c3d6`（DiPlay 0.2.20，issue 610） | 只加了测量，未改行为 | Audio stats 行新增 `sendHz playHz clockDiffPct clockWindowSec`（`AudioClockDrift`）。DiPlay 的做法是微调播放速度（`MediaClockTrim`），等实测宋 PLUS 有偏差再决定 |
+| 没有 ADB 时用系统安装器装更新 | `aa7cd204`（PR 593，DiPlay 0.2.18） | 2026-10-15，未提交 | 照 DiPlay：`FileProvider` 交给系统安装器，能装 APK 的应用不止一个时让用户选。不同：本分支仍先用车机 ADB；只在系统已允许本应用安装时直接打开（DiPlay 不预先检查），否则让用户选比亚迪文件管理器或照样试系统安装器；直接打开前先正常退出 CarPlay |
 
 DiPlay 已查看到 `969f8714`（0.2.20，2026-10-15）。
 

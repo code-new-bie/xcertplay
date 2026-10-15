@@ -275,7 +275,7 @@
     <string name="update_local_build"> (local test build: not checked automatically)</string>
     <string name="update_auto_check">Check for updates automatically</string>
     <string name="update_auto_check_desc">Once a day, look on GitHub for a new release and show it on the home screen. Nothing is downloaded or installed without a tap.</string>
-    <string name="update_note">Installing uses the head unit\'s ADB (Vehicle → BYD → Head-unit ADB): CarPlay disconnects, the app closes, the update is installed and the app opens again. Without ADB the APK is saved in Download/xcertplay; open it with a file manager.</string>
+    <string name="update_note">Installing uses the head unit\'s ADB when it is allowed (Vehicle → BYD → Head-unit ADB): CarPlay disconnects, the app closes, the update is installed and the app opens again. Without ADB the system installer opens if Android lets this app use it; otherwise the APK is saved in Download/xcertplay and BYD\'s file manager installs it.</string>
     <string name="update_check_now">Check for updates</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_never_checked">Not checked yet.</string>
@@ -287,9 +287,13 @@
     <string name="update_downloading">Downloading the update: %1$d%%</string>
     <string name="update_installing">Installing %1$s: CarPlay disconnects and the app opens again when it is done</string>
     <string name="update_confirm_title">Update to %1$s</string>
-    <string name="update_confirm_message">%1$s\n\nDownloads about %2$d MB. When it is ready, CarPlay disconnects, the app closes and the update is installed; the app then opens again by itself. Settings and iPhone pairing are kept.</string>
+    <string name="update_confirm_message">%1$s\n\nDownloads about %2$d MB. With the head unit\'s ADB, CarPlay then disconnects, the app closes and the update is installed; the app opens again by itself. Without ADB the system installer or a file manager installs it. Settings and iPhone pairing are kept.</string>
     <string name="update_confirm_ok">Download and install</string>
     <string name="update_saved_no_adb">The update cannot be installed automatically: %1$s\n\nThe APK is saved as Download/xcertplay/%2$s. Open it with a file manager to install it.</string>
+    <string name="update_saved_open_files">The update cannot be installed automatically: %1$s\n\nAndroid does not let this app open the installer, and BYD\'s settings have no switch for it. The APK is saved as Download/xcertplay/%2$s.\n\nOpen file manager closes CarPlay first; then find the APK there and install it. You can also try the system installer.</string>
+    <string name="update_open_file_manager">Open file manager</string>
+    <string name="update_try_installer">Try the system installer</string>
+    <string name="update_installer_unavailable">The system installer did not open: %1$s</string>
     <string name="update_failed">The update failed: %1$s</string>
     <string name="update_install_failed_notice">The update to %1$s did not install: %2$s</string>
 </resources>

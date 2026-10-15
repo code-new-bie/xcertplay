@@ -613,6 +613,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
         reportUpdateOutcome()
+        thread(name = "xcertplay-update-cache", isDaemon = true) { UpdateInstaller.clearStaleCache(applicationContext) }
         scheduleUpdateCheck()
         if (bydHeadUnit) {
             // Started before CarPlay so a session that begins in reverse can be sized correctly.
@@ -1668,7 +1669,7 @@ class CarPlayHostActivity : ComponentActivity() {
     /**
      * Downloads and checks the APK while CarPlay keeps running, then starts the install over the
      * head unit's ADB and exits the app the normal way, which restores Bluetooth, the Wi-Fi search
-     * and app permissions first. Without ADB the APK stays in Download/xcertplay for a file manager.
+     * and app permissions first. Without ADB see [installWithoutAdb].
      */
     private fun downloadAndInstall(release: UpdateRelease) {
         if (updateBusy) return
@@ -1681,7 +1682,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val client = updateClient()
         thread(name = "xcertplay-update-install", isDaemon = true) {
             var shownPercent = -1
-            val path = runCatching {
+            val (apk, path) = runCatching {
                 UpdateInstaller.download(
                     applicationContext,
                     client,
@@ -1697,7 +1698,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 ).let { apk ->
                     // Checked in this app's cache: on Android 10 the app cannot open Download by path.
                     UpdateInstaller.verify(applicationContext, apk, release)
-                    UpdateInstaller.publish(applicationContext, apk, release)
+                    apk to UpdateInstaller.publish(applicationContext, apk, release)
                 }
             }.getOrElse { error ->
                 runOnUiThread { finishUpdateWithError(error) }
@@ -1711,6 +1712,8 @@ class CarPlayHostActivity : ComponentActivity() {
                 runOnUiThread { finishUpdateWithError(error) }
                 return@thread
             }
+            // pm installs the Download copy; the cached one is kept only for the system installer.
+            if (access == LocalAdb.Access.READY) apk.delete()
             runOnUiThread {
                 if (access == LocalAdb.Access.READY) {
                     appendLog("Update: installing ${release.tag} over ADB; exiting so it can replace this app")
@@ -1719,18 +1722,73 @@ class CarPlayHostActivity : ComponentActivity() {
                 } else {
                     updateBusy = false
                     updateProgress = null
-                    appendLog("Update: ADB $access; ${release.apkName} left in Download/${UpdateInstaller.FOLDER}")
                     refreshUpdateViews()
                     renderHome()
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    AlertDialog.Builder(this)
-                        .setTitle(getString(R.string.update_confirm_title, release.tag))
-                        .setMessage(getString(R.string.update_saved_no_adb, adbAccessLabel(access), release.apkName))
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
+                    installWithoutAdb(release, apk, access)
                 }
             }
         }
+    }
+
+    /**
+     * No ADB: the system installer when Android lets this app open it, as DiPlay installs. CarPlay
+     * then closes the normal way first, since the install ends this app anyway. BYD's settings
+     * cannot allow that ("not supported"), so there the driver chooses BYD's file manager, a system
+     * app the installer does not question, or tries the installer all the same.
+     */
+    private fun installWithoutAdb(release: UpdateRelease, apk: File, access: LocalAdb.Access) {
+        val allowed = UpdateInstaller.mayOpenInstaller(applicationContext)
+        appendLog(
+            "Update: ADB $access; may open the system installer: $allowed; " +
+                "${release.apkName} also saved in Download/${UpdateInstaller.FOLDER}",
+        )
+        if (isFinishing || isDestroyed) return
+        if (allowed && openSystemInstaller(release, apk)) {
+            appendLog("Update: exiting so the installer can replace this app")
+            exitApplication("update system installer")
+            return
+        }
+        val fileManager = UpdateInstaller.fileManagerIntent(applicationContext)
+        val message = if (fileManager != null) R.string.update_saved_open_files else R.string.update_saved_no_adb
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_confirm_title, release.tag))
+            .setMessage(getString(message, adbAccessLabel(access), release.apkName))
+            // Stays in CarPlay: on BYD the installer is likely to refuse.
+            .setNeutralButton(R.string.update_try_installer) { _, _ -> openSystemInstaller(release, apk) }
+            .setNegativeButton(android.R.string.cancel, null)
+        if (fileManager != null) {
+            dialog.setPositiveButton(R.string.update_open_file_manager) { _, _ ->
+                val opened = runCatching { startActivity(fileManager) }
+                    .onFailure { appendLog("Update: BYD's file manager did not open: ${it.javaClass.simpleName}") }
+                    .isSuccess
+                if (opened) {
+                    appendLog("Update: opened BYD's file manager; exiting so the install can replace this app")
+                    exitApplication("update file manager")
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    /** Opens the system installer for the cached [apk]; false, and says why, when it did not open. */
+    private fun openSystemInstaller(release: UpdateRelease, apk: File): Boolean {
+        val failure = try {
+            val launch = UpdateInstaller.installerLaunch(applicationContext, apk)
+            startActivity(launch.intent)
+            appendLog("Update: opened the system installer for ${release.tag} installers=${launch.installers}")
+            return true
+        } catch (error: RuntimeException) {
+            error
+        }
+        val reason = failure.message ?: failure.javaClass.simpleName
+        appendLog("Update: the system installer did not open: ${failure.javaClass.simpleName}: $reason")
+        if (!isFinishing && !isDestroyed) {
+            AlertDialog.Builder(this)
+                .setMessage(getString(R.string.update_installer_unavailable, reason))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+        return false
     }
 
     private fun showUpdateProgress(text: String) {

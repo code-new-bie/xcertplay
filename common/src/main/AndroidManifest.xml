@@ -11,9 +11,30 @@
     <!-- BYD DiLink: a normal permission (protectionLevel 0) for reading the gear in the app, without
          ADB; video in car plays only in P. Unknown permissions are ignored on other head units. -->
     <uses-permission android:name="android.permission.BYDAUTO_GEARBOX_COMMON" />
+    <!-- Updates without the head unit's ADB: the system installer, where Android lets this app open it. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Android 11 and later: the apps that can open an update APK, and BYD's file manager. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+        <package android:name="com.byd.filemanager" />
+    </queries>
 
     <!-- Android 10 head units: direct file reads for local MFi documents (ignored on later versions). -->
     <application android:requestLegacyExternalStorage="true">
+
+        <provider
+            android:name="com.shilapi.xcertplay.update.UpdateApkProvider"
+            android:authorities="${applicationId}.update-apks"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_apk_paths" />
+        </provider>
 
         <activity
             android:name="com.shilapi.xcertplay.CarPlayHostActivity"

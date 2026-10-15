@@ -3,12 +3,14 @@ package com.shilapi.xcertplay.update
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
 import com.shilapi.xcertplay.adb.AdbKeys
 import com.shilapi.xcertplay.adb.LocalAdb
 import java.io.File
@@ -21,6 +23,11 @@ import java.security.MessageDigest
  * match GitHub's, and it must be this app, at the release's version, signed like this app. Only
  * then is it copied to Download/xcertplay, where the ADB shell and a file manager can open it; this
  * app itself cannot open files there by path on Android 10.
+ *
+ * Without ADB the checked copy in the cache goes to the system installer, the way DiPlay installs
+ * (`aa7cd204`), when Android lets this app open it. BYD's settings answer the "install unknown apps"
+ * page with "not supported", so on a BYD head unit the driver usually installs it with BYD's file
+ * manager, a system app that the installer does not question.
  */
 internal object UpdateInstaller {
     /** The folder the log export uses too. */
@@ -29,6 +36,11 @@ internal object UpdateInstaller {
     /** How long the install waits for this app to finish exiting before it replaces it anyway. */
     const val EXIT_WAIT_SECONDS = 30
     private const val CACHE_FOLDER = "update"
+    /** Matches `update_apk_paths.xml` and the provider in the manifest. */
+    private const val PROVIDER_SUFFIX = ".update-apks"
+    /** A cached APK this old is left over from an install that is long over. */
+    private const val STALE_CACHE_MILLIS = 60 * 60 * 1000L
+    const val BYD_FILE_MANAGER = "com.byd.filemanager"
     private const val APK_MIME = "application/vnd.android.package-archive"
     private const val OLD_APKS = "xcertplay-%.apk"
 
@@ -78,18 +90,53 @@ internal object UpdateInstaller {
     }
 
     /**
-     * Moves the checked [apk] to Download/xcertplay (on Android 9, this app's own download folder)
-     * and returns its path there. Earlier update APKs there are removed first.
+     * Copies the checked [apk] to Download/xcertplay (on Android 9, this app's own download folder)
+     * and returns its path there. Earlier update APKs there are removed first. The cached [apk] stays
+     * for the system installer.
      */
-    fun publish(context: Context, apk: File, release: UpdateRelease): String = try {
+    fun publish(context: Context, apk: File, release: UpdateRelease): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             publishToMediaStore(context, apk, release)
         } else {
             publishToAppFolder(context, apk, release)
         }
-    } finally {
-        apk.delete()
+
+    /** Removes cached update APKs older than an hour; a fresh one may still be in an installer. */
+    fun clearStaleCache(context: Context, nowMillis: Long = System.currentTimeMillis()) {
+        File(context.cacheDir, CACHE_FOLDER).listFiles()
+            ?.filter { nowMillis - it.lastModified() > STALE_CACHE_MILLIS }
+            ?.forEach { it.delete() }
     }
+
+    /**
+     * Whether Android lets this app open the installer ("install unknown apps" allowed for it). On the
+     * BYD firmware checked, nothing in the settings can allow it, so this is false there unless the
+     * head unit's ADB allowed it.
+     */
+    fun mayOpenInstaller(context: Context): Boolean =
+        runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
+
+    /** What opens the installer, and how many apps said they can install an APK. */
+    class InstallerLaunch(val intent: Intent, val installers: Int)
+
+    /**
+     * The installer for the cached [apk]. With several apps that can install it (a file manager such
+     * as MT Manager), Android asks which one, as in DiPlay.
+     */
+    fun installerLaunch(context: Context, apk: File): InstallerLaunch {
+        val uri = FileProvider.getUriForFile(context, context.packageName + PROVIDER_SUFFIX, apk)
+        val view = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, APK_MIME)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val installers = context.packageManager.queryIntentActivities(view, PackageManager.MATCH_DEFAULT_ONLY).size
+        val launch = if (installers > 1) Intent.createChooser(view, null) else view
+        // A task of its own, so the installer stays in front when this app moves back and exits.
+        return InstallerLaunch(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), installers)
+    }
+
+    /** BYD's file manager, or null on other head units. */
+    fun fileManagerIntent(context: Context): Intent? =
+        context.packageManager.getLaunchIntentForPackage(BYD_FILE_MANAGER)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     /**
      * The shell command that installs [apkPath] and opens the app again. It runs detached, so it
