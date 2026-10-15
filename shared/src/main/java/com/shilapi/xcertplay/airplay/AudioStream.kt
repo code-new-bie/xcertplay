@@ -76,6 +76,9 @@ class AudioStream(
     }
 
     private fun runData(socket: DatagramSocket, listener: Listener) {
+        // A packet handled late reaches the player late (DiPlay 656577fe: 45-138 ms on a head unit
+        // opening its 360 camera); audio threads run at the audio priority.
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
         val buffer = ByteArray(DATAGRAM_BYTES)
         while (!closed.get()) {
             val packet = DatagramPacket(buffer, buffer.size)

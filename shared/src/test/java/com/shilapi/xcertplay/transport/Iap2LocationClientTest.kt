@@ -137,6 +137,22 @@ class Iap2LocationClientTest {
                 (bytes[index * 2 + 1].toInt() and 0xff)
         }
 
+    @Test
+    fun ggaCarriesTheFixQualitySatellitesAndHundredths() {
+        fun gga(fix: CarPlayLocationFix) = NmeaLocationEncoder.encode(fix).substringBefore("\r\n").split(',')
+        val base = CarPlayLocationFix(
+            latitudeDegrees = 48.1173,
+            longitudeDegrees = 11.5166667,
+            timestampMillis = Instant.parse("2026-03-23T12:35:19.473Z").toEpochMilli(),
+        )
+        val unknown = gga(base)
+        assertEquals("123519.47", unknown[1])
+        assertEquals(listOf("1", "08"), unknown.subList(6, 8))
+        assertEquals(listOf("1", "11"), gga(base.copy(fixQuality = 1, satellitesUsed = 11)).subList(6, 8))
+        // A network fix is an estimate, and says so.
+        assertEquals(listOf("6", "08"), gga(base.copy(fixQuality = NmeaLocationEncoder.ESTIMATED_FIX)).subList(6, 8))
+    }
+
     private fun parameters(bytes: ByteArray) = Iap2ParameterList.parse(bytes).asList()
 
     private fun checksum(body: String): String {

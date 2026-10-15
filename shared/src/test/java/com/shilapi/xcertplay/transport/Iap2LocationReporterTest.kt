@@ -82,9 +82,21 @@ class Iap2LocationReporterTest {
 
     @Test
     fun theFirstReportNamesItsSentences() {
+        // The iPhone did not ask for satellites in view, so the chip's GSV stays here.
         provider.nmea = "\$GPGGA,1*00\r\n\$GPRMC,2*00\r\n\$GPGSV,1,1,00*00\r\n"
         bluetooth().handle(start) { sent += it }
-        assertTrue(progress.contains("iap2 tx=0xfffb location-information sentences=GPGGA+GPRMC+GPGSV"))
+        assertTrue(progress.contains("iap2 tx=0xfffb location-information sentences=GPGGA+GPRMC"))
+        assertTrue(progress.any { it.startsWith("iap2 rx=0xfffa start-location-information") && it.endsWith("intervalsMs=[0=0,0x8001=1000]") })
+    }
+
+    @Test
+    fun aFixIsSentOnceEvenWhenTheProviderStillHasIt() {
+        provider.fresh = false
+        val link = bluetooth()
+        link.handle(start) { sent += it }
+        nowMillis += 1_000
+        link.tick { sent += it }
+        assertEquals(1, sent.size)
     }
 
     @Test
@@ -190,9 +202,12 @@ class Iap2LocationReporterTest {
         var started = false
         var requested: Set<Int>? = null
         var nmea: String? = "\$GPGGA,123519.00,4807.0380,N,01131.0000,E,1,08,1.0,545.4,M,0.0,M,,*00\r\n"
+        /** A new fix each time it is asked, as while driving; off, the same fix is kept. */
+        var fresh = true
+        private var fixes = 0
         override fun onRequested(components: Set<Int>) { requested = components }
         override fun start(): Boolean { started = true; return true }
         override fun stop() { started = false }
-        override fun latestNmea() = nmea
+        override fun latestNmea() = if (fresh) nmea?.replace("123519", (123519 + fixes++).toString()) else nmea
     }
 }

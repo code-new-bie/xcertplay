@@ -10,6 +10,7 @@ import android.media.MediaCodecList
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.os.Build
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
@@ -358,6 +359,8 @@ private class VideoDecoder(
     }
 
     private fun run() {
+        // The decode and render cadence is what the driver sees; keep it ahead of background work.
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY) }
         try {
             while (running) {
                 try {
@@ -719,6 +722,8 @@ private class AudioRenderer(
     private var inputStallMaxNs = 0L
     private var inputStallMaxTotalNs = 0L
     private val rtpClock = if (format.codec == AudioCodecKind.OPUS) RtpClockProbe() else null
+    // Music (AAC, LPCM) counts its RTP time at the sample rate; Opus calls may not.
+    private val clockDrift = if (format.codec == AudioCodecKind.OPUS) null else AudioClockDrift(format.sampleRate)
     private var outputBuffers = 0
     private var firstPcmLogged = false
     private var trackBytesPerFrame = 0
@@ -744,6 +749,8 @@ private class AudioRenderer(
 
     fun submit(rtp: ByteArray, sample: Int) {
         if (!started) return
+        // Timed here, on arrival: the worker takes packets at the pace the track plays them.
+        clockDrift?.onPacket(sample, System.nanoTime())
         val dropped = queue.offer(AudioPacket(rtp, sample))
         if (dropped > 0 && droppedPackets.getAndAdd(dropped) == 0) {
             report("Audio queue over ${MAX_QUEUED_MS}ms type=${format.payloadType} audioType=${format.audioType}: " +
@@ -786,6 +793,7 @@ private class AudioRenderer(
     }
 
     private fun run() {
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO) }
         try {
             when (format.codec) {
                 AudioCodecKind.AAC_LC -> configureCodec(MediaFormat.MIMETYPE_AUDIO_AAC)
@@ -862,9 +870,14 @@ private class AudioRenderer(
             val stallMaxNs = if (final) inputStallMaxTotalNs else inputStallMaxNs
             " decoderDropped=$inputDropped decoderStalls=$inputStalls decoderStallMaxMs=${stallMaxNs / NANOS_PER_MILLI}"
         }
+        val clock = if (track != null && playbackStarted) {
+            clockDrift?.describe(playbackHeadFrames(track), underruns, System.nanoTime())?.let { " $it" }.orEmpty()
+        } else {
+            ""
+        }
         report("$label type=${format.payloadType} audioType=${format.audioType} bufferedMs=$bufferedMs " +
             "queuedMs=${queue.queuedMs} ${sequence.describe()} dropped=${droppedPackets.get()} underruns=$underruns" +
-            decoder)
+            decoder + clock)
         inputStallMaxNs = 0L
     }
 

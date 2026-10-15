@@ -12,7 +12,11 @@ import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters
 import org.bouncycastle.crypto.signers.Ed25519Signer
+import java.security.GeneralSecurityException
 import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /** BouncyCastle-backed primitives for the CarPlay pairing and control channel. */
 object AirPlayCrypto {
@@ -20,6 +24,15 @@ object AirPlayCrypto {
     private const val NONCE_SIZE = 12
     private const val LABEL_SIZE = 8
     private val random = SecureRandom()
+
+    /**
+     * The platform's ChaCha20-Poly1305 (BoringSSL through Conscrypt, Android 9 and later) opens every
+     * video and audio packet in native code; BouncyCastle does it in Java on the head unit's CPU. One
+     * instance per thread; where the platform has none, BouncyCastle is used as before.
+     * Ported from upstream 1836c27.
+     */
+    private val platformOpenCipher = ThreadLocal<Cipher?>()
+    @Volatile private var platformOpenAvailable = true
 
     data class X25519KeyPair(val privateKey: ByteArray, val publicKey: ByteArray)
     data class Ed25519KeyPair(val privateKey: ByteArray, val publicKey: ByteArray)
@@ -93,6 +106,10 @@ object AirPlayCrypto {
         ciphertextAndTag: ByteArray,
         aad: ByteArray = ByteArray(0),
     ): ByteArray {
+        platformOpen(key, nonce)?.let { platform ->
+            if (aad.isNotEmpty()) platform.updateAAD(aad)
+            return platform.doFinal(ciphertextAndTag)
+        }
         val cipher = ChaCha20Poly1305()
         cipher.init(false, AEADParameters(KeyParameter(key), MAC_BITS, nonce, aad))
         val output = ByteArray(cipher.getOutputSize(ciphertextAndTag.size))
@@ -101,6 +118,26 @@ object AirPlayCrypto {
         val outputLength = processed + finalized
         return if (outputLength == output.size) output else output.copyOf(outputLength)
     }
+
+    /** The platform cipher set up to open with [key] and [nonce], or null to use BouncyCastle. */
+    private fun platformOpen(key: ByteArray, nonce: ByteArray): Cipher? {
+        if (!platformOpenAvailable) return null
+        val cipher = platformOpenCipher.get() ?: try {
+            Cipher.getInstance(PLATFORM_CHACHA).also(platformOpenCipher::set)
+        } catch (_: GeneralSecurityException) {
+            platformOpenAvailable = false
+            return null
+        }
+        return try {
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonce))
+            cipher
+        } catch (_: GeneralSecurityException) {
+            // A key or nonce the platform will not take keeps the BouncyCastle path.
+            null
+        }
+    }
+
+    private const val PLATFORM_CHACHA = "ChaCha20/Poly1305/NoPadding"
 
     /** 12-byte nonce: four zero bytes followed by an eight-byte little-endian counter. */
     fun nonce64(counter: Long): ByteArray {

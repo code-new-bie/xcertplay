@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.airplay
 
+import android.os.Process
 import android.util.Log
 import com.shilapi.xcertplay.media.MediaCodecSupport
 import java.io.Closeable
@@ -65,6 +66,8 @@ class ScreenStream(private val key: ByteArray) : Closeable {
     }
 
     private fun run(sock: Socket) {
+        // Receiving and decrypting feed the decoder directly; a late frame is a visible stutter.
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY) }
         var failure: Throwable? = null
         try {
             val input = sock.getInputStream()
@@ -148,6 +151,7 @@ object ScreenCodec {
 
     /** The wire format is length-prefixed, even when its first length happens to be one. */
     fun lengthPrefixedToAnnexB(payload: ByteArray, lengthSize: Int = 4): ByteArray {
+        if (lengthSize == 4) return if (MediaCodecSupport.toAnnexBInPlace(payload)) payload else ByteArray(0)
         val converted = MediaCodecSupport.toAnnexB(payload, lengthSize, allowAnnexB = false)
         if (converted.size == payload.size) {
             converted.copyInto(payload)

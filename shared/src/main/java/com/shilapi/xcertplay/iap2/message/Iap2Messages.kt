@@ -307,8 +307,11 @@ object Iap2ControlMessages {
 
     fun locationInformation(nmeaSentence: String): Iap2Frame {
         require(nmeaSentence.isNotEmpty()) { "NMEA sentence must not be empty" }
+        // One parameter per sentence, as upstream 2bb1ade sends them; several sentences in one
+        // string may be read only up to the first.
         return Iap2Messages.build(Iap2Endpoints.LOCATION_INFORMATION) {
-            string(0, nmeaSentence)
+            val lineEnd = if ("\r\n" in nmeaSentence) "\r\n" else ""
+            nmeaSentence.split("\r\n").filter { it.isNotEmpty() }.forEach { string(0, it + lineEnd) }
         }
     }
 }

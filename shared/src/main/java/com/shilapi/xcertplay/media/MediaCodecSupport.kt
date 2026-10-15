@@ -83,6 +83,32 @@ object MediaCodecSupport {
         return output.toByteArray()
     }
 
+    /**
+     * Rewrites a complete access unit's four-byte lengths as start codes in place, the same size, so
+     * no buffer is copied per video frame (upstream 1836c27). Returns false, with [bytes] untouched,
+     * for a damaged access unit.
+     */
+    fun toAnnexBInPlace(bytes: ByteArray): Boolean {
+        var cursor = 0
+        while (cursor < bytes.size) {
+            if (bytes.size - cursor < START_CODE.size) return false
+            val length = readU32(bytes, cursor)
+            if (length <= 0 || length > bytes.size - cursor - START_CODE.size) return false
+            cursor += START_CODE.size + length.toInt()
+        }
+        cursor = 0
+        while (cursor < bytes.size) {
+            val length = readU32(bytes, cursor).toInt()
+            START_CODE.copyInto(bytes, cursor)
+            cursor += START_CODE.size + length
+        }
+        return true
+    }
+
+    private fun readU32(bytes: ByteArray, offset: Int): Long =
+        ((bytes[offset].toLong() and 255) shl 24) or ((bytes[offset + 1].toLong() and 255) shl 16) or
+            ((bytes[offset + 2].toLong() and 255) shl 8) or (bytes[offset + 3].toLong() and 255)
+
     /** Raw NAL units from either three- or four-byte Annex B start codes. */
     fun annexBNalUnits(bytes: ByteArray): List<ByteArray> {
         if (startCodeSize(bytes, 0) == 0) return emptyList()

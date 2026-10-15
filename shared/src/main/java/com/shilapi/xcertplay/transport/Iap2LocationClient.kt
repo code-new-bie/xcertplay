@@ -16,6 +16,10 @@ data class CarPlayLocationFix(
     val speedMetersPerSecond: Double? = null,
     val accuracyMeters: Double? = null,
     val timestampMillis: Long? = null,
+    /** GGA fix quality: 1 a satellite fix, 6 an estimate (network location); null sends 1. */
+    val fixQuality: Int? = null,
+    /** Satellites used in the fix; null sends the old placeholder 08. */
+    val satellitesUsed: Int? = null,
 ) {
     init {
         require(latitudeDegrees.isFinite() && latitudeDegrees in -90.0..90.0) {
@@ -51,7 +55,13 @@ object NmeaLocationEncoder {
             ?.takeIf { it > 0 }
             ?.let(::ofEpochMilli)
             ?: ofEpochMilli(System.currentTimeMillis())
-        val time = format("%02d%02d%02d.00", timestamp.hour, timestamp.minute, timestamp.second)
+        val time = format(
+            "%02d%02d%02d.%02d",
+            timestamp.hour,
+            timestamp.minute,
+            timestamp.second,
+            timestamp.centisecond,
+        )
         val date = format(
             "%02d%02d%02d",
             timestamp.day,
@@ -70,8 +80,11 @@ object NmeaLocationEncoder {
             ?.let { format("%.1f", it) }
             ?: "0.0"
 
+        // A network fix said "GPS fix, 8 satellites" too, so the iPhone trusted it like one (upstream 2bb1ade).
+        val quality = fix.fixQuality ?: SATELLITE_FIX
+        val satellites = fix.satellitesUsed?.let { format("%02d", it.coerceIn(0, 99)) } ?: PLACEHOLDER_SATELLITES
         val ggaBody = "GPGGA,$time,${latitude.value},${latitude.hemisphere}," +
-            "${longitude.value},${longitude.hemisphere},1,08,${format("%.1f", hdop)}," +
+            "${longitude.value},${longitude.hemisphere},$quality,$satellites,${format("%.1f", hdop)}," +
             "$altitude,M,0.0,M,,"
         val speedKnots = fix.speedMetersPerSecond
             ?.takeIf { it.isFinite() && it >= 0 }
@@ -125,11 +138,15 @@ object NmeaLocationEncoder {
         val hour: Int = fields.hour
         val minute: Int = fields.minute
         val second: Int = fields.second
+        val centisecond: Int = fields.nano / 10_000_000
         val day: Int = fields.dayOfMonth
         val month: Int = fields.monthValue
         val year: Int = fields.year
     }
 
+    const val SATELLITE_FIX = 1
+    const val ESTIMATED_FIX = 6
+    private const val PLACEHOLDER_SATELLITES = "08"
     private const val KNOTS_PER_METER_PER_SECOND = 1.94384449
     private const val MINUTES_PER_DEGREE = 60.0
     private const val MINUTE_ROUNDING_TOLERANCE = 0.00005
@@ -190,13 +207,16 @@ class Iap2LocationReporter(
     private var lastAttemptNanos = 0L
     private var holdToken: Int? = null
     private var sentCount = 0L
+    private val sentences = NmeaSentenceSelector()
 
     /** Handles 0xFFFA/0xFFFC; returns false for any other message. */
     fun handle(frame: Iap2Frame, send: (Iap2Frame) -> Unit): Boolean = when (frame.messageId) {
         Iap2LocationMessages.START_LOCATION_INFORMATION -> {
             val components = Iap2LocationMessages.requestedComponents(frame)
-            onProgress("iap2 rx=0xfffa start-location-information components=$components")
+            val intervals = Iap2LocationMessages.describeIntervals(Iap2LocationMessages.requestedIntervals(frame))
+            onProgress("iap2 rx=0xfffa start-location-information components=$components intervalsMs=$intervals")
             request?.components = components
+            sentences.request(components)
             provider?.onRequested(components)
             start(send)
             true
@@ -242,6 +262,7 @@ class Iap2LocationReporter(
             if (components != null) {
                 continued = true
                 onProgress("iap2 location request continues from the Bluetooth link components=$components")
+                sentences.request(components)
                 provider?.onRequested(components)
                 start(send)
                 return
@@ -290,7 +311,7 @@ class Iap2LocationReporter(
 
     private fun sendLatest(send: (Iap2Frame) -> Unit) {
         lastAttemptNanos = nanoTime()
-        val sentence = provider?.latestNmea() ?: return
+        val sentence = provider?.latestNmea()?.let(sentences::select) ?: return
         send(Iap2LocationMessages.locationInformation(sentence))
         sentCount++
         if (!sentLogged) {
@@ -312,6 +333,49 @@ class Iap2LocationReporter(
     }
 }
 
+/**
+ * What one LocationInformation carries (upstream ddb3a65 and 2bb1ade):
+ * - only the sentence types the iPhone asked for. In the car it asks for GGA, RMC and PASCD, not the
+ *   GSV the GNSS chip also gives; a request naming no sentence type keeps them all;
+ * - a position sentence only for a new fix. The provider keeps a fix for up to 30 s, and sending it
+ *   again every second told the iPhone, after GPS was lost in a tunnel, that the car still stood
+ *   where GPS last saw it. Wheel speed (PASCD) carries new samples each time and always goes.
+ */
+internal class NmeaSentenceSelector {
+    private var requested: Set<Int>? = null
+    private val lastSent = HashMap<Int, String>()
+
+    fun request(components: Set<Int>) {
+        requested = components.filter { it in SENTENCE_TYPES }.toSet().takeIf { it.isNotEmpty() }
+        lastSent.clear()
+    }
+
+    /** [nmea] cut to what should go now, or null when nothing should. */
+    fun select(nmea: String): String? {
+        val byType = LinkedHashMap<Int?, MutableList<String>>()
+        nmea.split("\r\n").filter { it.isNotEmpty() }.forEach { sentence ->
+            byType.getOrPut(Iap2LocationMessages.sentenceType(sentence)) { mutableListOf() } += sentence
+        }
+        val kept = byType.flatMap { (type, group) ->
+            val wanted = requested?.let { type in it } ?: true
+            // A GSV report is a group of sentences, so a group repeats only as a whole.
+            val joined = group.joinToString("\r\n")
+            val repeated = type != null && type != Iap2LocationMessages.VEHICLE_SPEED_DATA && lastSent[type] == joined
+            if (!wanted || repeated) {
+                emptyList()
+            } else {
+                if (type != null) lastSent[type] = joined
+                group
+            }
+        }
+        return kept.takeIf { it.isNotEmpty() }?.joinToString("") { it + "\r\n" }
+    }
+
+    private companion object {
+        val SENTENCE_TYPES = 1..7
+    }
+}
+
 object Iap2LocationMessages {
     const val START_LOCATION_INFORMATION = 0xfffa
     const val LOCATION_INFORMATION = 0xfffb
@@ -319,6 +383,30 @@ object Iap2LocationMessages {
 
     /** 0xFFFA selector for `$PASCD`; the matching IdentificationInformation flag is 20. */
     const val VEHICLE_SPEED_DATA = 4
+
+    /** The 0xFFFA parameter id of [sentence]'s type, or null for a type this side never sends. */
+    fun sentenceType(sentence: String): Int? = when {
+        sentence.startsWith("\$GPGGA,") -> 1
+        sentence.startsWith("\$GPRMC,") -> 2
+        sentence.startsWith("\$GPGSV,") -> 3
+        sentence.startsWith("\$PASCD,") -> VEHICLE_SPEED_DATA
+        else -> null
+    }
+
+    /**
+     * The intervals in a 0xFFFA request in milliseconds, by parameter id: 0 for the message, 0x8001 and
+     * up for each sentence type. Only logged; reports still go out once a second.
+     */
+    fun requestedIntervals(frame: Iap2Frame): Map<Int, Long> = runCatching {
+        frame.body().asList()
+            .filter { (it.id == 0 || it.id in 0x8001..0x8007) && it.payload.size in 1..8 }
+            .associate { field -> field.id to field.payload.fold(0L) { value, byte -> (value shl 8) or (byte.toLong() and 0xff) } }
+    }.getOrDefault(emptyMap())
+
+    fun describeIntervals(intervals: Map<Int, Long>): String =
+        intervals.entries.sortedBy { it.key }.joinToString(",", "[", "]") { (id, millis) ->
+            (if (id == 0) "0" else "0x" + id.toString(16)) + "=" + millis
+        }
 
     /** The parameter ids of a 0xFFFA request (the sentence types asked for), or none if unreadable. */
     fun requestedComponents(frame: Iap2Frame): Set<Int> =

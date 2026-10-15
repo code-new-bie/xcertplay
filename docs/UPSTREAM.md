@@ -43,7 +43,7 @@ git push origin upstream/master:refs/heads/master
 
 ## 已查看到
 
-- 上游 `master`：`551895a`（1.4.0，2026-10-11），2026-10-12 查看。
+- 上游 `master`：`2bb1ade`（2026-10-15），2026-10-15 查看。
 - 分叉点：`17c9243`。
 
 ## 上游提交处理记录
@@ -58,6 +58,24 @@ git push origin upstream/master:refs/heads/master
 | `a6bd9ef` | 2026-10-11 | 音频焦点（`AndroidMediaSink.AudioFocusSession`） | 跳过 | 本分支已有 `CarPlayAudioFocus`（媒体和通话焦点，方向盘按键跟随焦点），两套会冲突 |
 | `c2912a5` | 2026-10-11 | 去掉 `26ee907` 新主题里的 `enforceStatusBarContrast` 等两项 | 跳过 | 修的是 `26ee907` 引入的主题，本分支没有 |
 | `551895a` | 2026-10-11 | 版本号改为 1.4.0 | 跳过 | 本分支版本号由 tag 决定（`-PreleaseVersionName`） |
+| `f2ad404` | 2026-10-14 | `.gitignore` | 跳过 | 只是上游自己的忽略列表 |
+| `0e9048e` | 2026-10-14 | 车辆数据设置、可复用的定位来源策略 | 跳过 | 本分支车辆数据走比亚迪 SDK 和车机 ADB，比亚迪的车速、挡位不在标准 Android 车辆属性里 |
+| `4f02cf0` | 2026-10-14 | 标准 Android 车辆属性（`CarPropertyManager`）只读数据源 | 跳过 | 本分支车辆数据走比亚迪 SDK 和车机 ADB，比亚迪的车速、挡位不在标准 Android 车辆属性里 |
+| `d20d599` | 2026-10-14 | 车辆属性事件时间戳、读取失败作废 | 跳过 | 同 `4f02cf0` |
+| `47034a4` | 2026-10-14 | 有线和隧道 iAP2 上报订阅的部分电动车状态 | 跳过 | 本分支已有电量和续航上报（从 DiPlay 移植） |
+| `ddb3a65` | 2026-10-14 | 按 iPhone 的 0xFFFA 请求选择 NMEA 语句和间隔，多条语句分参数发送 | 部分移植 | 2026-10-15，未提交：只发请求里的语句类型（`NmeaSentenceSelector`）、每条语句一个参数；按请求间隔发送没有移植，只把间隔记进日志。交接文档第 32 节 |
+| `7eb38f9` | 2026-10-14 | 用车速和挡位发 `$PASCD` | 跳过 | 本分支已有（从 DiPlay 移植，`VehicleSpeedNmea`） |
+| `84a05c1` | 2026-10-14 | 车外温度等车辆状态扩展 | 跳过（暂缓） | iPhone 拿车外温度显示在哪里还不清楚，以后再看 |
+| `003f01e` | 2026-10-14 | 车辆属性来源可用性、断线恢复 | 跳过 | 同 `4f02cf0` |
+| `0288177` | 2026-10-14 | 手机退订后停止车辆采样 | 跳过 | 同 `4f02cf0` |
+| `4ef48f9` | 2026-10-14 | 车辆数据来源诊断、申请车速权限 | 跳过 | 同 `4f02cf0` |
+| `6e8c2ca` | 2026-10-14 | Material 新界面（约 7800 行）；麦克风增益改为 0.5x–10x | 跳过 | 本分支有自己的中文界面；没人反映通话对方听不清，增益范围不改 |
+| `8b01399` | 2026-10-14 | 多个 view area、不重连快速切换；音频焦点开关 | 跳过 | 本分支旋转不断连用自己的方形画布做法，已实车通过；上游在 `1836c27` 又改回只声明当前方向 |
+| `57221e4` | 2026-10-14 | 无线高性能 Wi-Fi 锁 | 跳过 | 本分支已有（`WirelessPerformanceLock`，也是 PR #47） |
+| `bca2e35` | 2026-10-15 | JSON 车辆配置和可插拔数据源 | 跳过 | 同 `4f02cf0` |
+| `1836c27` | 2026-10-15 | 降低串流开销、显示合成帧率 | 部分移植 | 2026-10-15，未提交：移植了系统 ChaCha20 解密、4 字节长度原地转 Annex B、视频接收/解码线程 DISPLAY 和音频播放线程 AUDIO 优先级；帧率显示、会话日志、view area 等跳过。交接文档第 32 节 |
+| `c43810b` | 2026-10-15 | 清单里声明文档和图片选择器的 `queries` | 跳过 | 只影响 Android 11 及以上，宋 PLUS 是 Android 10；其他车机需要时再加 |
+| `2bb1ade` | 2026-10-15 | 更好的定位上报 | 部分移植 | 2026-10-15，未提交：GPS 新鲜时优先、按开机时间判断新旧（`LocationFixChoice`）、GGA 写真实定位质量和卫星数、时间带百分秒、同一个定位不重复发；按请求间隔（约 250 ms）发送、海拔转换（Android 14 才有）、“精确定位”开关没有移植 |
 
 ## 从 DiPlay 上游移植的内容
 
@@ -73,6 +91,11 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | 16/24 kHz Opus 的 RTP 时钟 | PR 644、547 | 只加了测量，未改行为 | 本分支注释认为 Opus 时钟固定 48 kHz，DiPlay 实测相反。新日志 `Audio RTP clock … measuredHz= feedbackHz=` 记录实测值，等通话或 Siri 日志再决定 |
 | 检查更新 | 参考 PR 413、488、593（DiPlay 0.2.15–0.2.18）的做法，代码是本分支自己写的 | 2026-10-14，未提交 | 同样每天查一次、首页提示、点了才下载、用 SHA-256 校验。不同：本分支经车机 ADB 执行 `pm install` 安装，不弹系统安装器（DiPlay 遇到过车机安装器打不开）；没有 ADB 时把安装包放进“下载/xcertplay”，用文件管理器装 |
 | 有线连接 InvalidHostID 时重新配对 | DiPlay 当前代码的 `rejectedPairRecordError` | 2026-10-14，未提交 | 本分支原来只认 InvalidPairRecord，InvalidHostID 会一直用旧记录重试；改写为 `LockdownPairRejection` |
+| 音频线程优先级 | `656577fe`（DiPlay 0.2.20，issue 737：开 360 摄像头时音频包晚到 45–138 ms） | 2026-10-15，未提交 | 音频接收、播放和麦克风线程用 `THREAD_PRIORITY_AUDIO`；视频照原版 `1836c27` 用 `THREAD_PRIORITY_DISPLAY` |
+| iOS 27 有线：上一个回复的尾巴后面跟着 VERSION 回复 | `19649861`（DiPlay 0.2.20，issue 100） | 2026-10-15，未提交 | 原样移植，连同 3 个测试 |
+| 车机音频时钟和 iPhone 不一致 | `dfd7c3d6`（DiPlay 0.2.20，issue 610） | 只加了测量，未改行为 | Audio stats 行新增 `sendHz playHz clockDiffPct clockWindowSec`（`AudioClockDrift`）。DiPlay 的做法是微调播放速度（`MediaClockTrim`），等实测宋 PLUS 有偏差再决定 |
+
+DiPlay 已查看到 `969f8714`（0.2.20，2026-10-15）。
 
 ## 上游开发分支（还没合入上游 `master`）
 

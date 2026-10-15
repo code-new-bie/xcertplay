@@ -92,6 +92,7 @@ internal class MicrophoneUplink(
     }
 
     private fun capture(activeRecorder: AudioRecord, activeSocket: DatagramSocket) {
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
         val frame = ByteArray(config.samplesPerPacket * BYTES_PER_SAMPLE)
         val readBuffer = ByteArray(maxOf(CAPTURE_READ_BYTES, frame.size))
         val resampler = if (config.sampleRate == MICROPHONE_CAPTURE_RATE_HZ) {
