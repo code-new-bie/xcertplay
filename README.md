@@ -47,7 +47,7 @@ This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Androi
 | Report location to iPhone: head-unit positioning with speed and satellite data | Vehicle | Off | No |
 | Separate head-unit audio channels for media, navigation, and calls, with a test tone | Sound | Automatic | No |
 | Steering-wheel buttons control playback; long-press the voice button for Siri | Automatic | — | No |
-| Custom AirPlay icon for the return-to-car button; the default icon (the BYD logo) switches to a dark-grey version in dark mode, chosen by the appearance when CarPlay connects | Advanced | Default icon | No |
+| Custom AirPlay icon for the return-to-car button; the default icon is the BYD wordmark in silver on graphite, one icon for day and night | Advanced | Default icon | No |
 | Manufacturer and model: BYD / Song PLUS by default and rarely worth changing; after a change, forget this car on the iPhone and pair again | Advanced | BYD / Song PLUS | No |
 
 ## What CarPlay changes on the head unit

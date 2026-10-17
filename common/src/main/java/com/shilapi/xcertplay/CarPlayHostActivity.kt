@@ -4088,11 +4088,10 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun defaultAirPlayIconBytes(): ByteArray =
-        // Shown in CarPlay's app list as the "back to the car" button. The icon goes to the iPhone when
-        // the session starts, so it follows the appearance at that moment, not a later change.
-        resources.openRawResource(defaultAirPlayIconResource()).use { it.readBytes() }
-
-    private fun defaultAirPlayIconResource(): Int = if (darkMode) R.raw.ic_car_home_dark else R.raw.ic_car_home
+        // Shown in CarPlay's app list as the "back to the car" button. The iPhone gets it once, when the
+        // session starts, and has no dark variant of it, so one icon (graphite, silver BYD wordmark) suits
+        // both appearances; a light and a dark icon only switched at the next connection.
+        resources.openRawResource(R.raw.ic_car_home).use { it.readBytes() }
 
     private fun updateAirPlayIconPreview() {
         val preview = iconPreviewView ?: return
@@ -4104,7 +4103,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 AirPlayPersistence.clearCustomAirPlayIcon(this)
             }
         }
-        val bitmap = customBitmap ?: BitmapFactory.decodeResource(resources, defaultAirPlayIconResource())
+        val bitmap = customBitmap ?: BitmapFactory.decodeResource(resources, R.raw.ic_car_home)
         preview.setImageBitmap(bitmap)
         iconStatusView?.text =
             if (customBitmap != null) getString(R.string.icon_custom) else getString(R.string.icon_default)
