@@ -125,6 +125,16 @@ class CarPlayMediaEngineTest {
     }
 
     @Test
+    fun opusFeedbackCountsOnTheSelectedRtpClock() {
+        // A type=101 default stream with 0x10000000 measured 16000 Hz in the car; /feedback had said 48000.
+        val voice = AudioStreamCodec.fromFormatBits(0x10000000L, 101, "default")
+        assertEquals(48_000, voice.sampleRate)
+        assertEquals(16_000, voice.rtpClockRate)
+        assertEquals(48_000, AudioStreamCodec.fromFormatBits(0x40000000L, 101).rtpClockRate)
+        assertEquals(44_100, AudioStreamCodec.fromFormatBits(0x400000L, 102).rtpClockRate)
+    }
+
+    @Test
     fun microphoneStartsAfterSetupResponseWithoutWaitingForDownlinkAudio() {
         val events = mutableListOf<String>()
         val sink = object : MediaSink {

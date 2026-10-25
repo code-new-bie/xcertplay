@@ -17,6 +17,8 @@ data class AudioFormat(
     val channels: Int,
     val payloadType: Int,
     val audioType: String = "media",
+    /** What the RTP timestamps count at; /feedback reports sampleTime on this clock. */
+    val rtpClockRate: Int = sampleRate,
 )
 
 /**
@@ -193,7 +195,10 @@ class AudioStream(
 
 /** Maps the phone's negotiated audioFormat bits to a decode/render format. */
 object AudioStreamCodec {
-    /** Opus input uses the selected rate; its RTP timestamp clock remains 48 kHz. */
+    /**
+     * The rate the selected Opus bit stands for. The decoder still runs at 48 kHz, but the RTP
+     * timestamps count at this rate: a 16 kHz voice stream (Siri, calls) measured 16000 Hz in the car.
+     */
     fun opusCaptureRate(bits: Long): Int = when {
         bits and 0x40000000L != 0L -> 48_000
         bits and 0x20000000L != 0L -> 24_000
@@ -206,7 +211,14 @@ object AudioStreamCodec {
         val isOpus = (bits and OPUS_MONO) != 0L
         val pcm = PCM_FORMAT[bits]
         return when {
-            isOpus -> AudioFormat(AudioCodecKind.OPUS, 48_000, 1, payloadType, audioType)
+            isOpus -> AudioFormat(
+                AudioCodecKind.OPUS,
+                48_000,
+                1,
+                payloadType,
+                audioType,
+                rtpClockRate = opusCaptureRate(bits),
+            )
             isAacLc -> AudioFormat(
                 AudioCodecKind.AAC_LC,
                 if ((bits and AAC_LC_48K_STEREO) != 0L) 48_000 else 44_100,

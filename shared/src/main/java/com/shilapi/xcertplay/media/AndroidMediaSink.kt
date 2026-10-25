@@ -1136,7 +1136,7 @@ private class AudioRenderer(
             durationUs = AudioPacketDuration.opusUs(rtp, RTP_HEADER_BYTES),
         ) ?: return
         report("Audio RTP clock type=${format.payloadType} audioType=${format.audioType} codec=${format.codec} " +
-            "measuredHz=$measuredHz feedbackHz=${format.sampleRate}")
+            "measuredHz=$measuredHz feedbackHz=${format.rtpClockRate}")
     }
 
     private fun sampleTimestampUs(sample: Int): Long =

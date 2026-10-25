@@ -88,12 +88,12 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | 音频解码器输入：先排空再取，最多等 100 ms | `daffd2de`、`7d974f42`（PR 618、644，DiPlay 0.2.18、0.2.19） | 2026-10-14，未提交 | 原来只等 10 ms 就丢包。DiPlay 0.2.18 用 500 ms 出过问题（issue 649），所以照 0.2.19 的 100 ms。本分支另加了统计：`Audio stats` 的 `decoderDropped`、`decoderStalls`、`decoderStallMaxMs` |
 | GPS 航向未知时留空 | PR 109（DiPlay 0.2.9） | 2026-10-14，未提交 | 原来写 `0.00`，等于说车头朝正北 |
 | 建热点前先检查蓝牙 | `2d2f0ec8`（PR 679，DiPlay 0.2.19） | 2026-10-14，未提交 | 蓝牙关着时不再先建 P2P 组再拆掉；本分支只移植了检查，没有移植 DiPlay 的提示文字 |
-| 16/24 kHz Opus 的 RTP 时钟 | PR 644、547 | 只加了测量，未改行为 | 本分支注释认为 Opus 时钟固定 48 kHz，DiPlay 实测相反。新日志 `Audio RTP clock … measuredHz= feedbackHz=` 记录实测值，等通话或 Siri 日志再决定 |
+| 16/24 kHz Opus 的 RTP 时钟 | PR 644、547 | 2026-10-25，未提交 | 10-23 实车日志：type=101 default 流（0x10000000）实测 16000 Hz，/feedback 原按 48000 报。`AudioFormat.rtpClockRate` 取所选 Opus 格式位的采样率，/feedback 的 `sampleRate`、`sampleTime` 按它算；解码仍是 48 kHz，麦克风不变 |
 | 检查更新 | 参考 PR 413、488、593（DiPlay 0.2.15–0.2.18）的做法，代码是本分支自己写的 | 2026-10-14，未提交 | 同样每天查一次、首页提示、点了才下载、用 SHA-256 校验。不同：本分支经车机 ADB 执行 `pm install` 安装，不弹系统安装器（DiPlay 遇到过车机安装器打不开）；没有 ADB 时把安装包放进“下载/xcertplay”，用文件管理器装 |
 | 有线连接 InvalidHostID 时重新配对 | DiPlay 当前代码的 `rejectedPairRecordError` | 2026-10-14，未提交 | 本分支原来只认 InvalidPairRecord，InvalidHostID 会一直用旧记录重试；改写为 `LockdownPairRejection` |
 | 音频线程优先级 | `656577fe`（DiPlay 0.2.20，issue 737：开 360 摄像头时音频包晚到 45–138 ms） | 2026-10-15，未提交 | 音频接收、播放和麦克风线程用 `THREAD_PRIORITY_AUDIO`；视频照原版 `1836c27` 用 `THREAD_PRIORITY_DISPLAY` |
 | iOS 27 有线：上一个回复的尾巴后面跟着 VERSION 回复 | `19649861`（DiPlay 0.2.20，issue 100） | 2026-10-15，未提交 | 原样移植，连同 3 个测试 |
-| 车机音频时钟和 iPhone 不一致 | `dfd7c3d6`（DiPlay 0.2.20，issue 610） | 只加了测量，未改行为 | Audio stats 行新增 `sendHz playHz clockDiffPct clockWindowSec`（`AudioClockDrift`）。DiPlay 的做法是微调播放速度（`MediaClockTrim`），等实测宋 PLUS 有偏差再决定 |
+| 车机音频时钟和 iPhone 不一致 | `dfd7c3d6`（DiPlay 0.2.20，issue 610） | 只加了测量，未改行为 | Audio stats 行新增 `sendHz playHz clockDiffPct clockWindowSec`（`AudioClockDrift`）。DiPlay 的做法是微调播放速度（`MediaClockTrim`）。10-23 实车 18 分钟音乐 `clockDiffPct` 从 -0.26% 收敛到 -0.033%（开头的测量偏差），没有漂移，宋 PLUS 不需要 |
 | 没有 ADB 时用系统安装器装更新 | `aa7cd204`（PR 593，DiPlay 0.2.18） | 2026-10-15，未提交 | 照 DiPlay：`FileProvider` 交给系统安装器，能装 APK 的应用不止一个时让用户选。不同：本分支仍先用车机 ADB；只在系统已允许本应用安装时直接打开（DiPlay 不预先检查），否则让用户选比亚迪文件管理器或照样试系统安装器；直接打开前先正常退出 CarPlay |
 | 有线：USB 网卡（NCM）读数据改为异步请求，状态通知改为短查询 | DiPlay 最早公开的代码里就有（注释：`bulkTransfer` 等待时锁住数组，挡住 ART 垃圾回收，画面和声音约卡 0.8 秒） | 2026-10-15，未提交 | 本分支的 `NcmUsbBridge` 是原版未改过的，读数据和状态通知都用 `bulkTransfer`，状态线程每次等 1 秒；整份换成 DiPlay 的 `NcmUsbBridge`，加 `UsbRequestQueue`、`UsbReadQueuePolicy` |
 | 有线：NCM 补位字节、按端点包长、坏数据块跳到下一个、接口设置重试 | `515bc9ec`、`5a5b5328`（DiPlay issue 565、558、518） | 2026-10-15，未提交 | 随上一行整份带上；跳过时会话日志有 `NCM resynchronized after …` |
