@@ -49,6 +49,28 @@ class CarPlayBonjourInterfaceMdnsTest {
         `when`(lock.isHeld).thenReturn(true)
     }
 
+    /** DiPlay PR 972: an unnamed address made JmDNS ask DNS for its name, 20 s on a BYD Android 10 unit. */
+    @Test
+    fun addressesAreNamedBeforeJmDnsStartsForBothFamilies() {
+        setup()
+        val hostName = "carplay-020000000002"
+        val received = mutableListOf<InetAddress>()
+        mockStatic(JmDNS::class.java).use { factory ->
+            factory.`when`<JmDNS> { JmDNS.create(any(InetAddress::class.java), eq(hostName)) }
+                .thenAnswer { invocation ->
+                    val address = invocation.getArgument<InetAddress>(0)
+                    // toString does not query DNS; it shows whether a name is already set.
+                    assertEquals("$hostName/${address.hostAddress}", address.toString())
+                    received.add(address)
+                    mock(JmDNS::class.java)
+                }
+            CarPlayBonjour(context, config, identity, ipv4.hostAddress, true, additionalAddresses = listOf(ipv6))
+                .use { it.start() }
+        }
+        assertEquals(listOf(ipv4, ipv6), received)
+        assertEquals(ipv6.scopeId, (received[1] as Inet6Address).scopeId)
+    }
+
     @Test
     fun publishesAndBrowsesBothFamiliesAndClosesBothRegistries() {
         setup()
