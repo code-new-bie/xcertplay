@@ -17,7 +17,8 @@ interface MediaSink {
     fun onVideoCodec(type: Int, codec: VideoCodec) {}
     fun onVideoRecoveryHandler(type: Int, requestKeyFrame: (() -> Boolean)?) {}
     fun onVideoConfig(type: Int, codecData: ByteArray) {}
-    fun onVideoFrame(type: Int, naluBytes: ByteArray) {}
+    /** One Annex B picture in a pooled buffer; close it once it has been copied or handed on. */
+    fun onVideoFrame(type: Int, accessUnit: VideoAccessUnit) { accessUnit.close() }
     fun onScreenStreamActive(type: Int, active: Boolean) {}
     fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {}
     fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {}
@@ -91,7 +92,7 @@ class CarPlayMediaEngine(
             object : ScreenStream.Listener {
                 override fun onCodec(codec: VideoCodec) = sink.onVideoCodec(type, codec)
                 override fun onConfig(codecData: ByteArray) = sink.onVideoConfig(type, codecData)
-                override fun onFrame(naluBytes: ByteArray) = sink.onVideoFrame(type, naluBytes)
+                override fun onFrame(accessUnit: VideoAccessUnit) = sink.onVideoFrame(type, accessUnit)
                 override fun onClosed(cause: Throwable?) {
                     Log.w(
                         TAG,

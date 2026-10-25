@@ -86,21 +86,23 @@ object MediaCodecSupport {
     /**
      * Rewrites a complete access unit's four-byte lengths as start codes in place, the same size, so
      * no buffer is copied per video frame (upstream 1836c27). Returns false, with [bytes] untouched,
-     * for a damaged access unit.
+     * for a damaged access unit. Only the first [length] bytes are the picture: a pooled buffer is
+     * larger (upstream 0d6c78c).
      */
-    fun toAnnexBInPlace(bytes: ByteArray): Boolean {
+    fun toAnnexBInPlace(bytes: ByteArray, length: Int = bytes.size): Boolean {
+        if (length !in 0..bytes.size) return false
         var cursor = 0
-        while (cursor < bytes.size) {
-            if (bytes.size - cursor < START_CODE.size) return false
-            val length = readU32(bytes, cursor)
-            if (length <= 0 || length > bytes.size - cursor - START_CODE.size) return false
-            cursor += START_CODE.size + length.toInt()
+        while (cursor < length) {
+            if (length - cursor < START_CODE.size) return false
+            val unit = readU32(bytes, cursor)
+            if (unit <= 0 || unit > length - cursor - START_CODE.size) return false
+            cursor += START_CODE.size + unit.toInt()
         }
         cursor = 0
-        while (cursor < bytes.size) {
-            val length = readU32(bytes, cursor).toInt()
+        while (cursor < length) {
+            val unit = readU32(bytes, cursor).toInt()
             START_CODE.copyInto(bytes, cursor)
-            cursor += START_CODE.size + length
+            cursor += START_CODE.size + unit
         }
         return true
     }
@@ -111,25 +113,43 @@ object MediaCodecSupport {
 
     /** Raw NAL units from either three- or four-byte Annex B start codes. */
     fun annexBNalUnits(bytes: ByteArray): List<ByteArray> {
-        if (startCodeSize(bytes, 0) == 0) return emptyList()
-        val units = mutableListOf<ByteArray>()
-        var cursor = 0
-        while (cursor < bytes.size) {
-            val prefix = startCodeSize(bytes, cursor)
-            if (prefix == 0) return emptyList()
-            val start = cursor + prefix
-            cursor = start
-            while (cursor < bytes.size && startCodeSize(bytes, cursor) == 0) cursor++
-            if (cursor == start) return emptyList()
-            units.add(bytes.copyOfRange(start, cursor))
-        }
-        return units
+        val bounds = annexBUnitBounds(bytes, bytes.size) ?: return emptyList()
+        return (bounds.indices step 2).map { bytes.copyOfRange(bounds[it], bounds[it + 1]) }
     }
 
-    private fun startCodeSize(bytes: ByteArray, offset: Int): Int {
-        if (offset + 3 > bytes.size || bytes[offset] != 0.toByte() || bytes[offset + 1] != 0.toByte()) return 0
+    /**
+     * The first two bytes (the NAL header) of every unit in the first [length] bytes of an Annex B
+     * access unit, without copying the payloads (upstream 3e07bca).
+     */
+    fun annexBNalHeaders(bytes: ByteArray, length: Int = bytes.size): List<ByteArray> {
+        val bounds = annexBUnitBounds(bytes, length) ?: return emptyList()
+        return (bounds.indices step 2).map { bytes.copyOfRange(bounds[it], minOf(bounds[it] + 2, bounds[it + 1])) }
+    }
+
+    /** Start and end offsets of each Annex B NAL unit, flattened, or null when malformed. */
+    private fun annexBUnitBounds(bytes: ByteArray, length: Int): IntArray? {
+        if (length !in 1..bytes.size || startCodeSize(bytes, 0, length) == 0) return null
+        var bounds = IntArray(8)
+        var count = 0
+        var cursor = 0
+        while (cursor < length) {
+            val prefix = startCodeSize(bytes, cursor, length)
+            if (prefix == 0) return null
+            val start = cursor + prefix
+            cursor = start
+            while (cursor < length && startCodeSize(bytes, cursor, length) == 0) cursor++
+            if (cursor == start) return null
+            if (count + 2 > bounds.size) bounds = bounds.copyOf(bounds.size * 2)
+            bounds[count++] = start
+            bounds[count++] = cursor
+        }
+        return bounds.copyOf(count)
+    }
+
+    private fun startCodeSize(bytes: ByteArray, offset: Int, limit: Int = bytes.size): Int {
+        if (offset + 3 > limit || bytes[offset] != 0.toByte() || bytes[offset + 1] != 0.toByte()) return 0
         if (bytes[offset + 2] == 1.toByte()) return 3
-        return if (offset + 4 <= bytes.size && bytes[offset + 2] == 0.toByte() && bytes[offset + 3] == 1.toByte()) 4 else 0
+        return if (offset + 4 <= limit && bytes[offset + 2] == 0.toByte() && bytes[offset + 3] == 1.toByte()) 4 else 0
     }
 
     /** Wraps one raw AAC-LC access unit in an MPEG-4 ADTS frame. */

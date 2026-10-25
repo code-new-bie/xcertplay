@@ -25,7 +25,8 @@ class ScreenStream(private val key: ByteArray) : Closeable {
     interface Listener {
         fun onCodec(codec: VideoCodec) {}
         fun onConfig(codecData: ByteArray) {}
-        fun onFrame(naluBytes: ByteArray) {}
+        /** One Annex B picture in a pooled buffer; the listener must close it once done with it. */
+        fun onFrame(accessUnit: VideoAccessUnit) { accessUnit.close() }
         fun onClosed(cause: Throwable?) {}
     }
 
@@ -33,6 +34,10 @@ class ScreenStream(private val key: ByteArray) : Closeable {
     private val closed = AtomicBoolean(false)
     private val frameCounter = AtomicLong(0)
     private val firstFrameLogged = AtomicBoolean(false)
+    // Pictures go through recycled buffers: a new array per frame, at up to 60 frames a second,
+    // kept the garbage collector busy (upstream 0d6c78c).
+    private val buffers = VideoBufferPool()
+    private val decryptor = AirPlayCrypto.ChaChaOpener(key)
     private var server: ServerSocket? = null
     private var socket: Socket? = null
     private var thread: Thread? = null
@@ -71,12 +76,18 @@ class ScreenStream(private val key: ByteArray) : Closeable {
         var failure: Throwable? = null
         try {
             val input = sock.getInputStream()
+            val header = ByteArray(HEADER_LEN)
             while (!closed.get()) {
-                val header = readFully(input, HEADER_LEN) ?: break
+                if (!readFully(input, header, HEADER_LEN)) break
                 val bodySize = readU32Le(header, 0)
                 if (bodySize < 0 || bodySize > MAX_BODY) break
-                val body = readFully(input, bodySize) ?: break
-                onMessage(header, body)
+                val body = buffers.acquire(bodySize)
+                try {
+                    if (!readFully(input, body.bytes, bodySize)) break
+                    onMessage(header, body)
+                } finally {
+                    body.close()
+                }
             }
         } catch (error: Exception) {
             failure = error
@@ -87,27 +98,36 @@ class ScreenStream(private val key: ByteArray) : Closeable {
         }
     }
 
-    private fun onMessage(header: ByteArray, body: ByteArray) {
+    private fun onMessage(header: ByteArray, body: VideoBufferPool.Lease) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
-                val payload = if (body.size >= ScreenCodec.TAG_SIZE) {
-                    ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
-                        .also { frameCounter.incrementAndGet() }
-                } else {
-                    body
+                val plain = buffers.acquire(body.length)
+                val accessUnit = try {
+                    val length = if (body.length >= ScreenCodec.TAG_SIZE) {
+                        decryptor.open(frameCounter.get(), body.bytes, body.length, header, plain.bytes)
+                            .also { frameCounter.incrementAndGet() }
+                    } else {
+                        body.bytes.copyInto(plain.bytes, endIndex = body.length)
+                        body.length
+                    }
+                    if (firstFrameLogged.compareAndSet(false, true)) {
+                        Log.i(
+                            TAG,
+                            "video first decrypted frame sealed=${body.length} plain=$length " +
+                            "head=${plain.bytes.hexPrefix(minOf(16, length))}",
+                        )
+                    }
+                    ScreenCodec.lengthPrefixedToAnnexB(plain, length, nalLengthSize, buffers)
+                } catch (error: Throwable) {
+                    plain.close()
+                    throw error
                 }
-                if (firstFrameLogged.compareAndSet(false, true)) {
-                    Log.i(
-                        TAG,
-                        "video first decrypted frame sealed=${body.size} plain=${payload.size} " +
-                        "head=${payload.hexPrefix(16)}",
-                    )
-                }
-                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload, nalLengthSize))
+                listener.onFrame(accessUnit)
             }
             OP_VIDEO_CONFIG -> {
-                val (codec, codecData) = ScreenCodec.detectConfig(body)
-                Log.i(TAG, "video codec config codec=$codec body=${body.size} data=${codecData.size}")
+                val config = body.bytes.copyOf(body.length)
+                val (codec, codecData) = ScreenCodec.detectConfig(config)
+                Log.i(TAG, "video codec config codec=$codec body=${body.length} data=${codecData.size}")
                 val lengthOffset = if (codec == VideoCodec.H265) 21 else 4
                 require(codecData.size > lengthOffset) { "Truncated video configuration" }
                 nalLengthSize = (codecData[lengthOffset].toInt() and 3) + 1
@@ -118,16 +138,15 @@ class ScreenStream(private val key: ByteArray) : Closeable {
         }
     }
 
-    private fun readFully(input: InputStream, length: Int): ByteArray? {
-        if (length < 0) return null
-        val output = ByteArray(length)
+    private fun readFully(input: InputStream, output: ByteArray, length: Int): Boolean {
+        if (length < 0 || length > output.size) return false
         var offset = 0
         while (offset < length) {
             val read = input.read(output, offset, length - offset)
-            if (read < 0) return null
+            if (read < 0) return false
             offset += read
         }
-        return output
+        return true
     }
 
     private companion object {
@@ -158,6 +177,27 @@ object ScreenCodec {
             return payload
         }
         return converted
+    }
+
+    /**
+     * The same for a pooled [payload] of [length] bytes: four-byte lengths are rewritten in place;
+     * other sizes are converted into a new pooled buffer. [payload] passes to the result, which is
+     * empty for a damaged picture.
+     */
+    internal fun lengthPrefixedToAnnexB(
+        payload: VideoBufferPool.Lease,
+        length: Int,
+        lengthSize: Int,
+        pool: VideoBufferPool,
+    ): VideoAccessUnit {
+        if (lengthSize == 4) {
+            return VideoAccessUnit(payload, if (MediaCodecSupport.toAnnexBInPlace(payload.bytes, length)) length else 0)
+        }
+        val converted = MediaCodecSupport.toAnnexB(payload.bytes.copyOf(length), lengthSize, allowAnnexB = false)
+        payload.close()
+        val output = pool.acquire(converted.size)
+        converted.copyInto(output.bytes)
+        return VideoAccessUnit(output, converted.size)
     }
 
     fun detectConfig(payload: ByteArray): Pair<VideoCodec, ByteArray> {

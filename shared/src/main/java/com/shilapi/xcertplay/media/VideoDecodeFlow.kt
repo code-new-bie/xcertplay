@@ -6,22 +6,31 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
-/** Apply TCP backpressure to compressed pictures, never discard a reference on queue overflow. */
-internal class VideoWorkQueue<T>(capacity: Int) : Closeable {
+/**
+ * Apply TCP backpressure to compressed pictures, never discard a reference on queue overflow.
+ * Entries still queued at [close] go to [onDiscard], so pooled buffers are returned.
+ */
+internal class VideoWorkQueue<T>(capacity: Int, private val onDiscard: (T) -> Unit = {}) : Closeable {
     private data class Entry<T>(val value: T, val frame: Boolean)
     private val entries = LinkedBlockingQueue<Entry<T>>()
     private val slots = Semaphore(capacity)
     @Volatile private var closed = false
     val size: Int get() = entries.size
 
-    fun frame(value: T) {
+    /** False when the queue closed first; [value] then stays the caller's. */
+    fun frame(value: T): Boolean {
         while (!closed) {
             if (!slots.tryAcquire(50, TimeUnit.MILLISECONDS)) continue
-            synchronized(this) {
-                if (closed) slots.release() else entries.offer(Entry(value, true))
+            return synchronized(this) {
+                if (closed) {
+                    slots.release()
+                    false
+                } else {
+                    entries.offer(Entry(value, true))
+                }
             }
-            return
         }
+        return false
     }
 
     @Synchronized
@@ -41,29 +50,44 @@ internal class VideoWorkQueue<T>(capacity: Int) : Closeable {
         while (true) {
             val entry = entries.poll() ?: break
             if (entry.frame) slots.release()
+            onDiscard(entry.value)
         }
     }
 }
 
-/** A tick must run even when the sender is idle. An unavailable input buffer is not a lost frame. */
+/**
+ * A tick must run even when the sender is idle. An unavailable input buffer is not a lost frame.
+ * A picture's [release] runs once the codec has copied it, or when it is cleared.
+ */
 internal class VideoDecodePump(private val port: Port) {
     interface Port {
         fun drain()
-        fun queue(bytes: ByteArray, presentationTimeUs: Long): Boolean
+        fun queue(bytes: ByteArray, size: Int, presentationTimeUs: Long): Boolean
     }
-    private data class Input(val bytes: ByteArray, val ptsUs: Long)
+    private class Input(val bytes: ByteArray, val size: Int, val ptsUs: Long, val release: () -> Unit)
     private var pending: Input? = null
     val hasPending: Boolean get() = pending != null
 
-    fun submit(bytes: ByteArray, presentationTimeUs: Long) {
+    fun submit(bytes: ByteArray, size: Int, presentationTimeUs: Long, release: () -> Unit = {}) {
         check(pending == null)
-        pending = Input(bytes, presentationTimeUs)
+        require(size in 0..bytes.size)
+        pending = Input(bytes, size, presentationTimeUs, release)
     }
 
     fun tick() {
         port.drain()
-        pending?.let { if (port.queue(it.bytes, it.ptsUs)) pending = null }
+        pending?.let {
+            if (port.queue(it.bytes, it.size, it.ptsUs)) {
+                pending = null
+                it.release()
+            }
+        }
         port.drain()
+    }
+
+    fun clear() {
+        pending?.release()
+        pending = null
     }
 }
 
@@ -73,10 +97,11 @@ internal class VideoSyncGate(private val codec: VideoCodec) {
     private var skipRasl = false
     val waitingForRandomAccess: Boolean get() = waiting
 
-    fun accept(annexB: ByteArray): Boolean {
-        val units = MediaCodecSupport.annexBNalUnits(annexB)
-        require(units.isNotEmpty()) { "Empty or malformed video access unit" }
-        val types = units.map {
+    fun accept(annexB: ByteArray, length: Int = annexB.size): Boolean {
+        // Only the NAL headers decide; copying every unit would duplicate the whole picture.
+        val headers = MediaCodecSupport.annexBNalHeaders(annexB, length)
+        require(headers.isNotEmpty()) { "Empty or malformed video access unit" }
+        val types = headers.map {
             require(it[0].toInt() and 0x80 == 0) { "Invalid NAL header" }
             if (codec == VideoCodec.H265) {
                 require(it.size >= 2 && it[1].toInt() and 7 != 0) { "Invalid HEVC NAL header" }

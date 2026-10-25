@@ -2,9 +2,56 @@ package com.shilapi.xcertplay.media
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MediaCodecSupportTest {
+    @Test
+    fun inPlaceConversionHonorsLogicalLengthInsteadOfBucketCapacity() {
+        val bytes = ByteArray(64)
+        byteArrayOf(0, 0, 0, 3, 0x65, 1, 2).copyInto(bytes)
+
+        assertTrue(MediaCodecSupport.toAnnexBInPlace(bytes, 7))
+        assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x65, 1, 2), bytes.copyOf(7))
+    }
+
+    @Test
+    fun nalHeadersComeWithoutCopyingTheUnits() {
+        val idr = byteArrayOf(0x26, 1, 9, 9, 9)
+        val sei = byteArrayOf(0x4e, 1)
+        val oneByte = byteArrayOf(0x02)
+        val annexB = byteArrayOf(0, 0, 0, 1) + idr + byteArrayOf(0, 0, 1) + sei + byteArrayOf(0, 0, 0, 1) + oneByte
+        val headers = MediaCodecSupport.annexBNalHeaders(annexB)
+        assertEquals(listOf(listOf<Byte>(0x26, 1), listOf<Byte>(0x4e, 1), listOf<Byte>(0x02)), headers.map { it.toList() })
+        assertEquals(MediaCodecSupport.annexBNalUnits(annexB).map { it.take(2) }, headers.map { it.toList() })
+        // A pooled buffer: only the picture's own bytes count.
+        val pooled = annexB.copyOf(annexB.size + 32)
+        assertEquals(headers.map { it.toList() }, MediaCodecSupport.annexBNalHeaders(pooled, annexB.size).map { it.toList() })
+    }
+
+    @Test
+    fun malformedAnnexBYieldsNothing() {
+        val malformed = listOf(
+            byteArrayOf(0x26, 1, 0, 0, 1, 0x02), // no leading start code
+            byteArrayOf(0, 0, 1, 0, 0, 1, 0x26), // empty NAL unit
+            byteArrayOf(0, 0, 0, 1), // start code only
+        )
+        for (bytes in malformed) {
+            assertEquals(0, MediaCodecSupport.annexBNalHeaders(bytes).size)
+            assertEquals(0, MediaCodecSupport.annexBNalUnits(bytes).size)
+        }
+    }
+
+    @Test
+    fun syncGateDecidesFromHeadersOnly() {
+        val gate = VideoSyncGate(com.shilapi.xcertplay.airplay.VideoCodec.H265)
+        val trail = byteArrayOf(0, 0, 0, 1, 0x02, 1, 7, 7)
+        val idr = byteArrayOf(0, 0, 0, 1, 0x26, 1, 7, 7)
+        assertEquals(false, gate.accept(trail))
+        assertEquals(true, gate.accept(idr))
+        assertEquals(true, gate.accept(trail))
+    }
+
     @Test
     fun lengthPrefixedNalUnitsBecomeOneAnnexBBuffer() {
         val first = byteArrayOf(0x40, 0x01)

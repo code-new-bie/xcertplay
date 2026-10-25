@@ -26,10 +26,10 @@ object AirPlayCrypto {
     private val random = SecureRandom()
 
     /**
-     * The platform's ChaCha20-Poly1305 (BoringSSL through Conscrypt, Android 9 and later) opens every
-     * video and audio packet in native code; BouncyCastle does it in Java on the head unit's CPU. One
-     * instance per thread; where the platform has none, BouncyCastle is used as before.
-     * Ported from upstream 1836c27.
+     * The platform's ChaCha20-Poly1305 (BoringSSL through Conscrypt, Android 9 and later) opens
+     * audio packets in native code; BouncyCastle does it in Java on the head unit's CPU. One
+     * instance per thread; where the platform has none, BouncyCastle is used as before. Video
+     * frames use [ChaChaOpener] instead. Ported from upstream 1836c27.
      */
     private val platformOpenCipher = ThreadLocal<Cipher?>()
     @Volatile private var platformOpenAvailable = true
@@ -117,6 +117,35 @@ object AirPlayCrypto {
         val finalized = cipher.doFinal(output, processed)
         val outputLength = processed + finalized
         return if (outputLength == output.size) output else output.copyOf(outputLength)
+    }
+
+    /**
+     * Opens video frames into a buffer the caller recycles. The platform cipher buffers the whole
+     * input and allocates its result even when given an output array, a large object per frame;
+     * BouncyCastle writes straight into [open]'s output. Ported from upstream 0d6c78c.
+     */
+    class ChaChaOpener(key: ByteArray) {
+        private val cipher = ChaCha20Poly1305()
+        private val keyParameter = KeyParameter(key.copyOf())
+        private val nonce = ByteArray(NONCE_SIZE)
+
+        fun open(
+            counter: Long,
+            ciphertextAndTag: ByteArray,
+            ciphertextLength: Int,
+            aad: ByteArray,
+            output: ByteArray,
+        ): Int {
+            var value = counter
+            for (index in 4 until NONCE_SIZE) {
+                nonce[index] = value.toByte()
+                value = value ushr 8
+            }
+            require(ciphertextLength in 0..ciphertextAndTag.size)
+            cipher.init(false, AEADParameters(keyParameter, MAC_BITS, nonce, aad))
+            val processed = cipher.processBytes(ciphertextAndTag, 0, ciphertextLength, output, 0)
+            return processed + cipher.doFinal(output, processed)
+        }
     }
 
     /** The platform cipher set up to open with [key] and [nonce], or null to use BouncyCastle. */

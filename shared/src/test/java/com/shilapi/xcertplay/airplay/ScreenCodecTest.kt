@@ -48,4 +48,23 @@ class ScreenCodecTest {
         assertArrayEquals(byteArrayOf(0, 0, 0, 1, 9, 0, 0, 0, 1, 0x65, 1),
             ScreenCodec.lengthPrefixedToAnnexB(payload))
     }
+
+    @Test
+    fun pooledPicturesConvertWithinTheirLengthAndGoBackToThePool() {
+        val pool = VideoBufferPool(maxPerBucket = 1)
+        val nal = byteArrayOf(0x26, 1, 0x80.toByte())
+        for (lengthSize in listOf(2, 4)) {
+            val wire = ByteArray(lengthSize).apply { this[lastIndex] = nal.size.toByte() } + nal
+            val lease = pool.acquire(wire.size)
+            wire.copyInto(lease.bytes)
+            val unit = ScreenCodec.lengthPrefixedToAnnexB(lease, wire.size, lengthSize, pool)
+            assertArrayEquals(byteArrayOf(0, 0, 0, 1) + nal, unit.bytes.copyOf(unit.size))
+            val storage = unit.bytes
+            unit.close()
+            assertSame("Closed pictures are reused", storage, pool.acquire(1).also { it.close() }.bytes)
+        }
+        val damaged = pool.acquire(6)
+        byteArrayOf(0, 0, 0, 5, 0x40, 0x01).copyInto(damaged.bytes)
+        assertEquals(0, ScreenCodec.lengthPrefixedToAnnexB(damaged, 6, 4, pool).size)
+    }
 }
