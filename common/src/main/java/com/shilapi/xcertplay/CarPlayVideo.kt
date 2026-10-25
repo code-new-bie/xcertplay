@@ -61,14 +61,11 @@ internal object CarPlayVideo : CarPlayVideoListener {
     fun attach(context: Context, next: CarPlayController) {
         appContext = context.applicationContext
         BydGearSource.log = { note(it) }
-        BydGearSource.start(context)
         controller = next
         next.videoListener = this
     }
 
     override fun readParked(): Boolean? = BydGearSource.parked()
-
-    override fun watchGear(onChange: (() -> Unit)?) = BydGearSource.watch(onChange)
 
     override fun onVideoAllowedChanged(allowed: Boolean) {
         note(if (allowed) "allowed, the car is in P" else "not allowed, the car is not in P or the gear is unknown")

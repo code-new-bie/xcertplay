@@ -96,23 +96,41 @@ class BydWheelSpeedSource(context: Context, private val onProgress: (String) -> 
         val request = ++generation
         var firstSample = true
         reader = BydSdkStream(app, "speed", { line ->
-            BydVehicleData.speed(line, SystemClock.elapsedRealtime())?.let { (sample, currentGear) ->
+            val now = SystemClock.elapsedRealtime()
+            BydVehicleData.speed(line, now)?.let { (sample, currentGear) ->
                 synchronized(this) {
                     if (generation != request) return@synchronized
                     if (samples.size == 40) samples.removeAt(0)
                     samples.add(sample)
                     gear = currentGear
+                    BydSpeedGear.note(currentGear, now)
                     if (firstSample) {
                         firstSample = false
                         onProgress("BYD wheel speed first sample=${sample.metersPerSecond}m/s gear=${currentGear.letter}")
                     }
                 }
             }
-        }, { synchronized(this) { if (generation == request) { samples.clear(); gear = null } } }, onProgress).also { it.start() }
+        }, {
+            synchronized(this) {
+                if (generation == request) {
+                    samples.clear()
+                    gear = null
+                    BydSpeedGear.clear()
+                }
+            }
+        }, onProgress).also { it.start() }
     }
 
     override fun stop() {
-        val previous = synchronized(this) { reader.also { generation++; reader = null; samples.clear(); gear = null } }
+        val previous = synchronized(this) {
+            reader.also {
+                generation++
+                reader = null
+                samples.clear()
+                gear = null
+                BydSpeedGear.clear()
+            }
+        }
         previous?.close()
     }
 
@@ -122,5 +140,37 @@ class BydWheelSpeedSource(context: Context, private val onProgress: (String) -> 
         val fresh = samples.filter { now - it.elapsedMillis in 0..2_000L }
         samples.clear()
         return fresh.takeIf { it.isNotEmpty() }?.let { VehicleSpeedReading(currentGear, it) }
+    }
+}
+
+/**
+ * The gear the wheel-speed helper read last, for video in car while the camera helper has none. At
+ * the start of a session on 2026-10-23 the camera helper timed out and video in car had no gear for
+ * 73 s, while this helper had one after 12 s.
+ */
+internal object BydSpeedGear {
+    /** The helper reads the gear once a second; older than this, it is not trusted. */
+    const val FRESH_MILLIS = 3_000L
+
+    private var gear: VehicleGear? = null
+    private var readAtMillis = 0L
+
+    @Synchronized
+    fun note(gear: VehicleGear, nowMillis: Long) {
+        this.gear = gear
+        readAtMillis = nowMillis
+    }
+
+    @Synchronized
+    fun clear() {
+        gear = null
+    }
+
+    /** True in P, false in another gear, null without a reading in the last [FRESH_MILLIS]. */
+    @Synchronized
+    fun parked(nowMillis: Long): Boolean? {
+        val current = gear ?: return null
+        if (nowMillis - readAtMillis !in 0..FRESH_MILLIS) return null
+        return current == VehicleGear.PARK
     }
 }

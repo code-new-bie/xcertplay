@@ -457,10 +457,7 @@ class CarPlayController(
                 onObserved = { parked ->
                     debugLog("video in car gear=${when (parked) { true -> "P"; false -> "not-P"; null -> "unknown" }}")
                 },
-            ).also { gate ->
-                gate.start()
-                listener.watchGear { gate.refresh() }
-            }
+            ).also { it.start() }
         }
         if (config.transport == CarPlayTransport.WIRED) {
             permissionCloseable = iphoneHost.registerPermissionReceiver(::onIphonePermission)
@@ -610,7 +607,6 @@ class CarPlayController(
         }
         closeBestEffort("Wi-Fi performance lock") { wirelessPerformanceLock.release() }
         closeBestEffort("video in car") {
-            videoListener?.watchGear(null)
             videoGate?.close()
         }
         closeBestEffort("call wind test") {

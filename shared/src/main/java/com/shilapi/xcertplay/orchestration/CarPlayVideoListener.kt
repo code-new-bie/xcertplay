@@ -9,9 +9,6 @@ interface CarPlayVideoListener {
     /** Whether the car is in P, or null when it cannot tell. Read every [VideoInCarGate.POLL_MILLIS] while CarPlay runs. */
     fun readParked(): Boolean?
 
-    /** Calls [onChange] (any thread) when the gear may have changed, to check it at once; null stops. */
-    fun watchGear(onChange: (() -> Unit)?) {}
-
     /** Video became allowed or not; when not, the player must close. Any thread. */
     fun onVideoAllowedChanged(allowed: Boolean)
 
@@ -61,11 +58,6 @@ internal class VideoInCarGate(
         }, "xcertplay-video-gate").apply { isDaemon = true }.start()
     }
 
-    /** Reads the gear now, for a change signalled between polls. Any thread. */
-    fun refresh() {
-        if (!closed) update(runCatching(readParked).getOrNull())
-    }
-
     @Synchronized
     internal fun update(parked: Boolean?) {
         if (!observed || parked != lastParked) {
@@ -95,7 +87,7 @@ internal class VideoInCarGate(
     }
 
     companion object {
-        /** Gear changes are also signalled at once (watchGear); the poll covers a source without events. */
+        /** Near the camera helper's 300 ms reading: leaving P ends video within about half a second. */
         const val POLL_MILLIS = 500L
         /** Longer than the ADB helper's restart, short enough to stop video soon after losing the gear. */
         const val UNKNOWN_GRACE_MILLIS = 10_000L

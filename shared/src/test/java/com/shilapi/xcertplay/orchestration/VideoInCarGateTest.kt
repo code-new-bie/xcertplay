@@ -86,17 +86,4 @@ class VideoInCarGateTest {
 
         assertEquals(listOf(true, false), changes)
     }
-
-    @Test
-    fun refreshReadsTheGearAtOnce() {
-        var parked: Boolean? = true
-        val changes = mutableListOf<Boolean>()
-        val gate = VideoInCarGate({ parked }, onChanged = { changes += it })
-
-        gate.refresh()
-        parked = false
-        gate.refresh()
-
-        assertEquals(listOf(true, false), changes)
-    }
 }

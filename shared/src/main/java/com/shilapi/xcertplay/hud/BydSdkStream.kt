@@ -26,9 +26,10 @@ internal class BydSdkStream(
         if (!running.compareAndSet(false, true)) return
         worker.execute {
             var unavailableLogged = false
+            var failures = 0
             while (running.get()) {
                 var adb: LocalAdb? = null
-                var retryMillis = 30_000L
+                var retryMillis = 0L
                 try {
                     if (!running.get()) break
                     val connection = newClient()
@@ -50,11 +51,12 @@ internal class BydSdkStream(
                         }
                     }
                     if (SystemClock.elapsedRealtime() - helperStartedAt >= 4 * 60_000L) {
-                        retryMillis = 0L // normal bounded helper expiry: restart without a 30-second gap
+                        failures = 0 // normal bounded helper expiry: restart at once
                     } else if (running.get()) {
                         throw IllegalStateException("SDK helper ended early")
                     }
                 } catch (error: Exception) {
+                    retryMillis = retryDelayMillis(++failures)
                     if (running.get() && !unavailableLogged) {
                         Log.w("xcertplay-BYD-Data", "$mode unavailable", error)
                         onProgress("BYD $mode unavailable: ${error.message?.take(160)}")
@@ -81,6 +83,17 @@ internal class BydSdkStream(
     }
 
     companion object {
+        private const val EARLY_RETRIES = 2
+        private const val EARLY_RETRY_MS = 5_000L
+        private const val RETRY_MS = 30_000L
+
+        /**
+         * The wait after the [failures]th failure in a row. The first ones come sooner: the helpers
+         * all start with the session, and on 2026-10-23 the panorama one timed out twice and then
+         * waited 30 s, leaving video in car 73 s without a gear.
+         */
+        internal fun retryDelayMillis(failures: Int): Long = if (failures <= EARLY_RETRIES) EARLY_RETRY_MS else RETRY_MS
+
         fun command(context: Context, mode: String, once: Boolean = false): String {
             require(mode == "speed" || mode == "battery" || mode == "panorama")
             return helper(context, mode) + if (once) " once" else ""
