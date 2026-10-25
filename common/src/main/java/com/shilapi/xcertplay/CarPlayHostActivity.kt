@@ -87,6 +87,7 @@ import com.shilapi.xcertplay.hud.BydWheelSpeedSource
 import com.shilapi.xcertplay.network.BluetoothHandoff
 import com.shilapi.xcertplay.network.IphoneHotspotMonitor
 import com.shilapi.xcertplay.network.P2pChannelPreference
+import com.shilapi.xcertplay.network.VpnPreConsent
 import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WifiScanPauseSettings
 import com.shilapi.xcertplay.transport.EvChargingConnectors
@@ -723,14 +724,39 @@ class CarPlayHostActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
 
     private fun requestVpnConsent() {
+        if (awaitingVpnConsent) return
         val consent = CarPlayVpnService.prepare(this)
         if (consent == null) {
             vpnReady = true
             maybeStartCarPlay()
-        } else {
-            awaitingVpnConsent = true
-            vpnConsent.launch(consent)
+            return
         }
+        awaitingVpnConsent = true
+        if (!VpnPreConsent.enabled(this)) {
+            vpnConsent.launch(consent)
+            return
+        }
+        // Try the car's approved ADB first, so the system dialog does not come up.
+        val app = applicationContext
+        Thread({
+            val access = runCatching { VpnPreConsent.grant(app) }.getOrNull()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val stillAsks = CarPlayVpnService.prepare(this)
+                if (stillAsks == null) {
+                    appendLog("Wired VPN allowed over head-unit ADB; no consent dialog")
+                    awaitingVpnConsent = false
+                    vpnReady = true
+                    maybeStartCarPlay()
+                } else {
+                    appendLog(
+                        "Wired VPN not allowed over head-unit ADB (adb ${access ?: "failed"}); " +
+                            "asking with the system dialog",
+                    )
+                    vpnConsent.launch(stillAsks)
+                }
+            }
+        }, "xcertplay-vpn-consent").apply { isDaemon = true }.start()
     }
 
     private fun requestWirelessPermissions() {
@@ -1397,6 +1423,18 @@ class CarPlayHostActivity : ComponentActivity() {
             getString(R.string.wifi_scan_pause_note),
         )
         scanPauseStatus()?.let { addHint(page, it) }
+
+        addSubHeader(page, getString(R.string.byd_sub_wired))
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.vpn_pre_consent_label),
+                checked = VpnPreConsent.enabled(this),
+                description = getString(R.string.vpn_pre_consent_desc),
+            ) { checked -> VpnPreConsent.setEnabled(this, checked) },
+            getString(R.string.vpn_pre_consent_note),
+            topMarginDp = 12,
+        )
 
         addSubHeader(page, getString(R.string.byd_sub_call))
         addSetting(

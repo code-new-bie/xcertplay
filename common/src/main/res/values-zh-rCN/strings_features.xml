@@ -44,9 +44,10 @@
     <string name="byd_adb_unreachable">无法连接 127.0.0.1:5555。请在车机上开启网络 ADB；仅有 USB ADB 连接不会开放该端口。</string>
     <string name="byd_adb_unsupported">该调试服务需要 xcertplay 不支持的协议。请使用 Android 10 的网络 ADB 服务。</string>
     <string name="byd_adb_failed">ADB 检查失败：%1$s</string>
-    <string name="byd_adb_note">仪表歌词、通话降风量、暂停车机 Wi-Fi 搜索、熄火时自动退出 CarPlay 和车辆数据都需要先授权。点击后车机可能弹出调试授权对话框，请选择允许；检查结果会显示车速和电量能否读取。后台使用时不会再请求授权。</string>
+    <string name="byd_adb_note">仪表歌词、通话降风量、暂停车机 Wi-Fi 搜索、有线连接自动允许 VPN、熄火时自动退出 CarPlay 和车辆数据都需要先授权。点击后车机可能弹出调试授权对话框，请选择允许；检查结果会显示车速和电量能否读取。后台使用时不会再请求授权。</string>
     <string name="byd_sub_adb">车机 ADB</string>
     <string name="byd_sub_wireless">无线连接</string>
+    <string name="byd_sub_wired">有线连接</string>
     <string name="byd_sub_call">通话</string>
     <string name="byd_sub_cluster">仪表</string>
     <string name="byd_vehicle_data_note">车辆数据不可用时会跳过，不影响 CarPlay；修改后下一次 CarPlay 连接时生效。</string>
@@ -70,6 +71,9 @@
     <string name="wifi_scan_pause_status_adb_not_approved">当前状态：未生效，车机 ADB 未授权</string>
     <string name="wifi_scan_pause_status_adb_unreachable">当前状态：未生效，无法连接车机 ADB（127.0.0.1:5555）</string>
     <string name="wifi_scan_pause_status_failed">当前状态：未生效，暂停失败，详见日志</string>
+    <string name="vpn_pre_consent_label">有线连接时自动允许 VPN</string>
+    <string name="vpn_pre_consent_desc">不再每次弹出系统的“连接请求”对话框</string>
+    <string name="vpn_pre_consent_note">有线 CarPlay 需要系统允许本应用建一个 VPN（只给 CarPlay 用，不影响车机其他应用上网）。打开后，每次有线连接前通过已授权的 ADB 预先允许，系统的“连接请求”对话框就不会出现。ADB 未授权或没生效时，照旧弹出对话框。</string>
     <string name="cluster_song_label">仪表显示歌曲/歌词</string>
     <string name="cluster_song_desc">在仪表的音乐卡片中显示 CarPlay 歌曲</string>
     <string name="cluster_song_note">显示“歌名 — 歌手”及播放/暂停；想显示歌词，请在音乐 App（QQ 音乐、网易云音乐等）中打开“车载/蓝牙歌词”，它会把当前歌词放进歌名。通过已授权的 ADB 写入，卡片显示为“其他”音源。</string>

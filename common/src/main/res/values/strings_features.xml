@@ -44,9 +44,10 @@
     <string name="byd_adb_unreachable">Cannot reach 127.0.0.1:5555. Enable network ADB on the head unit; a USB ADB connection alone does not enable this port.</string>
     <string name="byd_adb_unsupported">This debugging service requires a protocol xcertplay does not support. Use the Android 10 network ADB service.</string>
     <string name="byd_adb_failed">ADB check failed: %1$s</string>
-    <string name="byd_adb_note">Song lyrics on the cluster, call fan reduction, pausing Wi-Fi search, exiting CarPlay when the car is switched off and vehicle data all need this first. The head unit may show a debugging authorization dialog; allow it. The result shows whether speed and battery can be read. Background use never asks for approval.</string>
+    <string name="byd_adb_note">Song lyrics on the cluster, call fan reduction, pausing Wi-Fi search, allowing the wired VPN, exiting CarPlay when the car is switched off and vehicle data all need this first. The head unit may show a debugging authorization dialog; allow it. The result shows whether speed and battery can be read. Background use never asks for approval.</string>
     <string name="byd_sub_adb">Head-unit ADB</string>
     <string name="byd_sub_wireless">Wireless</string>
+    <string name="byd_sub_wired">Wired</string>
     <string name="byd_sub_call">Calls</string>
     <string name="byd_sub_cluster">Instrument cluster</string>
     <string name="byd_vehicle_data_note">Unavailable vehicle data is skipped while CarPlay continues. Changes apply on the next CarPlay connection.</string>
@@ -70,6 +71,9 @@
     <string name="wifi_scan_pause_status_adb_not_approved">Status: not in effect, head-unit ADB is not authorized</string>
     <string name="wifi_scan_pause_status_adb_unreachable">Status: not in effect, cannot reach head-unit ADB (127.0.0.1:5555)</string>
     <string name="wifi_scan_pause_status_failed">Status: not in effect, pausing failed (see the log)</string>
+    <string name="vpn_pre_consent_label">Allow the wired VPN automatically</string>
+    <string name="vpn_pre_consent_desc">No connection request dialog on each wired connection</string>
+    <string name="vpn_pre_consent_note">Wired CarPlay needs Android to allow this app a VPN, used only for CarPlay; other apps keep their internet. With this on, the authorized ADB allows it before each wired connection, so the system connection request dialog does not appear. Without ADB authorization, or if it does not take, the dialog appears as before.</string>
     <string name="cluster_song_label">Song and lyrics on the cluster</string>
     <string name="cluster_song_desc">CarPlay song in the instrument cluster\'s music card</string>
     <string name="cluster_song_note">Shows \"title — artist\" with play and pause; for lyrics, turn on car or Bluetooth lyrics in the music app (QQ Music, NetEase Cloud Music…), which puts the current line in the title. Written through the authorized ADB link; the card shows as \"other\" music source.</string>
