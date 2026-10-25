@@ -16,11 +16,13 @@ data class MicrophoneConfig(
     val codec: AudioCodecKind = AudioCodecKind.LPCM,
     val bitrate: Int? = null,
 ) {
+    /**
+     * Also the RTP timestamp step. For Opus it counts at [sampleRate], the rate of the selected
+     * Opus bit, not at 48 kHz: the iPhone's own Opus streams do (16000 Hz measured in the car), and
+     * upstream 42ad6da made the same change.
+     */
     val samplesPerPacket: Int
         get() = maxOf(1, sampleRate * frameMillis / 1000)
-
-    val rtpSamplesPerPacket: Int
-        get() = if (codec == AudioCodecKind.OPUS) 48_000 * frameMillis / 1000 else samplesPerPacket
 
     val frameBytes: Int
         get() = samplesPerPacket * channels * 2

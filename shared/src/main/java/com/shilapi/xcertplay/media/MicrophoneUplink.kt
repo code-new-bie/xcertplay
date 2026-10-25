@@ -165,7 +165,7 @@ internal class MicrophoneUplink(
                 payloadType = config.payloadType,
                 counters = counters,
                 body = body,
-                samples = config.rtpSamplesPerPacket,
+                samples = config.samplesPerPacket,
             )
             try {
                 activeSocket.send(DatagramPacket(packet, packet.size, config.host, config.port))
