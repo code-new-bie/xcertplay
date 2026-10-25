@@ -56,6 +56,7 @@ class WifiScanPause internal constructor(
     private val newShell: () -> WifiScanShell = { AdbWifiScanShell(context.applicationContext) },
     private val resumeDelayMillis: Long = RESUME_DELAY_MS,
     private val startupGraceMillis: Long = STARTUP_GRACE_MS,
+    private val pauseRetryMillis: Long = PAUSE_RETRY_MS,
 ) {
     private val app = context.applicationContext
     private val prefs = WifiScanPauseSettings.prefs(app)
@@ -63,6 +64,8 @@ class WifiScanPause internal constructor(
         Thread(it, "xcertplay-wifi-scan").apply { isDaemon = true }
     }.apply { removeOnCancelPolicy = true }
     private var pendingResume: ScheduledFuture<*>? = null // worker thread
+    private var pauseRetry: ScheduledFuture<*>? = null // worker thread
+    private var pauseRetries = 0
     private var sessionRequested = false
     private var appsAttempted = false
     private var appsApplied = false
@@ -110,6 +113,7 @@ class WifiScanPause internal constructor(
 
     fun resumeLater() {
         worker.execute {
+            cancelPauseRetry()
             sessionRequested = false
             appsAttempted = false
             appsApplied = false
@@ -136,6 +140,7 @@ class WifiScanPause internal constructor(
             worker.submit<Boolean> {
                 pendingResume?.cancel(false)
                 pendingResume = null
+                cancelPauseRetry()
                 sessionRequested = false
                 appsAttempted = false
                 setState(PauseState.IDLE)
@@ -154,6 +159,7 @@ class WifiScanPause internal constructor(
         worker.execute {
             pendingResume?.cancel(false)
             pendingResume = null
+            cancelPauseRetry()
             if (!enabled) {
                 restore()
                 setState(if (sessionRequested) PauseState.SETTING_OFF else PauseState.IDLE)
@@ -164,8 +170,10 @@ class WifiScanPause internal constructor(
     }
 
     private fun restrict() {
+        cancelPauseRetry()
+        pauseRetries = 0
         // Reassert after reconnect: a previous resume may have succeeded but lost its reply.
-        setSearch(enabled = false)
+        if (setSearch(enabled = false) == PauseState.FAILED) retryPauseLater()
         if (!appsApplied) {
             // Gaode is force-stopped at most once per connection; Baidu location is never stopped.
             val forceStop = !appsAttempted
@@ -173,6 +181,33 @@ class WifiScanPause internal constructor(
             appsApplied = true
             withShell { shell -> restrictions.forEach { it.apply(shell, forceStop) } }
         }
+    }
+
+    /**
+     * The helper can miss its reply while the session's other ADB helpers start alongside it: on
+     * 2026-10-23 the pause got "no reply from the helper" and the search ran the whole drive.
+     */
+    private fun retryPauseLater() {
+        if (pauseRetries >= MAX_PAUSE_RETRIES) {
+            report("Wi-Fi network search not paused after $MAX_PAUSE_RETRIES retries; trying again next session")
+            return
+        }
+        pauseRetries++
+        val delay = pauseRetryMillis * pauseRetries
+        pauseRetry = worker.schedule({
+            pauseRetry = null
+            if (sessionRequested && WifiScanPauseSettings.enabled(app) &&
+                setSearch(enabled = false) == PauseState.FAILED
+            ) {
+                retryPauseLater()
+            }
+        }, delay, TimeUnit.MILLISECONDS)
+        report("Wi-Fi network search: pause retry $pauseRetries/$MAX_PAUSE_RETRIES in ${delay / 1000}s")
+    }
+
+    private fun cancelPauseRetry() {
+        pauseRetry?.cancel(false)
+        pauseRetry = null
     }
 
     private fun needsRestore() =
@@ -196,12 +231,12 @@ class WifiScanPause internal constructor(
         }
     }
 
-    // Worker thread.
-    private fun setSearch(enabled: Boolean) {
+    // Worker thread. Returns what the call achieved, in [PauseState]'s terms.
+    private fun setSearch(enabled: Boolean): PauseState {
         // A lost acknowledgement must still be repaired on exit or next launch.
         if (!enabled && !prefs.edit().putBoolean(KEY_RECOVERY, true).commit()) {
             report("Wi-Fi network search unchanged: cannot persist recovery")
-            return
+            return PauseState.FAILED
         }
         var access: LocalAdb.Access? = null
         val output = runCatching {
@@ -214,7 +249,8 @@ class WifiScanPause internal constructor(
         val ok = output?.contains("XCERTPLAY wifiscan enabled=$enabled ok") == true
         if (ok) prefs.edit().putBoolean(KEY_PAUSED, !enabled)
             .putBoolean(KEY_RECOVERY, !enabled).commit()
-        if (!enabled) setState(PauseState.of(ok, access))
+        val result = PauseState.of(ok, access)
+        if (!enabled) setState(result)
         val verb = if (enabled) "resumed" else "paused"
         report(
             when {
@@ -225,6 +261,7 @@ class WifiScanPause internal constructor(
                 else -> "Wi-Fi network search not $verb: ${output.trim().take(160)}"
             },
         )
+        return result
     }
 
     private fun setState(value: PauseState) {
@@ -263,6 +300,9 @@ class WifiScanPause internal constructor(
         const val RESUME_DELAY_MS = 15_000L
         /** Long enough for wireless CarPlay to connect after the head unit powers on. */
         const val STARTUP_GRACE_MS = 60_000L
+        /** The first retry waits this long, each later one this much longer. */
+        const val PAUSE_RETRY_MS = 5_000L
+        private const val MAX_PAUSE_RETRIES = 3
         private const val KEY_PAUSED = "paused"
         private const val KEY_RECOVERY = "search_recovery_pending"
 

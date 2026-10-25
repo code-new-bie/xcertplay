@@ -22,13 +22,16 @@ class WifiScanPauseTest {
         /** Gaode's mode; each package keeps its own AppOps entry. */
         val mode get() = modes[AppScanRestriction.GAODE] ?: "allow"
         var losePauseReply = false
+        /** How many pause replies are lost before one gets through. */
+        var pauseRepliesToLose = 0
         var access = LocalAdb.Access.READY
         override fun connect() = access
         override fun close() = Unit
         override fun shell(command: String): String? {
             commands += command
             return when {
-                "wifiscan off" in command -> if (losePauseReply) null else "XCERTPLAY wifiscan enabled=false ok"
+                "wifiscan off" in command ->
+                    if (losePauseReply || pauseRepliesToLose-- > 0) null else "XCERTPLAY wifiscan enabled=false ok"
                 "wifiscan on" in command -> "XCERTPLAY wifiscan enabled=true ok"
                 command.startsWith("pm path") -> "package:/system/app/Gaode.apk"
                 command.startsWith("cmd appops get") ->
@@ -43,10 +46,10 @@ class WifiScanPauseTest {
         }
     }
 
-    private fun manager(shell: Shell, delay: Long = 100L, grace: Long = 60_000L): WifiScanPause {
+    private fun manager(shell: Shell, delay: Long = 100L, grace: Long = 60_000L, retry: Long = 60_000L): WifiScanPause {
         val app = RuntimeEnvironment.getApplication()
         app.applicationInfo.sourceDir = "/data/app/xcertplay/base.apk"
-        return WifiScanPause(app, { shell }, delay, grace)
+        return WifiScanPause(app, { shell }, delay, grace, retry)
     }
 
     /** What a run killed by the head unit's power-off leaves: the search paused, Gaode restricted. */
@@ -203,6 +206,42 @@ class WifiScanPauseTest {
         val manager = manager(shell)
         manager.pause()
         awaitState(manager, WifiScanPause.PauseState.FAILED)
+    }
+
+    @Test fun aPauseWithoutReplyIsRetriedUntilTheHelperAnswers() {
+        val shell = Shell().apply { pauseRepliesToLose = 2 }
+        val manager = manager(shell, retry = 50L)
+        manager.pause()
+        awaitState(manager, WifiScanPause.PauseState.PAUSED)
+        assertTrue(manager.isPaused())
+        assertEquals(3, shell.commands.count { "wifiscan off" in it })
+        assertEquals("Apps are restricted only once", 1, shell.commands.count { it.startsWith("am force-stop") })
+    }
+
+    @Test fun pauseRetriesStopAfterThreeAndWhenTheSessionEnds() {
+        val shell = Shell().apply { losePauseReply = true }
+        val manager = manager(shell, retry = 50L)
+        val gaveUp = CountDownLatch(1)
+        manager.diagnostic = { if ("after 3 retries" in it) gaveUp.countDown() }
+        manager.pause()
+        assertTrue(gaveUp.await(2, TimeUnit.SECONDS))
+        Thread.sleep(400)
+        assertEquals(4, shell.commands.count { "wifiscan off" in it })
+        assertEquals(WifiScanPause.PauseState.FAILED, manager.state)
+
+        manager.pause()
+        manager.resumeLater()
+        Thread.sleep(400)
+        assertEquals("A retry is not left behind by resumeLater", 5, shell.commands.count { "wifiscan off" in it })
+    }
+
+    @Test fun anUnapprovedAdbIsNotRetried() {
+        val shell = Shell().apply { access = LocalAdb.Access.NOT_APPROVED }
+        val manager = manager(shell, retry = 50L)
+        manager.pause()
+        awaitState(manager, WifiScanPause.PauseState.ADB_NOT_APPROVED)
+        Thread.sleep(300)
+        assertEquals(0, shell.commands.size)
     }
 
     private fun awaitState(manager: WifiScanPause, expected: WifiScanPause.PauseState) {
