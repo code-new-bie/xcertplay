@@ -18,6 +18,9 @@
     <string name="turn_without_reconnect_label">Keep CarPlay connected when the screen turns (experimental)</string>
     <string name="turn_without_reconnect_desc">Use a square canvas so CarPlay turns with the screen without reconnecting</string>
     <string name="turn_without_reconnect_note">When on, CarPlay connects with a square canvas (1920×1920 on a Song PLUS) holding a landscape and a portrait area; when the screen turns, the iPhone moves CarPlay to the matching area without reconnecting. A square is heavier to decode and send and may drop frames, and the custom safe area does not apply. If the long side exceeds 1920 or the head unit\'s decoder cannot take the square, the plain canvas is used. Applies on the next connection.</string>
+    <string name="split_screen_areas_label">Fill the split-screen window (experimental)</string>
+    <string name="split_screen_areas_desc">In the head unit split screen CarPlay fills its window, without black bars or reconnecting</string>
+    <string name="split_screen_areas_note">Needs Turn CarPlay with the screen above. The connection declares one more area the size of the split-screen window; entering split screen moves CarPlay there and leaving it moves CarPlay back, without reconnecting. The window is first estimated from the screen and its bars; after the first split screen its real size is remembered and fits exactly from the next connection. Not used by a connection that starts in split screen. Applies at the next connection.</string>
     <string name="dock_position_label">CarPlay dock position</string>
     <string name="dock_position_automatic">Automatic</string>
     <string name="dock_position_driver_side">Driver\'s side</string>

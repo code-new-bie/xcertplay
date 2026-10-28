@@ -429,8 +429,11 @@ class CarPlayHostActivity : ComponentActivity() {
     private var moreGesturesToSettings = false
     private var keepSessionOnWindowShrink = false
     private var turnWithoutReconnect = true
+    private var splitScreenAreas = false
     private var dockPosition = CarPlayDockPosition.AUTOMATIC
     private var sessionDisplay: CarPlaySessionDisplay? = null
+    /** The square canvas the config being built declares, for the session it starts. */
+    private var plannedSquare: CarPlaySquareCanvas? = null
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
     private var model = AirPlayPersistence.DEFAULT_MODEL
@@ -661,6 +664,7 @@ class CarPlayHostActivity : ComponentActivity() {
         moreGesturesToSettings = AirPlayPersistence.loadMoreGesturesToSettings(this)
         keepSessionOnWindowShrink = AirPlayPersistence.loadKeepSessionOnWindowShrink(this)
         turnWithoutReconnect = AirPlayPersistence.loadTurnWithoutReconnect(this)
+        splitScreenAreas = AirPlayPersistence.loadSplitScreenAreas(this)
         dockPosition = AirPlayPersistence.loadDockPosition(this)
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
         manufacturer = AirPlayPersistence.loadManufacturer(this)
@@ -1590,6 +1594,15 @@ class CarPlayHostActivity : ComponentActivity() {
             ) { checked -> turnWithoutReconnect = checked },
             getString(R.string.turn_without_reconnect_note),
         )
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.split_screen_areas_label),
+                checked = splitScreenAreas,
+                description = getString(R.string.split_screen_areas_desc),
+            ) { checked -> splitScreenAreas = checked },
+            getString(R.string.split_screen_areas_note),
+        )
 
         addGroupHeader(page, getString(R.string.group_update))
         val version = getString(R.string.update_current_version, currentVersionName()) +
@@ -2143,6 +2156,7 @@ class CarPlayHostActivity : ComponentActivity() {
         AirPlayPersistence.saveMoreGesturesToSettings(this, moreGesturesToSettings)
         AirPlayPersistence.saveKeepSessionOnWindowShrink(this, keepSessionOnWindowShrink)
         AirPlayPersistence.saveTurnWithoutReconnect(this, turnWithoutReconnect)
+        AirPlayPersistence.saveSplitScreenAreas(this, splitScreenAreas)
         AirPlayPersistence.saveDockPosition(this, dockPosition)
         AirPlayPersistence.saveRightHandDrive(this, rightHandDrive)
         AirPlayPersistence.saveHideTopBar(this, hideTopBar)
@@ -2170,7 +2184,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val size = currentActivitySize()
         return listOf(
             wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
-            localMfiCertificateUri, localMfiPrivateKeyUri, turnWithoutReconnect, dockPosition,
+            localMfiCertificateUri, localMfiPrivateKeyUri, turnWithoutReconnect, splitScreenAreas, dockPosition,
             wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
             manualHotspotChannel, manualHotspotSecurity, existingWifiSsid, existingWifiPassphrase, wifiP2pChannel,
             locationReportingEnabled, customVehicleName, manufacturer, model,
@@ -4039,7 +4053,7 @@ class CarPlayHostActivity : ComponentActivity() {
             deviceId = accessoryIds.deviceId,
             btMac = accessoryIds.bluetoothId,
             sourceVersion = "950.7.1",
-            main = squareCanvasDisplay(display) ?: display,
+            main = squareCanvasDisplay(display, size) ?: display,
             rightHandDrive = rightHandDrive,
             hevc = hevcEnabled,
             microphone = microphoneAvailable,
@@ -4056,10 +4070,11 @@ class CarPlayHostActivity : ComponentActivity() {
      * With the turning-screen setting, the plain canvas becomes a square with both orientations as
      * view areas, when the decoder the media sink will use can take it; otherwise null.
      */
-    private fun squareCanvasDisplay(display: AirPlayDisplayConfig): AirPlayDisplayConfig? {
+    private fun squareCanvasDisplay(display: AirPlayDisplayConfig, window: DisplaySize): AirPlayDisplayConfig? {
+        plannedSquare = null
         if (!turnWithoutReconnect) return null
-        val square = CarPlaySquareCanvas.plan(display.widthPixels, display.heightPixels)
-        if (square == null) {
+        val plain = CarPlaySquareCanvas.plan(display.widthPixels, display.heightPixels)
+        if (plain == null) {
             appendLog(
                 "Square canvas not used: ${display.widthPixels}x${display.heightPixels} is square already or " +
                     "its long side exceeds ${CarPlaySquareCanvas.MAX_SIDE}; a turning screen reconnects",
@@ -4067,14 +4082,16 @@ class CarPlayHostActivity : ComponentActivity() {
             return null
         }
         val mime = if (hevcEnabled) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
-        val decoder = VideoDecoderSupport.check(mime, square.side, square.side, hevcSoftwareDecoderEnabled)
+        val decoder = VideoDecoderSupport.check(mime, plain.side, plain.side, hevcSoftwareDecoderEnabled)
         if (!decoder.supported) {
             appendLog(
                 "Square canvas not used: decoder ${decoder.decoder ?: "none"} cannot take " +
-                    "${square.side}x${square.side} $mime; a turning screen reconnects",
+                    "${plain.side}x${plain.side} $mime; a turning screen reconnects",
             )
             return null
         }
+        val square = withSplitScreenAreas(plain, window)
+        plannedSquare = square
         val physicalMm = listOfNotNull(display.widthPhysicalMm, display.heightPhysicalMm).maxOrNull()
         appendLog(
             "Square canvas ${square.side}x${square.side} on ${decoder.decoder}: view areas " +
@@ -4090,7 +4107,7 @@ class CarPlayHostActivity : ComponentActivity() {
             heightPhysicalMm = physicalMm,
             safeArea = null,
             viewAreas = square.areas.mapIndexed { index, area ->
-                area.copy(statusBarEdge = dockPosition.squareAreaEdge(portrait = index == CarPlaySquareCanvas.PORTRAIT))
+                area.copy(statusBarEdge = dockPosition.squareAreaEdge(portrait = square.isPortrait(index)))
             },
             initialViewArea = square.initialArea,
         )
@@ -4432,8 +4449,9 @@ class CarPlayHostActivity : ComponentActivity() {
         controller = next
         // Before start(): the controller reads the gear for it from the start.
         if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
-        val square = airPlayConfig.main.viewAreas?.takeIf { it.size > 1 }?.let {
-            CarPlaySquareCanvas(airPlayConfig.main.widthPixels, it, airPlayConfig.main.initialViewArea)
+        val square = airPlayConfig.main.viewAreas?.takeIf { it.size > 1 }?.let { areas ->
+            plannedSquare?.takeIf { it.areas.size == areas.size }?.copy(areas = areas)
+                ?: CarPlaySquareCanvas(airPlayConfig.main.widthPixels, areas, airPlayConfig.main.initialViewArea)
         }
         // Without the setting every size change renegotiates, exactly as before.
         sessionDisplay = CarPlaySessionDisplay(
@@ -4564,15 +4582,24 @@ class CarPlayHostActivity : ComponentActivity() {
         size: DisplaySize,
     ) {
         cameraWaitStartedMs = null
-        val index = square.areaFor(size.width, size.height)
+        val splitScreen = isInMultiWindowMode
+        val screen = screenSize()
+        val screenPortrait = screen.height > screen.width
+        val index = square.areaFor(size.width, size.height, splitScreen, screenPortrait)
         val change = "${previous.width}x${previous.height} -> ${size.width}x${size.height}"
+        if (splitScreen) noteSplitWindow(square, index, size, screen)
         val next = display.copy(activeArea = index, rotation = displayRotation())
         sessionDisplay = next
         CarPlayBackgroundSession.updateDisplay(next)
         if (index != display.activeArea) {
             val target = controller
             airPlayCommandExecutor.execute { if (target != null && !target.isClosed()) target.updateViewArea(index) }
-            appendLog("Display turned $change; CarPlay moved to the ${square.describe(index)} view area without reconnecting")
+            val what = when {
+                square.isSplit(index) -> "Split screen"
+                square.isSplit(display.activeArea) -> "Split screen ended"
+                else -> "Display turned"
+            }
+            appendLog("$what $change; CarPlay moved to the ${square.describe(index)} view area without reconnecting")
         } else {
             appendLog("Display changed $change; CarPlay stays in the ${square.describe(index)} view area")
         }
@@ -4593,6 +4620,73 @@ class CarPlayHostActivity : ComponentActivity() {
         mainHandler.removeCallbacks(applyDisplaySize)
         mainHandler.postDelayed(applyDisplaySize, CAMERA_SIGNAL_POLL_MS)
         return true
+    }
+
+    /**
+     * With the split-screen setting, adds the split window's area per screen orientation to [square],
+     * sized from the window last seen there or else the expected one. Not for a connection that
+     * starts in split screen: its canvas is sized to that window already.
+     */
+    private fun withSplitScreenAreas(square: CarPlaySquareCanvas, window: DisplaySize): CarPlaySquareCanvas {
+        if (!splitScreenAreas) return square
+        if (isInMultiWindowMode) {
+            appendLog("Split screen areas not declared: this connection starts in split screen")
+            return square
+        }
+        val screen = screenSize()
+        val long = maxOf(screen.width, screen.height)
+        val short = minOf(screen.width, screen.height)
+        val bars = systemDimension("status_bar_height") + systemDimension("navigation_bar_height")
+        val divider = (systemDimension("docked_stack_divider_thickness") -
+            2 * systemDimension("docked_stack_divider_insets")).coerceAtLeast(0)
+        // The plain canvas was negotiated for this window; the square keeps its pixel density.
+        val canvasPerWindowPixel = square.side.toDouble() / maxOf(window.width, window.height)
+        val sources = mutableListOf<String>()
+        fun area(portrait: Boolean): Pair<Int, Int>? {
+            val seen = CarPlaySplitScreen.window(this, portrait)
+            val fraction = seen ?: CarPlaySplitScreen.expectedWindow(portrait, long, short, bars, divider) ?: return null
+            sources += "${if (portrait) "portrait" else "landscape"} ${if (seen != null) "seen" else "expected"}"
+            return if (portrait) {
+                CarPlaySplitScreen.canvasSize(fraction, short, long, canvasPerWindowPixel)
+            } else {
+                CarPlaySplitScreen.canvasSize(fraction, long, short, canvasPerWindowPixel)
+            }
+        }
+        val split = square.withSplitAreas(area(portrait = false), area(portrait = true))
+        appendLog(
+            "Split screen areas: " +
+                listOfNotNull(split.splitLandscape, split.splitPortrait).joinToString { split.describe(it) } +
+                " (${sources.joinToString()}; screen ${screen.width}x${screen.height}, bars $bars px, divider $divider px)",
+        )
+        return split
+    }
+
+    /**
+     * Remembers the split window for the next connection, and says when it does not fit the split
+     * area of this one.
+     */
+    private fun noteSplitWindow(square: CarPlaySquareCanvas, index: Int, size: DisplaySize, screen: DisplaySize) {
+        val remembered = CarPlaySplitScreen.remember(this, size.width, size.height, screen.width, screen.height)
+        if (!splitScreenAreas || square.splitLandscape == null && square.splitPortrait == null) return
+        if (!square.isSplit(index)) {
+            appendLog(
+                "Split window ${size.width}x${size.height} does not match the split view area; CarPlay keeps " +
+                    "the ${square.describe(index)} area" + if (remembered) ", and the next connection fits it" else "",
+            )
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun screenSize(): DisplaySize {
+        val metrics = android.util.DisplayMetrics().also { windowManager.defaultDisplay.getRealMetrics(it) }
+        return DisplaySize(metrics.widthPixels, metrics.heightPixels)
+    }
+
+    /** A dimension of the Android framework's own resources, or 0 where this firmware has none. */
+    @android.annotation.SuppressLint("DiscouragedApi")
+    private fun systemDimension(name: String): Int {
+        val id = resources.getIdentifier(name, "dimen", "android")
+        return if (id == 0) 0 else runCatching { resources.getDimensionPixelSize(id) }.getOrDefault(0)
     }
 
     @Suppress("DEPRECATION")

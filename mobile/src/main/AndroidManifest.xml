@@ -11,6 +11,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Xcertplay">
 
+        <!-- BYD DiLink 7.0 offers the wide side of its split screen to apps that declare this, as its
+             own apps do (DiPlay PR 875). Other head units ignore it. -->
+        <meta-data
+            android:name="BYD_SUPPORT_SPLIT_ACTIVITY"
+            android:value="1" />
+
         <!-- It declares support for Android Auto. -->
         <meta-data
             android:name="com.google.android.gms.car.application"

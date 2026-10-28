@@ -18,6 +18,9 @@
     <string name="turn_without_reconnect_label">屏幕旋转时保持 CarPlay 连接（实验性）</string>
     <string name="turn_without_reconnect_desc">使用方形画布，屏幕转动时 CarPlay 跟着转，不重新连接</string>
     <string name="turn_without_reconnect_note">开启后，连接时改用方形画布（宋 PLUS 为 1920×1920），横屏和竖屏各占其中一块区域；屏幕转动时通知 iPhone 换到对应区域，画面跟着转，不用重新连接。方形画布的解码和网络负担更大，可能掉帧；自定义安全区不生效。画布长边超过 1920，或车机解码器不支持时，自动改用普通画布。下次连接生效。</string>
+    <string name="split_screen_areas_label">分屏时 CarPlay 铺满窗口（实验性）</string>
+    <string name="split_screen_areas_desc">车机分屏时画面铺满分屏窗口，不留黑边，也不重连</string>
+    <string name="split_screen_areas_note">需要同时打开上面的“屏幕旋转时保持 CarPlay 连接”。连接时多声明一块分屏窗口大小的区域，进入分屏时 CarPlay 换到这块区域，退出时换回全屏，都不重连。分屏窗口大小先按屏幕和状态栏推算，第一次分屏后记住实际大小，下次连接起完全贴合。在分屏状态下开始的连接不使用。修改后下次连接生效。</string>
     <string name="dock_position_label">CarPlay Dock 位置</string>
     <string name="dock_position_automatic">自动</string>
     <string name="dock_position_driver_side">驾驶员一侧</string>
