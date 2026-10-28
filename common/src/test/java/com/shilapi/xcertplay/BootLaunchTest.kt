@@ -88,6 +88,21 @@ class BootLaunchTest {
     }
 
     @Test
+    fun anAppleDeviceIsTheIphone() {
+        assertTrue(UsbAttachActivity.isIphone(0x05ac))
+        assertFalse(UsbAttachActivity.isIphone(0x1a86))
+        assertFalse(UsbAttachActivity.isIphone(null))
+    }
+
+    /** Apple in the filter is what lets Android offer "use by default" for the iPhone. */
+    @Test
+    fun theUsbDeviceFilterNamesTheAdapterAndApple() {
+        val filter = java.io.File("src/main/res/xml/usb_device_filter.xml").readText()
+        assertTrue(filter.contains("""<usb-device vendor-id="6790" product-id="21778" />"""))
+        assertTrue(filter.contains("""<usb-device vendor-id="1452" />"""))
+    }
+
+    @Test
     fun launchSourceNamesTheAppIconAndOtherActions() {
         val icon = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         assertEquals("app icon", CarPlayHostLaunch.source(icon))

@@ -1408,22 +1408,54 @@ class CarPlayController(
         phase = Phase.IPHONE
         reenumerationAttempts = 0
         onStatus(CarPlayStatus.DiscoveringIphone)
-        checkIphoneAvailability()
+        // An iPhone already plugged in has no system prompt pending: ask at once.
+        checkIphoneAvailability(justAttached = false)
     }
 
-    private fun checkIphoneAvailability() {
+    private fun checkIphoneAvailability(justAttached: Boolean = true) {
         if (closed || phase != Phase.IPHONE) return
         val device = iphoneHost.discover().firstOrNull()
         if (device == null) {
             onStatus(CarPlayStatus.WaitingForIphone)
-            scheduleAvailabilityPoll(Phase.IPHONE, ::checkIphoneAvailability)
+            scheduleAvailabilityPoll(Phase.IPHONE) { checkIphoneAvailability() }
         } else {
             debugLog(
                 "wired iPhone discovered vid=0x${device.vendorId.toString(16)} " +
                     "pid=0x${device.productId.toString(16)}",
             )
             availabilityPollGeneration.incrementAndGet()
-            requestIphonePermission(device)
+            if (justAttached) awaitSystemIphonePermission(device) else requestIphonePermission(device)
+        }
+    }
+
+    /**
+     * An iPhone that has just attached. With Apple in the app's USB device filter, Android grants the
+     * device at once where the driver made CarPlay its default for it, and otherwise asks whether
+     * CarPlay should handle it, which also grants it. Waits up to [SYSTEM_USB_GRANT_WAIT_MILLIS] for
+     * that before asking with the app's own dialog, so a re-enumerated iPhone needs no second answer
+     * and the two dialogs do not stack.
+     */
+    private fun awaitSystemIphonePermission(device: UsbDevice) {
+        mainHandler.post {
+            if (closed) return@post
+            val generation = ++permissionPollGeneration
+            val deadlineNanos = System.nanoTime() + SYSTEM_USB_GRANT_WAIT_MILLIS * 1_000_000L
+            val check = object : Runnable {
+                override fun run() {
+                    if (closed || generation != permissionPollGeneration) return
+                    val granted = usbManager.hasPermission(device)
+                    if (granted || System.nanoTime() >= deadlineNanos) {
+                        debugLog(
+                            if (granted) "wired iPhone USB permission granted by the system"
+                            else "wired iPhone not granted by the system within ${SYSTEM_USB_GRANT_WAIT_MILLIS / 1000}s; asking",
+                        )
+                        doRequestIphonePermission(device)
+                        return
+                    }
+                    mainHandler.postDelayed(this, SYSTEM_USB_GRANT_POLL_MILLIS)
+                }
+            }
+            check.run()
         }
     }
 
@@ -1527,7 +1559,7 @@ class CarPlayController(
         when (phase) {
             Phase.REENUMERATION, Phase.IPHONE -> {
                 availabilityPollGeneration.incrementAndGet()
-                requestIphonePermission(device)
+                awaitSystemIphonePermission(device)
             }
             else -> Unit
         }
@@ -2212,6 +2244,8 @@ class CarPlayController(
         private const val CONTROL_BRING_UP_TIMEOUT_MILLIS = 5 * 60_000L
         private const val PERMISSION_POLL_INTERVAL_MILLIS = 500L
         private const val PERMISSION_POLL_TIMEOUT_MILLIS = 120_000L
+        private const val SYSTEM_USB_GRANT_WAIT_MILLIS = 10_000L
+        private const val SYSTEM_USB_GRANT_POLL_MILLIS = 200L
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L
         private const val WIRELESS_HANDOFF_TIMEOUT_MILLIS = 45_000L
         private const val RFCOMM_CONNECT_TIMEOUT_MILLIS = 15_000L

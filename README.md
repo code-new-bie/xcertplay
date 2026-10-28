@@ -14,6 +14,7 @@ This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Androi
 - Builds use a debug signing key, so every build in this series installs over the previous one.
 - MFi authentication is required, for example the [CH341-to-MFI](https://github.com/shilapi/ch341-to-mfi-chip) adapter board. For other options, see [Original project](#original-project).
 - The first time the MFi adapter is connected, Android asks whether to open CarPlay for this USB device. Tick the option to use it by default and confirm; it does not ask again at later power-ons.
+- For wired CarPlay, the first time the iPhone is plugged in Android asks whether to open CarPlay for it. Tick "use by default for this USB device" and confirm; it does not ask again, neither at later plug-ins nor when the iPhone re-enumerates during the connection. Charging the iPhone over USB asks once as well; after that, auto-start decides whether CarPlay opens.
 
 ## First-time setup
 

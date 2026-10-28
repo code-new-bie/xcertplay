@@ -8,6 +8,7 @@ internal object CarPlayHostLaunch {
     const val EXTRA_SOURCE = "com.shilapi.xcertplay.extra.LAUNCH_SOURCE"
     const val SOURCE_BOOT = "boot auto-start"
     const val SOURCE_USB = "MFi USB adapter attached"
+    const val SOURCE_IPHONE = "iPhone attached"
 
     private val hosts = AtomicInteger()
 

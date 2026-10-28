@@ -117,6 +117,7 @@ DiPlay（[shihabal3amri/DiPlay](https://github.com/shihabal3amri/DiPlay)）是�
 | 有线：经车机 ADB 预先允许 VPN | `732e1918`（DiPlay issue 604） | 2026-10-25，1.4.0-byd.21 | DiPlay 只在固件没有“连接请求”对话框时用；宋 PLUS 每次有线连接都弹这个框，所以本分支在需要同意时总是先试 ADB（`cmd appops set <包名> ACTIVATE_VPN allow`），不行再弹框；有设置项，默认开 |
 | 分屏时铺满窗口 | `be57cfeb`、`ab070ce2`、`f8b8f53a`（2026-10-05 至 10-07，DiPlay 在唐 DiLink 5.0 上测过） | 2026-10-28，1.4.0-byd.22 | 手工改写：本分支在方形画布里每个屏幕方向多加一块分屏区域（`CarPlaySquareCanvas.withSplitAreas`），进出分屏时用 `updateViewArea` 切换；窗口按整屏比例记住，没见过时按屏幕、状态栏和分隔条推算（`CarPlaySplitScreen`）。需要旋转不重连的方形画布，DiPlay 的侧边面板、固定 Dock 的多套区域没有移植；设置项默认关 |
 | 清单声明 `BYD_SUPPORT_SPLIT_ACTIVITY` | PR 875（DiPlay 0.2.21） | 2026-10-28，1.4.0-byd.22 | DiLink 7.0 据此把分屏的宽侧给应用；宋 PLUS（DiLink 3.0）的固件不读它，分屏看启动页的 `resizeableActivity`（`ScreenSplitUtils.isAppSuportSplit`），本应用已是可调整大小 |
+| 有线：USB 设备过滤加上苹果 | PR 170（DiPlay 0.2.12，issue 11） | 2026-10-28，1.4.0-byd.23 | 过滤里没有苹果设备时，系统权限弹框不显示“默认情况下用于该 USB 设备”，iPhone 每次插线、连接中重新接入都要再问（用户反馈弹两遍）。本分支另外在 iPhone 刚接入时先等系统放行最多 10 秒再自己申请，避免两个弹框叠在一起。DiPlay 的无障碍服务自动点确定（PR 575）没有移植 |
 
 DiPlay 已查看到 `9d896330`（0.2.21 之后，2026-10-24）。0.2.21 和之后的合并里没有拿的：音乐时钟微调的修复（本分支没有微调，10-23 实测无偏差）、有线重发启动请求等几项（等有线实车验证后再看）、通话后恢复音频模式和被打断后重新申请焦点（本分支不改音频模式，失去焦点也不静音）、仪表封面（本分支不发封面）、仪表地图、氛围灯律动、其他车型和界面。
 

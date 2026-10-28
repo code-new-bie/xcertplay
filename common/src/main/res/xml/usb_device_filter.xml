@@ -2,4 +2,8 @@
 <resources>
     <!-- CH341 USB\VID_1A86&PID_5512&REV_0304 -->
     <usb-device vendor-id="6790" product-id="21778" />
+    <!-- Apple (0x05AC). Without it Android never offers "use by default for this USB device" for the
+         iPhone, so its permission is asked again at every plug-in and again when the iPhone
+         re-enumerates for CarPlay (DiPlay issue 11, PR 170). -->
+    <usb-device vendor-id="1452" />
 </resources>
