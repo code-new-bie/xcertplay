@@ -14,11 +14,34 @@ internal class MfiCoprocessorNotFoundException(
 
 /** An opened MFi coprocessor client plus the handle that releases its backing transport. */
 class MfiSession(
-    val client: MfiAuthenticator,
+    client: MfiAuthenticator,
     private val closeable: Closeable?,
 ) : Closeable {
+    val client: MfiAuthenticator = CertificateCachingMfiAuthenticator(client)
+
     override fun close() {
         closeable?.close()
+    }
+}
+
+/**
+ * Reads the accessory certificate once. A connection needs it for the Wi-Fi P2P name, the
+ * Bluetooth and tunnelled iAP2 authentication and AirPlay's auth-setup, and over CH341 I2C each read
+ * takes about 0.2 s; the chip's certificate does not change while it is open.
+ */
+internal class CertificateCachingMfiAuthenticator(
+    private val delegate: MfiAuthenticator,
+) : MfiAuthenticator by delegate {
+    private val lock = Any()
+    private var certificate: ByteArray? = null
+
+    override fun readCertificate(maximumOutputLength: Int): ByteArray {
+        val cached = synchronized(lock) {
+            certificate ?: delegate.readCertificate(maximumOutputLength).also { certificate = it }
+        }
+        // A smaller limit than the certificate fails as the coprocessor read would.
+        if (cached.size > maximumOutputLength) return delegate.readCertificate(maximumOutputLength)
+        return cached.copyOf()
     }
 }
 

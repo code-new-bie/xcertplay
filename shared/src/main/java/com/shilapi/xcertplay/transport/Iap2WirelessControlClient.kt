@@ -15,6 +15,9 @@ import com.shilapi.xcertplay.mfi.Iap2MfiAuthenticationClient
  *
  * The caller retains ownership of [session]. While [run] is active it is the only receiver and
  * forwards each non-control CSM frame to [onIncoming].
+ *
+ * [run]'s endpoint is asked for only when the iPhone first needs it (0x5702, 0x4300 or 0x4E0E), so
+ * the Wi-Fi network can still be starting during identification and authentication.
  */
 class Iap2WirelessControlClient(
     private val session: Iap2Session,
@@ -22,7 +25,7 @@ class Iap2WirelessControlClient(
 ) {
     fun run(
         identification: Iap2IdentificationConfig,
-        endpoint: Iap2WirelessCarPlayEndpoint,
+        endpoint: () -> Iap2WirelessCarPlayEndpoint,
         bringUpTimeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         locationProvider: Iap2LocationProvider? = null,
         vehicleStatusProvider: VehicleStatusProvider? = null,
@@ -43,6 +46,7 @@ class Iap2WirelessControlClient(
             "bringUpTimeoutMillis must be in 1..$MAX_TIMEOUT_MILLIS or NO_TIMEOUT_MILLIS"
         }
 
+        val wifiEndpoint by lazy(LazyThreadSafetyMode.NONE, endpoint)
         val bringUpDeadlineNanos = if (bringUpTimeoutMillis == NO_TIMEOUT_MILLIS) {
             Long.MAX_VALUE
         } else {
@@ -132,7 +136,7 @@ class Iap2WirelessControlClient(
                                 "iap2 0x5703 ignored: maximum Wi-Fi configuration sends reached",
                             )
                         } else {
-                            sendDuringControl(accessoryWiFiConfiguration(endpoint))
+                            sendDuringControl(accessoryWiFiConfiguration(wifiEndpoint))
                             stage = later(
                                 stage,
                                 if (postTransport) {
@@ -153,7 +157,7 @@ class Iap2WirelessControlClient(
 
                     CARPLAY_AVAILABILITY -> {
                         onProgress("iap2 rx=0x4300 carplay-availability")
-                        sendDuringControl(carPlayStartSession(endpoint))
+                        sendDuringControl(carPlayStartSession(wifiEndpoint))
                         stage = later(stage, Iap2WirelessControlStage.CARPLAY_START_SENT)
                         carPlayStartSessionsSent++
                         onProgress("iap2 tx=0x4301 carplay-start-session")
@@ -184,7 +188,7 @@ class Iap2WirelessControlClient(
                                     "maximum Wi-Fi configuration sends reached",
                             )
                         } else {
-                            sendDuringControl(accessoryWiFiConfiguration(endpoint))
+                            sendDuringControl(accessoryWiFiConfiguration(wifiEndpoint))
                             stage = later(
                                 stage,
                                 Iap2WirelessControlStage.POST_TRANSPORT_WIFI_CONFIG_SENT,

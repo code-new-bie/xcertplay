@@ -104,9 +104,11 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -1046,6 +1048,7 @@ class CarPlayController(
     }
 
     private fun runWireless(generation: Int) {
+        var network: CompletableFuture<WirelessNetwork>? = null
         try {
             debugLog("wireless bring-up generation=$generation starting")
             closeWirelessStack()
@@ -1062,136 +1065,41 @@ class CarPlayController(
             // Wireless CarPlay starts over Bluetooth. Find a radio that is off before creating a
             // hotspot or Wi-Fi Direct group that every retry would only tear down again (DiPlay #679).
             // The check after the hotspot stays: the radio can be switched off meanwhile.
-            if (bluetoothAdapter == null) throw IOException("Bluetooth adapter is unavailable")
-            if (!bluetoothAdapter.isEnabled) throw IOException("Bluetooth is not enabled")
-            val hotspotInfo = startWirelessHotspot(generation, mfi)
-            if (isStaleWirelessRun(generation)) {
-                closeWirelessStack()
-                return
-            }
-            val hostAddress = hotspotInfo.hostAddress
-                ?: throw IOException(
-                    "Wireless hotspot did not provide a usable host address",
-                )
-            if (
-                hostAddress is Inet6Address &&
-                (!hostAddress.isLinkLocalAddress || hostAddress.scopeId == 0)
-            ) {
-                throw IOException(
-                    "Wireless hotspot link-local IPv6 address is not scoped",
-                )
-            }
-            val hostAddressText = hostAddressText(hostAddress)
-            val deviceIdentifier = hotspotInfo.bssid ?: airPlayConfig.deviceId
-            debugLog(
-                "wireless hotspot backend=${hotspotInfo.backend.label} " +
-                    "iface=${hotspotInfo.interfaceName ?: "unknown"} " +
-                    "host=$hostAddressText bssid=${hotspotInfo.bssid ?: "unavailable"} " +
-                    "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
-                    "frequency=${hotspotInfo.frequencyMHz?.toString() ?: "unknown"}MHz",
-            )
-            // The head unit's own search only runs while it is not joined, and on a shared LAN it is
-            // joined; pausing the connectivity manager would also stop it rejoining a dropped router.
-            if (hotspotInfo.backend != WirelessHotspotBackend.EXISTING_WIFI) wifiScanPause.pause()
-            onStatus(
-                CarPlayStatus.HotspotReady(
-                    ssid = hotspotInfo.ssid,
-                    band = hotspotInfo.bandLabel,
-                    channel = hotspotInfo.channel,
-                    bssid = deviceIdentifier,
-                    address = hostAddressText,
-                    backend = hotspotInfo.backend.label,
-                ),
-            )
-            onStatus(CarPlayStatus.WaitingForPairedIphone)
-
             val adapter = bluetoothAdapter
                 ?: throw IOException("Bluetooth adapter is unavailable")
             if (!adapter.isEnabled) throw IOException("Bluetooth is not enabled")
+            onStatus(CarPlayStatus.WaitingForPairedIphone)
             val devices = selectWirelessBluetoothDevices(adapter)
             val hostBluetoothMac = accessoryBluetoothMac(adapter)
             debugLog(
                 "wireless Bluetooth PHONE_SMART candidates=${devices.size} " +
                     "localBt=$hostBluetoothMac",
             )
-            val wirelessAirPlayConfig = airPlayConfig.copy(
-                deviceId = deviceIdentifier,
-                btMac = hostBluetoothMac,
-                wirelessAudio = true,
-            )
 
-            onStatus(CarPlayStatus.AttachingNetwork)
-            val service = awaitVpnService()
-                ?: throw IOException("Could not bind the CarPlay AirPlay service")
-            when (
-                val result = service.attachWireless(
-                    config = wirelessAirPlayConfig,
-                    identity = identity,
-                    pairings = pairings,
-                    mfi = mfi,
-                    listener = sessionListener,
-                    media = media,
-                )
-            ) {
-                CarPlayVpnService.AttachResult.Started -> Unit
-                CarPlayVpnService.AttachResult.AlreadyStarted ->
-                    throw IOException("Wireless AirPlay transport is already attached")
-                is CarPlayVpnService.AttachResult.Failed ->
-                    throw IOException(result.message)
+            // A Wi-Fi P2P group's name and passphrase come from the MFi certificate, so the iPhone
+            // can be identified and authenticated over Bluetooth while the group is still starting;
+            // the network is only needed when the iPhone asks for it (0x5702). Other hotspots report
+            // their name only once started.
+            val parallel = effectiveHotspotMode() == WirelessHotspotMode.WIFI_P2P && !sequentialWirelessBringUp
+            val ssid = CompletableFuture<String>()
+            val wirelessNetwork = if (parallel) {
+                debugLog("wireless Wi-Fi P2P group starting alongside Bluetooth")
+                startWirelessNetworkInBackground(generation, mfi, hostBluetoothMac, ssid)
+            } else {
+                val ready = bringUpWirelessNetwork(generation, mfi, hostBluetoothMac, parallel = false)
+                ssid.complete(ready.hotspot.ssid)
+                CompletableFuture.completedFuture(ready)
             }
-            debugLog(
-                "wireless AirPlay listener attached bind=:: advertised=$hostAddressText " +
-                    "port=${airPlayConfig.port}",
-            )
-            if (isStaleWirelessRun(generation)) {
-                closeWirelessStack()
-                return
-            }
-
-            val bonjourClient = CarPlayBonjour(
-                context = appContext,
-                config = wirelessAirPlayConfig,
-                identity = identity,
-                advertisedHost = hostAddress.hostAddress,
-                // A shared LAN has the iPhone on either address family, so JmDNS publishes on the
-                // chosen interface's every address; the hotspot modes keep the proven system NSD.
-                useInterfaceMdns = hotspotInfo.backend == WirelessHotspotBackend.EXISTING_WIFI,
-                onEvent = { event -> debugLog("wireless bonjour: $event") },
-                additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
-            )
-            bonjour = bonjourClient
-            bonjourClient.start()
-            debugLog(
-                "wireless Bonjour services started mdns=" +
-                    "${if (bonjourClient.publishedFamilies == "none") "system" else bonjourClient.publishedFamilies}",
-            )
-            if (isStaleWirelessRun(generation)) {
-                closeWirelessStack()
-                return
-            }
+            network = wirelessNetwork
+            if (!adapter.isEnabled) throw IOException("Bluetooth is not enabled")
 
             val channel = connectWirelessBluetoothDevices(devices, generation)
-            if (isStaleWirelessRun(generation)) {
-                closeWirelessStack()
-                return
-            }
+            if (isStaleWirelessRun(generation)) throw StaleWirelessRunException()
+            val announcedSsid = awaitWirelessBringUp(ssid)
             val identification = config.identification.copy(
-                wireless = Iap2WirelessIdentification(hostBluetoothMac, hotspotInfo.ssid),
-            )
-            val endpoint = Iap2WirelessCarPlayEndpoint(
-                ssid = hotspotInfo.ssid,
-                passphrase = hotspotInfo.passphrase,
-                channel = hotspotInfo.channel,
-                security = hotspotInfo.security,
-                ipAddresses = listOf(hostAddressText),
-                airPlayPort = airPlayConfig.port,
-                deviceIdentifier = deviceIdentifier,
-                publicKey = identity.publicKeyHex,
-                sourceVersion = airPlayConfig.sourceVersion,
-                accessPointBssid = hotspotInfo.accessPointBssid,
+                wireless = Iap2WirelessIdentification(hostBluetoothMac, announcedSsid),
             )
             wirelessIdentification = identification
-            wirelessAirPlayEndpoint = endpoint
             media.setIapTunnelHandler(::startWirelessTunnelControl)
 
             onStatus(CarPlayStatus.RunningWireless)
@@ -1201,7 +1109,7 @@ class CarPlayController(
                 mfi = Iap2MfiAuthenticationClient(mfi),
             ).run(
                 identification = identification,
-                endpoint = endpoint,
+                endpoint = { awaitWirelessNetwork(wirelessNetwork, announcedSsid).endpoint },
                 bringUpTimeoutMillis = CONTROL_BRING_UP_TIMEOUT_MILLIS,
                 locationProvider = locationProvider,
                 vehicleStatusProvider = vehicleStatusProvider,
@@ -1211,10 +1119,7 @@ class CarPlayController(
                 onIncoming = ::onIap2Incoming,
                 onProgress = ::debugLog,
             )
-            if (isStaleWirelessRun(generation)) {
-                closeWirelessStack()
-                return
-            }
+            if (isStaleWirelessRun(generation)) throw StaleWirelessRunException()
             when (result.terminal) {
                 Iap2WirelessControlTerminal.CHANNEL_CLOSED -> {
                     debugLog(
@@ -1246,6 +1151,12 @@ class CarPlayController(
                 }
             }
         } catch (error: Throwable) {
+            // A network side still starting in the background ends before anything is torn down.
+            network?.let(::awaitWirelessNetworkQuietly)
+            if (error is StaleWirelessRunException) {
+                closeWirelessStack()
+                return
+            }
             if (closed || generation != wirelessGeneration.get()) {
                 return
             }
@@ -1257,6 +1168,207 @@ class CarPlayController(
                 if (error is Error) throw error
                 fail(error)
             }
+        }
+    }
+
+    /** The receiver's Wi-Fi side, and the endpoint the iPhone is sent over iAP2. */
+    private class WirelessNetwork(
+        val hotspot: WirelessHotspotInfo,
+        val endpoint: Iap2WirelessCarPlayEndpoint,
+    )
+
+    /** A newer bring-up or a close replaced this one; it only tears down. */
+    private class StaleWirelessRunException : IOException("Wireless bring-up was superseded")
+
+    private fun effectiveHotspotMode(): WirelessHotspotMode =
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P
+        ) {
+            WirelessHotspotMode.LOCAL_ONLY_HOTSPOT
+        } else {
+            config.wirelessHotspotMode
+        }
+
+    /** Starts the Wi-Fi P2P side on its own thread; [ssid] is known as soon as the certificate is read. */
+    private fun startWirelessNetworkInBackground(
+        generation: Int,
+        mfi: MfiAuthenticator,
+        hostBluetoothMac: String,
+        ssid: CompletableFuture<String>,
+    ): CompletableFuture<WirelessNetwork> {
+        val network = CompletableFuture<WirelessNetwork>()
+        Thread(
+            {
+                try {
+                    ssid.complete(mfiCertificateWifiP2pCredentials(mfi.readCertificate()).ssid)
+                    network.complete(bringUpWirelessNetwork(generation, mfi, hostBluetoothMac, parallel = true))
+                } catch (error: Throwable) {
+                    ssid.completeExceptionally(error)
+                    network.completeExceptionally(error)
+                }
+            },
+            "xcertplay-wireless-network",
+        ).apply {
+            isDaemon = true
+            start()
+        }
+        return network
+    }
+
+    /** The hotspot, AirPlay listener and Bonjour; a stale run tears down and throws. */
+    private fun bringUpWirelessNetwork(
+        generation: Int,
+        mfi: MfiAuthenticator,
+        hostBluetoothMac: String,
+        parallel: Boolean,
+    ): WirelessNetwork {
+        val hotspotInfo = startWirelessHotspot(generation, mfi)
+        if (isStaleWirelessRun(generation)) {
+            closeWirelessStack()
+            throw StaleWirelessRunException()
+        }
+        val hostAddress = hotspotInfo.hostAddress
+            ?: throw IOException(
+                "Wireless hotspot did not provide a usable host address",
+            )
+        if (
+            hostAddress is Inet6Address &&
+            (!hostAddress.isLinkLocalAddress || hostAddress.scopeId == 0)
+        ) {
+            throw IOException(
+                "Wireless hotspot link-local IPv6 address is not scoped",
+            )
+        }
+        val hostAddressText = hostAddressText(hostAddress)
+        val deviceIdentifier = hotspotInfo.bssid ?: airPlayConfig.deviceId
+        debugLog(
+            "wireless hotspot backend=${hotspotInfo.backend.label} " +
+                "iface=${hotspotInfo.interfaceName ?: "unknown"} " +
+                "host=$hostAddressText bssid=${hotspotInfo.bssid ?: "unavailable"} " +
+                "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
+                "frequency=${hotspotInfo.frequencyMHz?.toString() ?: "unknown"}MHz",
+        )
+        // The head unit's own search only runs while it is not joined, and on a shared LAN it is
+        // joined; pausing the connectivity manager would also stop it rejoining a dropped router.
+        if (hotspotInfo.backend != WirelessHotspotBackend.EXISTING_WIFI) wifiScanPause.pause()
+        onStatus(
+            CarPlayStatus.HotspotReady(
+                ssid = hotspotInfo.ssid,
+                band = hotspotInfo.bandLabel,
+                channel = hotspotInfo.channel,
+                bssid = deviceIdentifier,
+                address = hostAddressText,
+                backend = hotspotInfo.backend.label,
+            ),
+        )
+        val wirelessAirPlayConfig = airPlayConfig.copy(
+            deviceId = deviceIdentifier,
+            btMac = hostBluetoothMac,
+            wirelessAudio = true,
+        )
+
+        // Alongside Bluetooth the progress stays on the Bluetooth steps.
+        if (!parallel) onStatus(CarPlayStatus.AttachingNetwork)
+        val service = awaitVpnService()
+            ?: throw IOException("Could not bind the CarPlay AirPlay service")
+        when (
+            val result = service.attachWireless(
+                config = wirelessAirPlayConfig,
+                identity = identity,
+                pairings = pairings,
+                mfi = mfi,
+                listener = sessionListener,
+                media = media,
+            )
+        ) {
+            CarPlayVpnService.AttachResult.Started -> Unit
+            CarPlayVpnService.AttachResult.AlreadyStarted ->
+                throw IOException("Wireless AirPlay transport is already attached")
+            is CarPlayVpnService.AttachResult.Failed ->
+                throw IOException(result.message)
+        }
+        debugLog(
+            "wireless AirPlay listener attached bind=:: advertised=$hostAddressText " +
+                "port=${airPlayConfig.port}",
+        )
+        if (isStaleWirelessRun(generation)) {
+            closeWirelessStack()
+            throw StaleWirelessRunException()
+        }
+
+        val bonjourClient = CarPlayBonjour(
+            context = appContext,
+            config = wirelessAirPlayConfig,
+            identity = identity,
+            advertisedHost = hostAddress.hostAddress,
+            // A shared LAN has the iPhone on either address family, so JmDNS publishes on the
+            // chosen interface's every address; the hotspot modes keep the proven system NSD.
+            useInterfaceMdns = hotspotInfo.backend == WirelessHotspotBackend.EXISTING_WIFI,
+            onEvent = { event -> debugLog("wireless bonjour: $event") },
+            additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
+        )
+        bonjour = bonjourClient
+        bonjourClient.start()
+        debugLog(
+            "wireless Bonjour services started mdns=" +
+                "${if (bonjourClient.publishedFamilies == "none") "system" else bonjourClient.publishedFamilies}",
+        )
+        if (isStaleWirelessRun(generation)) {
+            closeWirelessStack()
+            throw StaleWirelessRunException()
+        }
+
+        val endpoint = Iap2WirelessCarPlayEndpoint(
+            ssid = hotspotInfo.ssid,
+            passphrase = hotspotInfo.passphrase,
+            channel = hotspotInfo.channel,
+            security = hotspotInfo.security,
+            ipAddresses = listOf(hostAddressText),
+            airPlayPort = airPlayConfig.port,
+            deviceIdentifier = deviceIdentifier,
+            publicKey = identity.publicKeyHex,
+            sourceVersion = airPlayConfig.sourceVersion,
+            accessPointBssid = hotspotInfo.accessPointBssid,
+        )
+        wirelessAirPlayEndpoint = endpoint
+        return WirelessNetwork(hotspotInfo, endpoint)
+    }
+
+    /** The background network for 0x5702; its group must carry the name already announced. */
+    private fun awaitWirelessNetwork(
+        network: CompletableFuture<WirelessNetwork>,
+        announcedSsid: String,
+    ): WirelessNetwork {
+        if (!network.isDone) debugLog("wireless iAP2 waiting for the Wi-Fi P2P group")
+        val ready = awaitWirelessBringUp(network)
+        if (ready.hotspot.ssid != announcedSsid) {
+            // The identification already named the group; the next attempt starts it first.
+            sequentialWirelessBringUp = true
+            throw IOException(
+                "Wi-Fi P2P group ${ready.hotspot.ssid} is not the announced $announcedSsid",
+            )
+        }
+        return ready
+    }
+
+    private fun <T> awaitWirelessBringUp(future: CompletableFuture<T>): T = try {
+        future.get(WIRELESS_NETWORK_WAIT_MILLIS, TimeUnit.MILLISECONDS)
+    } catch (failure: ExecutionException) {
+        throw failure.cause ?: failure
+    } catch (_: TimeoutException) {
+        throw IOException("Timed out waiting for the wireless network")
+    } catch (interrupted: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw IOException("Interrupted while waiting for the wireless network", interrupted)
+    }
+
+    private fun awaitWirelessNetworkQuietly(network: CompletableFuture<WirelessNetwork>) {
+        try {
+            network.get(WIRELESS_NETWORK_WAIT_MILLIS, TimeUnit.MILLISECONDS)
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } catch (_: Exception) {
+            // Failed or still stuck: the stack is closed either way.
         }
     }
 
@@ -1287,7 +1399,7 @@ class CarPlayController(
                         mfi = Iap2MfiAuthenticationClient(mfi),
                     ).run(
                         identification = identification,
-                        endpoint = endpoint,
+                        endpoint = { endpoint },
                         bringUpTimeoutMillis = Iap2WirelessControlClient.NO_TIMEOUT_MILLIS,
                         locationProvider = locationProvider,
                         vehicleStatusProvider = vehicleStatusProvider,
@@ -1745,13 +1857,7 @@ class CarPlayController(
         generation: Int,
         mfi: MfiAuthenticator,
     ): WirelessHotspotInfo {
-        val hotspotMode = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-            config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P
-        ) {
-            WirelessHotspotMode.LOCAL_ONLY_HOTSPOT
-        } else {
-            config.wirelessHotspotMode
-        }
+        val hotspotMode = effectiveHotspotMode()
         val manager: WirelessHotspotManager = when (hotspotMode) {
             WirelessHotspotMode.WIFI_P2P ->
                 mfiCertificateWifiP2pCredentials(mfi.readCertificate()).let { credentials ->
@@ -2249,6 +2355,12 @@ class CarPlayController(
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L
         private const val WIRELESS_HANDOFF_TIMEOUT_MILLIS = 45_000L
         private const val RFCOMM_CONNECT_TIMEOUT_MILLIS = 15_000L
+        /** The background Wi-Fi P2P group, AirPlay service binding and Bonjour, with room to spare. */
+        private const val WIRELESS_NETWORK_WAIT_MILLIS =
+            WIFI_P2P_START_TIMEOUT_MILLIS + VPN_CONNECT_TIMEOUT_MILLIS + 10_000L
+
+        /** Set once a group came up under another name than the one announced; for this process. */
+        @Volatile private var sequentialWirelessBringUp = false
         private const val MAXIMUM_REENUMERATION_ATTEMPTS = 2
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"

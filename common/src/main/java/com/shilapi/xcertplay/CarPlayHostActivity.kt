@@ -4082,7 +4082,7 @@ class CarPlayHostActivity : ComponentActivity() {
             return null
         }
         val mime = if (hevcEnabled) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
-        val decoder = VideoDecoderSupport.check(mime, plain.side, plain.side, hevcSoftwareDecoderEnabled)
+        val decoder = VideoDecoderSupport.checkRemembered(this, mime, plain.side, plain.side, hevcSoftwareDecoderEnabled)
         if (!decoder.supported) {
             appendLog(
                 "Square canvas not used: decoder ${decoder.decoder ?: "none"} cannot take " +
@@ -4510,7 +4510,11 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         pendingDisplaySize = size
         mainHandler.removeCallbacks(applyDisplaySize)
-        mainHandler.postDelayed(applyDisplaySize, DISPLAY_CHANGE_DEBOUNCE_MILLIS)
+        // A launch's first window that is the full window recorded before is settled: connecting
+        // need not wait out the debounce.
+        val settled = activeDisplaySize == null && AirPlayPersistence.loadNormalWindow(this) == windowOf(size)
+        if (settled) appendLog("Display ${size.width}x${size.height} is the recorded CarPlay window; no debounce")
+        mainHandler.postDelayed(applyDisplaySize, if (settled) 0L else DISPLAY_CHANGE_DEBOUNCE_MILLIS)
     }
 
     private fun applyDisplaySize(size: DisplaySize) {
