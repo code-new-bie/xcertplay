@@ -32,6 +32,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+/** The main screen's stream type; the instrument cluster's is 111. */
+private const val MAIN_SCREEN_TYPE = 110
+
 /**
  * Android rendering backend for the CarPlay media engine. Video frames are
  * decoded with MediaCodec onto a Surface; audio streams are decoded to PCM and
@@ -242,7 +245,9 @@ class AndroidMediaSink(
     private fun videoDecoder(type: Int): VideoDecoder =
         videoDecoders.computeIfAbsent(type) {
             VideoDecoder(
-                surfaces[type] ?: defaultSurface,
+                // Only the main screen may fall back to the default Surface: the cluster's stream
+                // waits for its own instead of drawing over CarPlay.
+                surfaces[type] ?: defaultSurface.takeIf { type == MAIN_SCREEN_TYPE },
                 videoWidth,
                 videoHeight,
                 preferSoftwareHevcDecoder,

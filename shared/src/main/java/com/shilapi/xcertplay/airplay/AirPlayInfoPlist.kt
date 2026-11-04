@@ -81,6 +81,11 @@ object AirPlayInfoPlist {
         }
         info["extendedFeatures"] = listOf("vocoderInfo", "enhancedRequestCarUI")
         info["displays"] = displays
+        config.cluster?.let { cluster ->
+            // What each display shows when the session starts; the iPhone reads it with uiContext.
+            info["uiContextLastOnDisplayURLs"] = emptyList<String>()
+            info["uiContextNowOnDisplayURLs"] = listOfNotNull(config.main.initialUrl, cluster.initialUrl)
+        }
         info["hidDevices"] = listOf(
             AirPlayHid.touchHidDevice(config.main.widthPixels, config.main.heightPixels, MAIN_UUID),
             AirPlayHid.knobHidDevice(MAIN_UUID),

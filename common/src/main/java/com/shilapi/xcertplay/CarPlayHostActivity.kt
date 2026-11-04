@@ -15,6 +15,7 @@ import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
 import android.media.AudioAttributes
 import android.media.MediaFormat
 import android.net.Uri
@@ -434,6 +435,10 @@ class CarPlayHostActivity : ComponentActivity() {
     private var sessionDisplay: CarPlaySessionDisplay? = null
     /** The square canvas the config being built declares, for the session it starts. */
     private var plannedSquare: CarPlaySquareCanvas? = null
+    /** The cluster projection display CarPlay's second screen goes to, and its window there. */
+    private var clusterTarget: ClusterVirtualDisplay.Target? = null
+    private var clusterPresentation: ClusterPresentation? = null
+    private var clusterSurface: Surface? = null
     private var autoStartOnBoot = false
     private var manufacturer = AirPlayPersistence.DEFAULT_MANUFACTURER
     private var model = AirPlayPersistence.DEFAULT_MODEL
@@ -556,7 +561,6 @@ class CarPlayHostActivity : ComponentActivity() {
             if (currentSurfaceTexture !== texture) return true
             currentSurface?.let { surface ->
                 sink?.clearSurface(SCREEN_TYPE_MAIN, surface)
-                sink?.clearSurface(SCREEN_TYPE_ALT, surface)
                 surface.release()
             }
             currentSurface = null
@@ -867,11 +871,11 @@ class CarPlayHostActivity : ComponentActivity() {
         mainHandler.removeCallbacks(drainScreenLogs)
         currentSurface?.let { surface ->
             sink?.clearSurface(SCREEN_TYPE_MAIN, surface)
-            sink?.clearSurface(SCREEN_TYPE_ALT, surface)
             surface.release()
         }
         currentSurface = null
         currentSurfaceTexture = null
+        closeClusterScreen()
         if (WifiScanPause.onStateChanged === scanPauseChanged) WifiScanPause.onStateChanged = {}
         iphoneHotspotMonitor?.close()
         iphoneHotspotMonitor = null
@@ -1474,6 +1478,52 @@ class CarPlayHostActivity : ComponentActivity() {
             ) { checked -> BydClusterSongSettings.setEnabled(this, checked) },
             getString(R.string.cluster_song_note),
             topMarginDp = 10,
+        )
+        addSetting(
+            page,
+            settingsSwitchRow(
+                label = getString(R.string.cluster_map_label),
+                checked = ClusterMapSettings.enabled(this),
+                description = getString(R.string.cluster_map_desc),
+            ) { checked -> ClusterMapSettings.setEnabled(this, checked) },
+            getString(
+                R.string.cluster_map_note,
+                ClusterVirtualDisplay.find(this)?.let { "${it.name} ${it.width}×${it.height}" }
+                    ?: getString(R.string.cluster_map_no_display),
+            ),
+            topMarginDp = 12,
+        )
+        addSetting(
+            page,
+            settingsChoiceRow(
+                getString(R.string.cluster_map_content_label),
+                listOf(
+                    ClusterMapSettings.Content.MAP to getString(R.string.cluster_map_content_map),
+                    ClusterMapSettings.Content.CARD to getString(R.string.cluster_map_content_card),
+                    ClusterMapSettings.Content.MAP_WITH_CARD to getString(R.string.cluster_map_content_both),
+                ),
+                ClusterMapSettings.content(this),
+            ) { content -> ClusterMapSettings.setContent(this, content) },
+            getString(R.string.cluster_map_content_note),
+            topMarginDp = 12,
+        )
+        addSetting(
+            page,
+            settingsChoiceRow(
+                getString(R.string.cluster_map_size_label),
+                ClusterMapSettings.SCALES.map { percent ->
+                    percent to getString(
+                        when (percent) {
+                            100 -> R.string.cluster_map_size_100
+                            83 -> R.string.cluster_map_size_83
+                            else -> R.string.cluster_map_size_67
+                        },
+                    )
+                },
+                ClusterMapSettings.scalePercent(this),
+            ) { percent -> ClusterMapSettings.setScalePercent(this, percent) },
+            getString(R.string.cluster_map_size_note),
+            topMarginDp = 12,
         )
 
         addSubHeader(page, getString(R.string.byd_sub_video))
@@ -2185,6 +2235,7 @@ class CarPlayHostActivity : ComponentActivity() {
         return listOf(
             wirelessEnabled, mfiTarget, mfiI2cPath, remoteMfiServer, remoteMfiToken,
             localMfiCertificateUri, localMfiPrivateKeyUri, turnWithoutReconnect, splitScreenAreas, dockPosition,
+            ClusterMapSettings.enabled(this), ClusterMapSettings.content(this), ClusterMapSettings.scalePercent(this),
             wirelessHotspotMode, manualHotspotSsid, manualHotspotPassphrase, manualHotspotBand,
             manualHotspotChannel, manualHotspotSecurity, existingWifiSsid, existingWifiPassphrase, wifiP2pChannel,
             locationReportingEnabled, customVehicleName, manufacturer, model,
@@ -4063,7 +4114,82 @@ class CarPlayHostActivity : ComponentActivity() {
             icons = listOf(loadAirPlayIcon()),
             // Played only in P, which the BYD camera monitor reads through ADB.
             videoInCar = bydHeadUnit && CarPlayVideoSettings.enabled(this),
+            cluster = clusterDisplayConfig(),
         )
+    }
+
+    /**
+     * CarPlay's instrument-cluster screen, with the cluster-map setting and a projection display
+     * named fission_…: the display's size at the chosen scale, no input devices, and the chosen
+     * content as its initial URL (without one the iPhone may stream only black).
+     */
+    private fun clusterDisplayConfig(): AirPlayDisplayConfig? {
+        clusterTarget = null
+        if (!ClusterMapSettings.enabled(this)) return null
+        val target = ClusterVirtualDisplay.find(this)
+        if (target == null) {
+            appendLog(
+                "Cluster map: no ${ClusterVirtualDisplay.NAME_PREFIX} display, CarPlay starts without it " +
+                    "(displays: ${ClusterVirtualDisplay.describe(this)})",
+            )
+            return null
+        }
+        val scale = ClusterMapSettings.scalePercent(this)
+        val (width, height) = ClusterVirtualDisplay.streamSize(target, scale)
+        val content = ClusterMapSettings.content(this)
+        appendLog(
+            "Cluster map: display ${target.id} ${target.name} ${target.width}x${target.height}, " +
+                "stream ${width}x$height ($scale%), ${content.url}",
+        )
+        clusterTarget = target
+        return AirPlayDisplayConfig(
+            widthPixels = width,
+            heightPixels = height,
+            widthPhysicalMm = ClusterVirtualDisplay.physicalWidthMm(target),
+            fps = fps,
+            primaryInputDevice = 0,
+            initialUrl = content.url,
+        )
+    }
+
+    /** Shows the cluster stream's window on the projection display, once its stream is set up. */
+    private fun showClusterScreen() {
+        val presentation = clusterPresentation
+        if (presentation != null && presentation.isShowing) {
+            clusterSurface?.let { sink?.setSurface(SCREEN_TYPE_ALT, it) }
+            return
+        }
+        val target = clusterTarget ?: ClusterVirtualDisplay.find(this)
+        val display = target?.let { getSystemService(DisplayManager::class.java)?.getDisplay(it.id) }
+        if (display == null) {
+            appendLog("Cluster map: the cluster stream started, but the ${ClusterVirtualDisplay.NAME_PREFIX} display is gone")
+            return
+        }
+        val next = ClusterPresentation(this, display) { surface -> onClusterSurface(surface) }
+        try {
+            next.show()
+            clusterPresentation = next
+            appendLog("Cluster map: showing on display ${display.displayId} ${display.name}")
+        } catch (error: Exception) {
+            appendLog("Cluster map: cannot show on display ${display.displayId}: ${error.javaClass.simpleName} ${error.message}")
+        }
+    }
+
+    private fun onClusterSurface(surface: Surface?) {
+        if (surface != null) {
+            clusterSurface = surface
+            sink?.setSurface(SCREEN_TYPE_ALT, surface)
+        } else {
+            clusterSurface?.let { sink?.clearSurface(SCREEN_TYPE_ALT, it) }
+            clusterSurface = null
+        }
+    }
+
+    private fun closeClusterScreen() {
+        val presentation = clusterPresentation ?: return
+        clusterPresentation = null
+        runCatching { presentation.dismiss() }
+        onClusterSurface(null)
     }
 
     /**
@@ -4849,6 +4975,7 @@ class CarPlayHostActivity : ComponentActivity() {
         Log.i(TAG, "$reason; rebuilding stack at ${size.width}x${size.height}")
         val generation = ++restartGeneration
         appearanceSync.stop()
+        closeClusterScreen()
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
@@ -4913,6 +5040,7 @@ class CarPlayHostActivity : ComponentActivity() {
         updateHotspotStatusBlock()
         val generation = ++restartGeneration
         controller?.sendTouch(emptyList())
+        closeClusterScreen()
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
@@ -5059,6 +5187,7 @@ class CarPlayHostActivity : ComponentActivity() {
         restartGeneration += 1
         appearanceSync.stop()
         mainHandler.removeCallbacks(applyDisplaySize)
+        closeClusterScreen()
         val oldController = controller
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
@@ -5126,7 +5255,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun attachSurface(surface: Surface) {
         sink?.setSurface(SCREEN_TYPE_MAIN, surface)
-        sink?.setSurface(SCREEN_TYPE_ALT, surface)
+        // The cluster stream has its own Surface on the projection display.
+        clusterSurface?.let { sink?.setSurface(SCREEN_TYPE_ALT, it) }
     }
 
     private fun onHostTouch(view: View, event: MotionEvent): Boolean {
@@ -5235,6 +5365,9 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun onScreenStreamStateChanged(generation: Int, type: Int, active: Boolean) {
         runOnUiThread {
             if (shuttingDown.get() || generation != restartGeneration) return@runOnUiThread
+            if (type == SCREEN_TYPE_ALT) {
+                if (active) showClusterScreen() else closeClusterScreen()
+            }
             if (active) {
                 activeScreenStreamTypes.add(type)
                 // CarPlay is on screen: earlier failures no longer apply.

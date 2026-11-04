@@ -109,6 +109,14 @@ class AirPlaySession(
         )
     }
 
+    /** The instrument cluster's content, sent with showUI once its stream and the event channel are up. */
+    private val altScreenUi = AltScreenUi { command ->
+        sendCommand(command).also { sent ->
+            debugLog("airplay alt screen showUI url=${(command["params"] as? Map<*, *>)?.get("url")} sent=$sent")
+        }
+    }
+    @Volatile private var altStreamPending = false
+
     fun syncedNtp(): BigInteger = ntp.syncedNtp()
 
     internal fun logDebug(message: String) = debugLog(message)
@@ -393,15 +401,22 @@ class AirPlaySession(
                 else RtspMessage.Response(headers = mapOf("Content-Type" to OCTET_CONTENT_TYPE), body = body)
             }
             path.endsWith("/info") -> {
-                val info = AirPlayInfoPlist.build(config)
-                if (request.body.isNotEmpty()) {
-                    val requestInfo = try {
-                        BplistCodec.decode(request.body).toString()
-                    } catch (_: Exception) {
-                        "<unparseable ${request.body.size} bytes>"
-                    }
-                    debugLog("airplay /info request=$requestInfo")
+                val requestBody = if (request.body.isEmpty()) null else try {
+                    BplistCodec.decode(request.body)
+                } catch (_: Exception) {
+                    null
                 }
+                if (request.body.isNotEmpty()) {
+                    debugLog("airplay /info request=${requestBody ?: "<unparseable ${request.body.size} bytes>"}")
+                }
+                val cluster = config.cluster?.let { declared ->
+                    val offered = AltScreenUi.offered(requestBody)
+                    val chosen = AltScreenUi.choose(declared.initialUrl, offered)
+                    altScreenUi.select(chosen)
+                    debugLog("airplay /info altScreenURLs=$offered cluster=$chosen")
+                    declared.copy(initialUrl = chosen)
+                }
+                val info = AirPlayInfoPlist.build(config.copy(cluster = cluster))
                 Log.i(
                     TAG,
                     "airplay /info features=${info["features"]} " +
@@ -439,6 +454,10 @@ class AirPlaySession(
     }
 
     private fun notifySetupResponseSent() {
+        if (altStreamPending) {
+            altStreamPending = false
+            altScreenUi.setStreamReady(true)
+        }
         try {
             media.onSetupResponseSent(this)
         } catch (error: Exception) {
@@ -499,6 +518,10 @@ class AirPlaySession(
             response["keepAlivePort"] = openKeepAlive()
         }
         val features = setupEnabledFeatures(config, dict["features"] as? List<*>)
+        if (config.cluster != null) {
+            debugLog("airplay alt screen proposed=${dict["features"]} enabled=${AltScreenUi.FEATURE in features}")
+        }
+        altScreenUi.setEnabled(AltScreenUi.FEATURE in features)
         val videoPlaybackEnabled = VideoInCar.FEATURE in features
         val videoDelivery = videoPlaybackAvailability.setFeatureEnabled(videoPlaybackEnabled)
         debugLog("airplay video playback negotiated=$videoPlaybackEnabled availability=$videoDelivery")
@@ -522,6 +545,8 @@ class AirPlaySession(
                     if (port != null) {
                         activeStreams.add(type)
                         result.add(linkedMapOf("type" to type, "dataPort" to port))
+                        // showUI waits until this SETUP's response has gone out.
+                        if (type == STREAM_TYPE_ALT_SCREEN) altStreamPending = true
                     }
                 }
                 STREAM_TYPE_MAIN_AUDIO, STREAM_TYPE_ALT_AUDIO, STREAM_TYPE_MAIN_HIGH_AUDIO -> {
@@ -612,6 +637,7 @@ class AirPlaySession(
         )
         trace("airplay TEARDOWN raw${request.body.size}Hex=${request.body.toTraceHex()}")
 
+        if (types == null || STREAM_TYPE_ALT_SCREEN in types) altScreenUi.setStreamReady(false)
         if (types == null) {
             activeStreams.toList().forEach { media.onTeardown(this, it) }
             activeStreams.clear()
@@ -660,6 +686,8 @@ class AirPlaySession(
     private fun teardown() {
         videoPlaybackAvailability.setEventReady(false)
         videoPlaybackAvailability.setFeatureEnabled(false)
+        altScreenUi.setEventReady(false)
+        altScreenUi.setEnabled(false)
         ntp.close()
         safeClose(keepAliveSocket)
         keepAliveSocket = null
@@ -705,6 +733,7 @@ class AirPlaySession(
             }
             val videoDelivery = videoPlaybackAvailability.setEventReady(true)
             if (config.videoInCar) debugLog("airplay video event ready availability=$videoDelivery")
+            altScreenUi.setEventReady(true)
             runEventRead(socket)
         } catch (error: Exception) {
             if (!closed.get()) {
@@ -758,6 +787,7 @@ class AirPlaySession(
         } finally {
             debugLog("airplay event connection closed")
             videoPlaybackAvailability.setEventReady(false)
+            altScreenUi.setEventReady(false)
             if (eventSocket === socket) eventSocket = null
             eventCipher = null
             safeClose(socket)
@@ -796,7 +826,12 @@ internal fun setupEnabledFeatures(config: AirPlayConfig, proposed: List<*>?): Li
     if (config.hevc) features.add("hevc")
     features.add("iAPChannel")
     features.add("viewAreas")
-    if (config.cluster != null) features.add("altScreen")
+    // The iPhone builds the cluster's UI only with both features, and validates them together.
+    val proposals = proposed.orEmpty()
+    if (config.cluster != null && AltScreenUi.FEATURE in proposals && AltScreenUi.CONTEXT_FEATURE in proposals) {
+        features.add(AltScreenUi.FEATURE)
+        features.add(AltScreenUi.CONTEXT_FEATURE)
+    }
     if (config.videoInCar && proposed.orEmpty().contains(VideoInCar.FEATURE)) features.add(VideoInCar.FEATURE)
     return features
 }
