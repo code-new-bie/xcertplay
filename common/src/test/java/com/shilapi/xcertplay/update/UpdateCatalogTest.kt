@@ -56,6 +56,23 @@ class UpdateCatalogTest {
     }
 
     @Test
+    fun onlyGithubHttpsDownloadsOfAPlausibleSizeAreOffered() {
+        val name = "xcertplay-mobile-1.4.0-byd.11.apk"
+        for (url in listOf(
+            "https://example.com/$name",
+            "http://github.com/code-new-bie/xcertplay/releases/download/1.4.0-byd.11/$name",
+            "https://user@github.com/code-new-bie/xcertplay/releases/download/1.4.0-byd.11/$name",
+            "https://github.com:8443/code-new-bie/xcertplay/releases/download/1.4.0-byd.11/$name",
+            "https://github.com.example.com/$name",
+            "not a url",
+        )) {
+            assertNull(url, UpdateCatalog.parse(release(assets = asset(name, url = url)), "xcertplay-mobile-"))
+        }
+        assertNull(UpdateCatalog.parse(release(assets = asset(name, size = UpdateCatalog.MAXIMUM_APK_BYTES + 1)), "xcertplay-mobile-"))
+        assertNotNull(UpdateCatalog.parse(release(assets = asset(name, size = UpdateCatalog.MAXIMUM_APK_BYTES)), "xcertplay-mobile-"))
+    }
+
+    @Test
     fun draftsPreReleasesOtherTagsAndMissingAssetsAreIgnored() {
         assertNull(UpdateCatalog.parse(release(draft = true), "xcertplay-mobile-"))
         assertNull(UpdateCatalog.parse(release(prerelease = true), "xcertplay-mobile-"))

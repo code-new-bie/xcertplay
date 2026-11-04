@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.update
 
+import java.net.URI
 import org.json.JSONObject
 
 /** The newest published release and the APK this build would install from it. */
@@ -23,10 +24,23 @@ internal object UpdateCatalog {
 
     private val SHA256 = Regex("^sha256:([0-9a-fA-F]{64})$")
 
+    /** Far above this fork's APKs (about 38 MB); the copy stops at the size the release states. */
+    const val MAXIMUM_APK_BYTES = 128L * 1024 * 1024
+
+    /**
+     * Release assets are served from github.com over https. The APK is installed over the head
+     * unit's ADB, so an answer pointing elsewhere is not followed. After DiPlay 65ab1f36.
+     */
+    private fun isDownloadUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        return uri.scheme.equals("https", ignoreCase = true) && uri.host.equals("github.com", ignoreCase = true) &&
+            uri.rawUserInfo == null && uri.port == -1
+    }
+
     /**
      * The release, or null when it is a draft or pre-release, its tag is not a version of this fork,
-     * or it has no `[assetPrefix][tag].apk` with a SHA-256 digest: an APK that cannot be checked is
-     * never offered.
+     * or it has no `[assetPrefix][tag].apk` on github.com with a SHA-256 digest and a plausible size:
+     * an APK that cannot be checked is never offered.
      */
     fun parse(json: String, assetPrefix: String): UpdateRelease? {
         val release = runCatching { JSONObject(json) }.getOrNull() ?: return null
@@ -39,11 +53,11 @@ internal object UpdateCatalog {
             val asset = assets.optJSONObject(i) ?: continue
             if (asset.optString("name") != apkName) continue
             val url = asset.optString("browser_download_url")
-            if (!url.startsWith("https://")) return null
+            if (!isDownloadUrl(url)) return null
             val sha256 = SHA256.matchEntire(asset.optString("digest"))?.groupValues?.get(1)?.lowercase()
                 ?: return null
             val size = asset.optLong("size", -1L)
-            if (size <= 0L) return null
+            if (size <= 0L || size > MAXIMUM_APK_BYTES) return null
             return UpdateRelease(
                 version = version,
                 tag = tag,
