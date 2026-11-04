@@ -45,6 +45,7 @@ This branch, `byd-song-plus-2021`, is tested in a Song PLUS 2021 (DiLink, Androi
 | Exit CarPlay when the car is switched off and undo the head-unit changes | Automatic | — | Yes |
 | Lower AC fan during CarPlay calls, to level 1–3, restored when the call ends | Vehicle → BYD → Calls | Off | Yes |
 | Song on the instrument cluster; with "car lyrics" on in the music app, the current lyric line | Vehicle → BYD → Instrument cluster | Off | Yes |
+| CarPlay map on the cluster (experimental): the iPhone draws a second screen for the cluster (map, turn card or both), shown on the head unit display named `fission_…`, which the cluster shows by itself; needs that projection display to exist, works while the CarPlay screen is open; after DiPlay | Vehicle → BYD → Cluster | Off | No |
 | Vehicle speed and gear for tunnel navigation (also needs "Report location to iPhone") | Vehicle → BYD → Vehicle data | Off | Yes |
 | Electric battery and range for Apple Maps (experimental) | Vehicle → BYD → Vehicle data | Off | Yes |
 | Report location to iPhone: head-unit positioning with speed and satellite data | Vehicle | Off | No |
