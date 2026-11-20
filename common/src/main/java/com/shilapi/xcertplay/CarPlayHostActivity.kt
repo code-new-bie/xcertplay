@@ -447,6 +447,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var widthPhysicalMm = AirPlayDisplaySettings.DEFAULT_WIDTH_PHYSICAL_MM
     private var maximumDetectedWidthPixels = 0
     private var maximumDetectedHeightPixels = 0
+    /** Logged once when a window the app was laid out in was larger than the display. */
+    private var rejectedDetectedSizeLogged = false
     private var rightHandDrive = false
     private var hideTopBar = true
     private var hideBottomBar = true
@@ -677,8 +679,20 @@ class CarPlayHostActivity : ComponentActivity() {
         fps = AirPlayPersistence.loadFps(this)
         widthPhysicalMm = AirPlayPersistence.loadWidthPhysicalMm(this)
         AirPlayPersistence.loadMaximumDetectedDisplay(this).let { (width, height) ->
-            maximumDetectedWidthPixels = width
-            maximumDetectedHeightPixels = height
+            val limit = longestScreenSide()
+            if (width > 0 && height > 0 &&
+                !AirPlayDisplaySettings.isPlausibleWindowSize(width, height, limit)
+            ) {
+                // A maximum larger than the display, from an abnormal layout or another display,
+                // would make the reported physical size wrong. Start it over from this session.
+                maximumDetectedWidthPixels = 0
+                maximumDetectedHeightPixels = 0
+                AirPlayPersistence.saveMaximumDetectedDisplay(this, 0, 0)
+                appendLog("Detected maximum size ${width}x$height exceeds the display's ${limit}px; reset")
+            } else {
+                maximumDetectedWidthPixels = width
+                maximumDetectedHeightPixels = height
+            }
         }
         rightHandDrive = AirPlayPersistence.loadRightHandDrive(this)
         hideTopBar = AirPlayPersistence.loadHideTopBar(this)
@@ -4856,6 +4870,14 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun recordDetectedMaximum(size: DisplaySize) {
+        val limit = longestScreenSide()
+        if (!AirPlayDisplaySettings.isPlausibleWindowSize(size.width, size.height, limit)) {
+            if (!rejectedDetectedSizeLogged) {
+                rejectedDetectedSizeLogged = true
+                appendLog("Ignoring window ${size.width}x${size.height}: larger than the display (${limit}px)")
+            }
+            return
+        }
         val width = maxOf(maximumDetectedWidthPixels, size.width)
         val height = maxOf(maximumDetectedHeightPixels, size.height)
         if (width == maximumDetectedWidthPixels && height == maximumDetectedHeightPixels) return
@@ -4863,6 +4885,9 @@ class CarPlayHostActivity : ComponentActivity() {
         maximumDetectedHeightPixels = height
         AirPlayPersistence.saveMaximumDetectedDisplay(this, width, height)
     }
+
+    /** The display's longest side in the current orientation; a window can never be larger. */
+    private fun longestScreenSide(): Int = screenSize().let { maxOf(it.width, it.height) }
 
     private fun maybeStartCarPlay() {
         if (controller == null && adoptBackgroundSession()) return

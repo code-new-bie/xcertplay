@@ -1,9 +1,31 @@
 package com.shilapi.xcertplay.airplay
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AirPlayDisplaySettingsTest {
+    @Test
+    fun windowNoLargerThanTheDisplayIsPlausible() {
+        assertTrue(AirPlayDisplaySettings.isPlausibleWindowSize(1920, 1080, 1920))
+        assertTrue(AirPlayDisplaySettings.isPlausibleWindowSize(1080, 1920, 1920))
+        assertTrue(AirPlayDisplaySettings.isPlausibleWindowSize(960, 1000, 1920))
+    }
+
+    @Test
+    fun windowWiderOrTallerThanTheDisplayIsNotPlausible() {
+        assertFalse(AirPlayDisplaySettings.isPlausibleWindowSize(3392, 1920, 1920))
+        assertFalse(AirPlayDisplaySettings.isPlausibleWindowSize(1920, 2160, 1920))
+        assertFalse(AirPlayDisplaySettings.isPlausibleWindowSize(0, 1080, 1920))
+    }
+
+    @Test
+    fun unknownDisplaySizeAcceptsAnyPositiveWindow() {
+        assertTrue(AirPlayDisplaySettings.isPlausibleWindowSize(3392, 1920, 0))
+        assertFalse(AirPlayDisplaySettings.isPlausibleWindowSize(0, 1920, 0))
+    }
+
     @Test
     fun maximumObservedWidthScalesPhysicalSizeWithCurrentActivityWidth() {
         val size = AirPlayDisplaySettings.resolvePhysicalSizeMm(

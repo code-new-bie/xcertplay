@@ -40,6 +40,17 @@ object AirPlayDisplaySettings {
     fun sanitizeReportedPhysicalMm(value: Int): Int =
         value.coerceIn(MIN_REPORTED_PHYSICAL_MM, MAX_REPORTED_PHYSICAL_MM)
 
+    /**
+     * Whether a window size the app was laid out in can belong to a display whose longest side is
+     * [longestScreenSidePixels]. A window never exceeds its display; a larger one came from an
+     * abnormal layout (a transition, another display) and must not size the reported screen.
+     */
+    fun isPlausibleWindowSize(width: Int, height: Int, longestScreenSidePixels: Int): Boolean {
+        if (width <= 0 || height <= 0) return false
+        if (longestScreenSidePixels <= 0) return true
+        return width <= longestScreenSidePixels && height <= longestScreenSidePixels
+    }
+
     fun resolvePhysicalSizeMm(
         currentWidthPixels: Int,
         currentHeightPixels: Int,
