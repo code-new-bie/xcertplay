@@ -4129,6 +4129,9 @@ class CarPlayHostActivity : ComponentActivity() {
             // Played only in P, which the BYD camera monitor reads through ADB.
             videoInCar = bydHeadUnit && CarPlayVideoSettings.enabled(this),
             cluster = clusterDisplayConfig(),
+            // The sound lags CarPlay's UI by these buffers; the iPhone compensates.
+            mainMediaAudioBufferDurationMs = mainMediaAudioBufferDurationMs,
+            navigationAudioBufferDurationMs = navigationAudioBufferDurationMs,
         )
     }
 

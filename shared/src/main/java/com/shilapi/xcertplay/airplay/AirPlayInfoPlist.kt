@@ -72,7 +72,7 @@ object AirPlayInfoPlist {
             "modes" to modes(),
         )
         if (!config.disableAudioOutput) {
-            info["audioLatencies"] = audioLatencies()
+            info["audioLatencies"] = audioLatencies(config)
             info["audioFormats"] = audioFormats(
                 config.entertainmentSampleRate,
                 config.microphone,
@@ -133,22 +133,34 @@ object AirPlayInfoPlist {
         ),
     )
 
-    private fun audioLatencies(): List<Map<String, Any?>> {
-        fun base(type: Int, audioType: String? = null): Map<String, Any?> {
+    /**
+     * Output latency per stream: what the car adds between receiving audio and hearing it. The
+     * media streams are prefilled to their configured buffer; the AudioTrack behind them keeps a
+     * 16 KiB headroom (about 85 ms of 48 kHz 16-bit stereo). Reporting it lets the iPhone send the
+     * audio early, so CarPlay's UI (lyrics, progress) lines up with the sound.
+     */
+    private fun audioLatencies(config: AirPlayConfig): List<Map<String, Any?>> {
+        fun base(type: Int, audioType: String? = null, outputLatencyMicros: Long = 0L): Map<String, Any?> {
             val entry = linkedMapOf<String, Any?>(
                 "type" to type,
                 "inputLatencyMicros" to 0L,
-                "outputLatencyMicros" to 0L,
+                "outputLatencyMicros" to outputLatencyMicros,
             )
             if (audioType != null) entry["audioType"] = audioType
             return entry
         }
+        val mediaMicros = config.mainMediaAudioBufferDurationMs * 1_000L + TRACK_HEADROOM_MICROS
+        val navigationMicros = config.navigationAudioBufferDurationMs * 1_000L + TRACK_HEADROOM_MICROS
         return listOf(
-            base(100), base(100, "default"), base(100, "media"), base(100, "telephony"),
-            base(100, "speechRecognition"), base(100, "alert"), base(101), base(101, "default"),
-            base(102, "default"),
+            base(100), base(100, "default"), base(100, "media", mediaMicros),
+            base(100, "telephony"), base(100, "speechRecognition"), base(100, "alert"),
+            base(101, null, navigationMicros), base(101, "default", navigationMicros),
+            base(102, "default", mediaMicros), base(102, "media", mediaMicros),
         )
     }
+
+    /** The AudioTrack headroom the media streams keep above their prefill: 16 KiB at 48 kHz stereo. */
+    private const val TRACK_HEADROOM_MICROS = 85_000L
 
     private fun audioFormats(
         entertainmentRate: Int,

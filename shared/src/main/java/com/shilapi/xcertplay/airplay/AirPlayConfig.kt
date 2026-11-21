@@ -68,4 +68,11 @@ data class AirPlayConfig(
     val icons: List<AirPlayIcon> = emptyList(),
     /** Offer iOS 27 video in car (see VideoInCar); it plays only while the host allows it. */
     val videoInCar: Boolean = false,
+    /**
+     * Music is buffered this long before it starts (see MainMediaAudioBuffer). Reported to the
+     * iPhone as the stream's output latency so its UI (lyrics, progress) waits for the sound.
+     */
+    val mainMediaAudioBufferDurationMs: Int = 100,
+    /** Navigation prompts are buffered this long; reported as their output latency too. */
+    val navigationAudioBufferDurationMs: Int = 80,
 )
