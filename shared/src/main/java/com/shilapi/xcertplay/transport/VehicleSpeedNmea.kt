@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay.transport
 
-import android.os.SystemClock
 import java.util.Locale
 
 enum class VehicleGear(val letter: Char) { PARK('P'), REVERSE('R'), NEUTRAL('N'), DRIVE('D') }
@@ -70,6 +69,8 @@ class VehicleSpeedLocationProvider(
     private val position: Iap2LocationProvider,
     private val speed: VehicleSpeedSource,
     private val log: (String) -> Unit = {},
+    /** Boot millis and UTC millis for the sentence stamp; null keeps the sample's boot time. */
+    private val clock: (() -> Pair<Long, Long>)? = null,
 ) : Iap2LocationProvider {
     @Volatile private var speedRequested = false
     private var lastLogMillis = 0L
@@ -95,9 +96,10 @@ class VehicleSpeedLocationProvider(
     override fun latestNmea(): String? {
         val fix = position.latestNmea()
         val reading = if (speedRequested) speed.drain() else null
+        val now = clock?.invoke()
         val pascd = reading?.let {
             logSpeed(it)
-            PascdEncoder.encode(it, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+            PascdEncoder.encode(it, now?.first, now?.second)
         }
         return if (fix == null) pascd else fix + pascd.orEmpty()
     }

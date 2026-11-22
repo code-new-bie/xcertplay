@@ -85,6 +85,20 @@ class VehicleSpeedNmeaTest {
     }
 
     @Test
+    fun stampsTheSentenceWithTheInjectedUtcTime() {
+        val provider = VehicleSpeedLocationProvider(
+            FakePosition(null),
+            FakeSpeed(),
+            clock = { 5_000L to 3_600_000L },
+        )
+
+        provider.onRequested(setOf(Iap2LocationMessages.VEHICLE_SPEED_DATA))
+        provider.start()
+
+        assertTrue(provider.latestNmea()!!.startsWith("\$PASCD,3600.000,"))
+    }
+
+    @Test
     fun readsTheRequestedSentenceTypes() {
         val request = Iap2Messages.buildRaw(Iap2LocationMessages.START_LOCATION_INFORMATION) {
             void(1)
