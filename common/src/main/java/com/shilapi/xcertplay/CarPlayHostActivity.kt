@@ -4527,7 +4527,7 @@ class CarPlayHostActivity : ComponentActivity() {
             if (config.locationReportingEnabled) {
                 val position = AndroidCarPlayLocationProvider(this)
                 if (config.identification.vehicleSpeedEnabled) {
-                    VehicleSpeedLocationProvider(position, BydWheelSpeedSource(this, ::appendLog))
+                    VehicleSpeedLocationProvider(position, BydWheelSpeedSource(this, ::appendLog), ::appendLog)
                 } else {
                     position
                 }

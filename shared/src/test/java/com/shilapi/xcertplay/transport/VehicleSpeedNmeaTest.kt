@@ -38,10 +38,23 @@ class VehicleSpeedNmeaTest {
         )
 
         val sentence = PascdEncoder.encode(reading)!!.trimEnd()
-        assertTrue(sentence.startsWith("\$PASCD,1.000,C,R,0,2,0.00,1.500,0.25,1.250*"))
+        // 1.5 m/s and 1.25 m/s in knots, as NMEA's RMC carries them.
+        assertTrue(sentence.startsWith("\$PASCD,1.000,C,R,0,2,0.00,2.916,0.25,2.430*"))
         val star = sentence.lastIndexOf('*')
         assertEquals(checksum(sentence.substring(1, star)), sentence.substring(star + 1))
         assertNull(PascdEncoder.encode(VehicleSpeedReading(VehicleGear.DRIVE, emptyList())))
+    }
+
+    @Test
+    fun stampsSamplesWithTheUtcSecondOfDay() {
+        val reading = VehicleSpeedReading(
+            VehicleGear.DRIVE,
+            listOf(VehicleSpeedSample(1_000, 10.0)),
+        )
+
+        val sentence = PascdEncoder.encode(reading, nowElapsedMillis = 1_000, utcMillis = 3_600_000)!!.trimEnd()
+
+        assertTrue(sentence.startsWith("\$PASCD,3600.000,C,D,0,1,0.00,19.438*"))
     }
 
     @Test
